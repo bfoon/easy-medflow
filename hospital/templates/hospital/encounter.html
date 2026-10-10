@@ -1,0 +1,62 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Visit · {{ p.full_name }}{% endblock %}
+{% block heading %}{{ e.reason }}{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }} · {{ e.department|default:'No department' }} · {{ e.created_at|date:'j M Y, H:i' }} · {{ e.clinician|display_name }} <span class="tag {{ e.status|tone }} ms-1">{{ e.get_status_display }}</span></p>{% endblock %}
+{% block actions %}
+{% if e.status == 'open' %}
+  <a class="btn btn-ghost" href="{% url 'lab_new' %}?encounter={{ e.pk }}"><i class="bi bi-droplet-half"></i>Order lab</a>
+  <a class="btn btn-ghost" href="{% url 'prescription_new' %}?encounter={{ e.pk }}"><i class="bi bi-capsule"></i>Prescribe</a>
+  <a class="btn btn-ghost" href="{% url 'referral_new' %}?encounter={{ e.pk }}"><i class="bi bi-signpost-split"></i>Refer</a>
+  <a class="btn btn-ghost" href="{% url 'admission_new' %}?encounter={{ e.pk }}"><i class="bi bi-hospital"></i>Admit</a>
+  <form method="post" action="{% url 'encounter_complete' e.pk %}" data-confirm="Complete this visit? Notes become read-only in this view.">{% csrf_token %}<button class="btn btn-primary"><i class="bi bi-check2-circle"></i>Complete visit</button></form>
+{% endif %}
+{% endblock %}
+{% block content %}
+<div class="allergy-strip {% if not allergies %}none{% endif %}">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  {% if allergies %}<b>Allergies</b>{% for a in allergies %}<span class="tag">{{ a.substance }} · {{ a.severity }}</span>{% endfor %}{% else %}<b>No allergies documented.</b> Confirm with the patient before prescribing.{% endif %}
+</div>
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Clinical notes</h2></div>
+      <div class="ruled">
+        <div><div class="label-sm">Symptoms</div>{{ e.symptoms|default:'—'|linebreaksbr }}</div>
+        <div><div class="label-sm">Assessment</div>{{ e.assessment|default:'—'|linebreaksbr }}</div>
+        <div><div class="label-sm">Diagnosis</div><b>{{ e.diagnosis|default:'Not yet recorded'|linebreaksbr }}</b></div>
+        <div><div class="label-sm">Plan</div>{{ e.plan|default:'—'|linebreaksbr }}</div>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Prescriptions</h2><a class="more" href="{% url 'pharmacy' %}">Pharmacy</a></div>
+      {% for x, w in prescriptions %}
+      <div class="rx-card">
+        <div class="d-flex gap-2 align-items-center"><span class="med">{{ x.medication }}</span><span class="tag {{ x.state|tone }} ms-auto">{{ x.get_state_display }}</span></div>
+        <div class="dir">{{ x.directions }} · Qty {{ x.quantity }}</div>
+        {% if w.possible_allergy_matches %}<div class="alert-mf danger mb-2"><i class="bi bi-exclamation-octagon-fill"></i><div>Possible allergy match. Override: {{ x.override_reason|default:'none documented' }}</div></div>{% endif %}
+        <div class="meta"><span>Stock {{ w.inventory_available }}</span>{% if x.signed_at %}<span class="stamp"><i class="bi bi-patch-check-fill"></i>Signed by {{ x.signed_by|display_name }}</span>{% endif %}</div>
+        {% if x.state == 'draft' and can_sign %}<form class="acts" method="post" action="{% url 'prescription_sign' x.pk %}" data-confirm="Sign {{ x.medication }}? This records your authorisation with a document hash.">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="btn btn-sm btn-ink"><i class="bi bi-pen"></i>Sign prescription</button></form>{% endif %}
+      </div>
+      {% empty %}<div class="empty">No prescriptions for this visit.</div>{% endfor %}
+    </section>
+  </div>
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Vitals</h2></div>
+      {% if vitals %}<div class="vitals">{% for label, unit, val in vitals %}<div class="vital"><span>{{ label }}</span><b>{{ val }}</b><small>{{ unit }}</small></div>{% endfor %}</div>{% else %}<div class="empty">No vitals recorded.</div>{% endif %}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Lab orders</h2></div>
+      <ul class="plain ruled">{% for l in labs %}<li><div class="d-flex"><b>{{ l.test.name }}</b><span class="tag {{ l.status|tone }} ms-auto">{{ l.get_status_display }}</span></div>{% if l.result %}<div class="small {% if l.abnormal %}text-danger fw-semibold{% endif %}">{{ l.result }} <span class="muted">({{ l.reference_range }})</span></div>{% endif %}</li>{% empty %}<li class="muted small">None ordered.</li>{% endfor %}</ul>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Referrals &amp; admission</h2></div>
+      <ul class="plain ruled">
+        {% for r in referrals %}<li class="d-flex gap-2"><span>To <b>{{ r.destination }}</b></span><span class="tag {{ r.status|tone }} ms-auto">{{ r.get_status_display }}</span></li>{% endfor %}
+        {% for a in admissions %}<li class="d-flex gap-2"><span>Bed <b>{{ a.bed.code }}</b></span><span class="tag {% if a.discharged_at %}teal{% else %}ink{% endif %} ms-auto">{% if a.discharged_at %}Discharged{% else %}Admitted{% endif %}</span></li>{% endfor %}
+        {% if not referrals and not admissions %}<li class="muted small">None.</li>{% endif %}
+      </ul>
+    </section>
+  </div>
+</div>
+{% endblock %}

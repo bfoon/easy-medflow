@@ -1,38 +1,24 @@
+# Local development / demo stack: SQLite, DEBUG on, demo data, live code reload.
+#   docker compose up -d --build
+# Never use this file for real patient data. Production: docker compose -f compose.prod.yml up -d --build
+name: medflow-dev
 services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-medflow}
-      POSTGRES_USER: ${POSTGRES_USER:-medflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-    volumes: [postgres_data:/var/lib/postgresql/data]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      retries: 15
-  redis:
-    image: redis:7-alpine
-    command: ["redis-server","--appendonly","yes"]
-    volumes: [redis_data:/data]
   web:
     build: .
-    env_file: .env
-    depends_on:
-      db: {condition: service_healthy}
-      redis: {condition: service_started}
-    ports: ["127.0.0.1:8000:8000"]
-    volumes: [media_data:/app/media, static_data:/app/staticfiles]
-    restart: unless-stopped
-  worker:
-    build: .
-    command: celery -A config worker -l info
-    env_file: .env
-    depends_on:
-      db: {condition: service_healthy}
-      redis: {condition: service_started}
-    restart: unless-stopped
+    command: ["sh", "/app/dev-start.sh"]
+    environment:
+      DJANGO_DEBUG: "True"
+      USE_SQLITE: "True"
+      SQLITE_PATH: /data/db.sqlite3
+      DJANGO_SECRET_KEY: dev-only-insecure-change-me
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,0.0.0.0
+      DJANGO_SUPERUSER_USERNAME: admin
+      DJANGO_SUPERUSER_EMAIL: admin@example.com
+      DJANGO_SUPERUSER_PASSWORD: medflow-admin-2026
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - .:/app            # edit code on your machine, the server reloads
+      - medflow_dev_data:/data
 volumes:
-  postgres_data:
-  redis_data:
-  media_data:
-  static_data:
+  medflow_dev_data:

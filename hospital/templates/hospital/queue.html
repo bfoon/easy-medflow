@@ -1,1 +1,46 @@
-{% extends 'hospital/base.html' %}{% block heading %}Ticketing & Patient Queue{% endblock %}{% block content %}<div class="card metric p-4"><a href="{% url 'ticket_new' %}" class="btn btn-primary align-self-start mb-3">+ Issue Ticket</a><div class="table-responsive"><table class="table align-middle"><thead><tr><th>Ticket</th><th>Patient</th><th>Department</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead><tbody>{% for t in tickets %}<tr><td><strong>{{t.ticket_number}}</strong></td><td><a href="{% url 'patient_chart' t.patient_id %}">{{t.patient}}</a></td><td>{{t.department}}</td><td>{{t.priority}}</td><td>{{t.status}}</td><td>{% if t.status == 'waiting' %}{% with state='called' %}<form class="d-inline" method="post" action="{% url 'ticket_transition' t.pk state %}">{% csrf_token %}<button class="btn btn-primary btn-sm">Call</button></form>{% endwith %}{% elif t.status == 'called' %}<form class="d-inline" method="post" action="{% url 'ticket_transition' t.pk 'in_service' %}">{% csrf_token %}<button class="btn btn-outline-primary btn-sm">Start</button></form><form class="d-inline" method="post" action="{% url 'ticket_transition' t.pk 'skipped' %}">{% csrf_token %}<button class="btn btn-outline-warning btn-sm">Skip</button></form>{% elif t.status == 'in_service' %}<form method="post" action="{% url 'ticket_transition' t.pk 'completed' %}">{% csrf_token %}<button class="btn btn-success btn-sm">Complete</button></form>{% elif t.status == 'skipped' %}<form method="post" action="{% url 'ticket_transition' t.pk 'waiting' %}">{% csrf_token %}<button class="btn btn-secondary btn-sm">Requeue</button></form>{% endif %}</td></tr>{% empty %}<tr><td colspan="6">No tickets in queue</td></tr>{% endfor %}</tbody></table></div></div>{% endblock %}
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Queue{% endblock %}
+{% block heading %}Queue{% endblock %}
+{% block subheading %}<p class="sub">Drag a ticket to the next column, or use its buttons. Emergency and urgent patients sort to the top.</p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="{% url 'queue_display' %}" target="_blank"><i class="bi bi-tv"></i>Waiting-room screen</a>
+  <a class="btn btn-primary" href="{% url 'ticket_new' %}"><i class="bi bi-ticket-perforated"></i>Issue ticket</a>
+{% endblock %}
+{% block content %}
+<div class="filters" data-queue-baseline="{{ board.0.tickets|length }}">
+  <a class="chip {% if not dept %}on{% endif %}" href="{% url 'queue' %}">All departments</a>
+  {% for d in departments %}<a class="chip {% if dept == d.pk|stringformat:'s' %}on{% endif %}" href="?dept={{ d.pk }}">{{ d.name }}</a>{% endfor %}
+  <span class="ms-auto d-flex align-items-center gap-2">
+    <label class="small muted text-nowrap" for="call-room">Calling to</label>
+    <input id="call-room" class="form-control form-control-sm" style="width:130px" placeholder="e.g. Room 3">
+    <span class="tag teal"><span data-done-count>{{ completed_today }}</span>&nbsp;completed today</span>
+  </span>
+</div>
+<div id="queue-changed" class="alert-mf info mb-3" hidden><i class="bi bi-arrow-repeat"></i><div>New patients have joined the queue. <a href="">Refresh the board</a> to see them.</div></div>
+
+<div class="board" data-board data-transition="{% url 'ticket_transition' 0 '__state__' %}">
+  {% for lane in board %}
+  <section class="lane" data-status="{{ lane.key }}" aria-label="{{ lane.label }}">
+    <div class="lane-head">{{ lane.label }}<span class="count">{{ lane.tickets|length }}</span></div>
+    <div class="lane-body">
+      <div class="empty" {% if lane.tickets %}hidden{% endif %}>{% if lane.key == 'waiting' %}No one waiting.{% else %}Drop tickets here.{% endif %}</div>
+      {% for t in lane.tickets %}
+      <article class="ticket p{{ t.priority }}" draggable="true" data-id="{{ t.pk }}" data-status="{{ t.status }}" data-code="{{ t }}">
+        <div class="top"><span class="code">{{ t }}</span>{% if t.priority == 1 %}<span class="live" title="Emergency"></span>{% endif %}<span class="tri-tag ms-auto">{{ t.get_priority_display }}</span></div>
+        <div class="who-line"><a href="{% url 'patient_chart' t.patient_id %}">{{ t.patient.full_name }}</a>{% if t.patient.age is not None %}<span class="muted"> · {{ t.patient.age }}y</span>{% endif %}</div>
+        <div class="meta">
+          <span><i class="bi bi-building"></i> {{ t.department }}</span>
+          <span class="wait {% if t.wait_minutes > 45 and t.status == 'waiting' %}long{% endif %}"><i class="bi bi-hourglass-split"></i> {{ t.wait_minutes }} min</span>
+          {% if t.counter %}<span><i class="bi bi-door-open"></i> {{ t.counter }}</span>{% endif %}
+          {% if t.encounter_id %}<a href="{% url 'encounter_detail' t.encounter_id %}" class="ms-auto">Visit</a>{% endif %}
+        </div>
+        <div class="acts">
+          {% if t.status == 'waiting' %}<form method="post" action="{% url 'ticket_transition' t.pk 'called' %}">{% csrf_token %}<button class="btn btn-sm btn-primary">Call</button></form>{% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

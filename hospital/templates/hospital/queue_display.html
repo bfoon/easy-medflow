@@ -1,0 +1,74 @@
+{% extends 'hospital/base.html' %}
+{% block title %}Waiting room{% endblock %}
+{% block shell %}
+<div class="tv">
+  <section class="tv-main">
+    <div class="tv-head">
+      <svg width="44" height="44" viewBox="0 0 38 38" aria-hidden="true"><rect width="38" height="38" rx="11" fill="#18405A"/><path d="M5 20h7l2.5-6 4.5 12 3.5-9 2.5 3H33" fill="none" stroke="#3FE0B0" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span><b>MedFlow</b> · Please wait for your number</span>
+      <span class="clock" id="tv-clock">{{ initial.time }}</span>
+    </div>
+    <div class="now" aria-live="assertive">
+      <div class="label">Now serving</div>
+      <div class="code" id="now-code">—</div>
+      <div class="where" id="now-where">Please take a seat. Your number will appear here.</div>
+    </div>
+    <div>
+      <div class="label" style="color:#9FBFCF;font-size:1.2rem">Recently called</div>
+      <div class="tv-called" id="recent"></div>
+    </div>
+  </section>
+  <aside class="tv-side">
+    <h2>Next in line · <span id="waiting-n">{{ initial.waiting }}</span> waiting</h2>
+    <ul id="upcoming"></ul>
+    <p style="color:#6F92A6;font-family:var(--body);margin-top:3vh">Emergency patients are seen first. If you feel worse while waiting, tell a nurse straight away.</p>
+  </aside>
+</div>
+<div class="tv-flash" id="flash"></div>
+<button class="tv-sound" id="sound"><i class="bi bi-volume-mute"></i> Turn on chime</button>
+<a class="tv-exit" href="{% url 'queue' %}">Exit display</a>
+{{ initial|json_script:"tv-initial" }}
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const api = "{% url 'api_queue' %}";
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const PRI = {1:'var(--red)',2:'var(--amber)',3:'var(--teal)',4:'#7C93A2'};
+  let lastKey = null, audio = null, soundOn = false;
+  const soundBtn = document.getElementById('sound');
+  soundBtn.addEventListener('click', () => {
+    soundOn = !soundOn; audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    soundBtn.innerHTML = soundOn ? '<i class="bi bi-volume-up"></i> Chime on' : '<i class="bi bi-volume-mute"></i> Turn on chime';
+    if (soundOn) chime();
+  });
+  function chime() { // two-tone hospital "ding-dong"
+    if (!soundOn || !audio) return;
+    [[659.25, 0], [523.25, .42]].forEach(([f, t]) => {
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = 'sine'; o.frequency.value = f; o.connect(g); g.connect(audio.destination);
+      const s = audio.currentTime + t; g.gain.setValueAtTime(0, s); g.gain.linearRampToValueAtTime(.35, s + .02); g.gain.exponentialRampToValueAtTime(.001, s + 1.1);
+      o.start(s); o.stop(s + 1.2);
+    });
+  }
+  function render(d) {
+    document.getElementById('tv-clock').textContent = d.time;
+    document.getElementById('waiting-n').textContent = d.waiting;
+    const top = d.serving[0], codeEl = document.getElementById('now-code'), whereEl = document.getElementById('now-where');
+    const key = top ? top.id + '|' + top.called_at : null;
+    if (top && key !== lastKey) {
+      codeEl.classList.remove('flip'); void codeEl.offsetWidth;
+      codeEl.innerHTML = [...top.code].map((ch, i) => `<span style="--i:${i}">${esc(ch)}</span>`).join('');
+      codeEl.classList.add('flip');
+      whereEl.innerHTML = `Please go to <b>${esc(top.counter)}</b>`;
+      if (lastKey !== null) { const f = document.getElementById('flash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go'); chime(); }
+    } else if (!top) { codeEl.textContent = '—'; whereEl.textContent = 'Please take a seat. Your number will appear here.'; }
+    lastKey = key;
+    document.getElementById('recent').innerHTML = d.serving.slice(1).map(t => `<div><b>${esc(t.code)}</b><span>${esc(t.counter)}</span></div>`).join('');
+    document.getElementById('upcoming').innerHTML = d.upcoming.map((t, i) => `<li style="animation-delay:${i * 40}ms;--tri:${PRI[t.priority]}"><span class="pri"></span>${esc(t.code)}<small>${esc(t.dept)}</small></li>`).join('') || '<li style="color:#6F92A6">No one waiting</li>';
+  }
+  render(JSON.parse(document.getElementById('tv-initial').textContent));
+  setInterval(() => fetch(api, {credentials: 'same-origin'}).then(r => r.json()).then(render).catch(() => {}), 4000);
+})();
+</script>
+{% endblock %}

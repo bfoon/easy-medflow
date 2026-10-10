@@ -1,1 +1,42 @@
-{% extends 'hospital/base.html' %}{% block heading %}Staff Attendance{% endblock %}{% block content %}<div class="card metric p-4"><p>{% if active %}Clocked in since {{active.clock_in}}{% else %}You are currently clocked out{% endif %}</p><form method="post">{% csrf_token %}<button class="btn btn-primary" name="action" value="{% if active %}out{% else %}in{% endif %}">{% if active %}Clock Out{% else %}Clock In{% endif %}</button></form><h2 class="h5 mt-4">Your recent attendance</h2>{% for a in recent %}<div class="border-bottom py-2">{{a.clock_in}} — {{a.clock_out|default:'In progress'}}</div>{% endfor %}</div>{% endblock %}
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Attendance{% endblock %}
+{% block heading %}Attendance{% endblock %}
+{% block subheading %}<p class="sub">Clock in at the start of your shift and out at the end.</p>{% endblock %}
+{% block content %}
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel">
+      <div class="clock-face">
+        <svg class="shift-ring" viewBox="0 0 160 160" {% if active %}data-shift-since="{{ active.clock_in|date:'c' }}"{% endif %} role="img" aria-label="Shift progress against an 8-hour shift">
+          <circle class="track-c" cx="80" cy="80" r="64"/>
+          <circle class="prog" cx="80" cy="80" r="64" style="stroke-dasharray:402;stroke-dashoffset:402"/>
+          <text x="80" y="78" text-anchor="middle" font-size="22" font-weight="600" data-shift-label>{% if active %}…{% else %}Off{% endif %}</text>
+          <text x="80" y="100" text-anchor="middle" font-size="11" fill="#5A6F7D" style="font-family:var(--body)">{% if active %}on shift{% else %}duty{% endif %}</text>
+        </svg>
+        <div class="flex-fill">
+          <div class="clock-time" data-clock></div>
+          <p class="muted mt-2">{% if active %}Clocked in at <b>{{ active.clock_in|date:'H:i' }}</b> on {{ active.clock_in|date:'l j F' }}.{% else %}You are clocked out.{% endif %}</p>
+          <form method="post">{% csrf_token %}
+            {% if not active %}<input class="form-control mb-2" name="note" maxlength="250" placeholder="Note (optional), e.g. covering night shift">{% endif %}
+            <button class="btn {% if active %}btn-ink{% else %}btn-primary{% endif %} punch" name="action" value="{% if active %}out{% else %}in{% endif %}"><i class="bi {% if active %}bi-box-arrow-right{% else %}bi-box-arrow-in-right{% endif %}"></i>{% if active %}Clock out{% else %}Clock in{% endif %}</button>
+          </form>
+        </div>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Your recent shifts</h2><span class="hint">{{ week_hours }} hours in the last 7 days</span></div>
+      <div class="scroll-x"><table class="mini-table"><thead><tr><th>Date</th><th>In</th><th>Out</th><th>Hours</th><th>Note</th></tr></thead><tbody>
+      {% for a in recent %}<tr><td>{{ a.clock_in|date:'D j M' }}</td><td>{{ a.clock_in|date:'H:i' }}</td><td>{% if a.clock_out %}{{ a.clock_out|date:'H:i' }}{% else %}<span class="tag teal">On shift</span>{% endif %}</td><td>{{ a.hours }}</td><td class="small muted">{{ a.note }}</td></tr>
+      {% empty %}<tr><td colspan="5" class="empty">No shifts recorded yet.</td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+  </div>
+  <section class="panel align-self-start">
+    <div class="panel-head"><h2>On duty now</h2><span class="hint">{{ on_duty|length }} staff</span></div>
+    <ul class="plain ruled duty">
+      {% for a in on_duty %}<li><span class="avatar">{{ a.staff|user_initials }}</span><span><b>{{ a.staff|display_name }}</b><br><span class="small muted text-capitalize">{{ a.staff.hospital_staff.role|default:'staff' }} · since {{ a.clock_in|date:'H:i' }}</span></span><span class="on" title="On duty"></span></li>
+      {% empty %}<li class="muted small">No one is clocked in.</li>{% endfor %}
+    </ul>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% load medflow %}{% with t=field|field_type %}
+{% if t == 'checkboxinput' %}
+<div class="field check {{ span }}">{{ field }}<div><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{% for e in field.errors %}<div class="field-error">{{ e }}</div>{% endfor %}</div></div>
+{% elif t == 'hiddeninput' %}{{ field }}
+{% else %}
+<div class="field {% if t == 'textarea' or span %}span-2{% endif %}">
+  <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span>{% endif %}</label>
+  {{ field }}
+  {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+  {% for e in field.errors %}<div class="field-error"><i class="bi bi-exclamation-circle me-1"></i>{{ e }}</div>{% endfor %}
+</div>
+{% endif %}{% endwith %}

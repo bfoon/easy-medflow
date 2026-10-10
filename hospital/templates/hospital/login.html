@@ -1,1 +1,34 @@
-<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in | MedFlow</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head><body class="bg-light"><div class="container" style="max-width:450px;margin-top:10vh"><div class="card shadow border-0 p-4"><h1 class="h3 mb-3">✚ MedFlow HMS</h1><p>Authorized hospital staff only.</p><form method="post">{% csrf_token %}{{form.as_p}}<button class="btn btn-primary w-100">Sign in</button></form></div></div></body></html>
+{% extends 'hospital/base.html' %}
+{% block title %}Sign in{% endblock %}
+{% block shell %}
+<div class="login">
+  <section class="login-art">
+    <a class="brand" href="#">
+      <svg width="40" height="40" viewBox="0 0 38 38" aria-hidden="true"><rect width="38" height="38" rx="11" fill="#18405A"/><path d="M5 20h7l2.5-6 4.5 12 3.5-9 2.5 3H33" fill="none" stroke="#3FE0B0" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span><b>MedFlow</b><small>Hospital management</small></span>
+    </a>
+    <canvas class="ecg" data-ecg data-bpm="66" data-sweep="6.5" aria-hidden="true"></canvas>
+    <h1>Every patient, from the front desk to discharge.</h1>
+    <p>Registration, triage, consultation, laboratory, pharmacy, beds and referrals in one accountable record, with every action signed and audited.</p>
+  </section>
+  <section class="login-form">
+    <form method="post" novalidate>
+      {% csrf_token %}
+      <h2>Sign in</h2>
+      <p class="muted mb-4">For authorised hospital staff. Accounts are issued by your administrator.</p>
+      {% if form.non_field_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>Your username or password did not match. Check both and try again.</div></div>{% endif %}
+      <div class="field">
+        <label class="form-label" for="id_username">Username</label>
+        <input class="form-control form-control-lg" id="id_username" name="username" autocomplete="username" autofocus required value="{{ form.username.value|default:'' }}">
+      </div>
+      <div class="field">
+        <label class="form-label" for="id_password">Password</label>
+        <input class="form-control form-control-lg" id="id_password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button class="btn btn-primary w-100 py-3 mt-2">Sign in</button>
+      <p class="form-text mt-4 mb-0"><i class="bi bi-shield-lock me-1"></i>Access to patient records is logged.</p>
+    </form>
+  </section>
+</div>
+{% endblock %}

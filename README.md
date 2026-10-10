@@ -2,19 +2,77 @@
 
 An extendable **hospital-management MVP / developer starter**, not a certified electronic health record, medical device, or production-ready clinical decision support system. Treat all data as sensitive; do not process real patient information until a qualified security, privacy, and clinical team signs off.
 
-## Start
+## Quick start with Docker (demo / development)
+
+```bash
+docker compose up -d --build
+```
+
+Open http://localhost:8000 and sign in as `admin` / `medflow-admin-2026`. On first start the container migrates,
+loads fictional demo data and creates the admin account; restarts keep your data and skip both steps. Your code is
+mounted into the container, so edits reload the server automatically.
+
+| Task | Command |
+| --- | --- |
+| Run in the foreground (see logs live) | `docker compose up --build` |
+| Follow logs | `docker compose logs -f web` |
+| Run tests | `docker compose exec web python manage.py test hospital` |
+| Django shell | `docker compose exec web python manage.py shell` |
+| Stop | `docker compose down` |
+| Reset to fresh demo data | `docker compose down -v` then `up` again |
+
+Change the admin credentials in `compose.yml` before the first start if you like. This stack uses SQLite and
+`DEBUG=True`; it is for demos and development only. For real deployments use the PostgreSQL stack below.
+
+## Quick start (local, no Docker)
+
+```bash
+pip install -r requirements.txt
+export USE_SQLITE=True DJANGO_DEBUG=True
+python manage.py migrate
+python manage.py seed_demo            # FICTIONAL demo data; refuses to run when DEBUG=False
+python manage.py createsuperuser
+python manage.py runserver
+```
+
+Open http://localhost:8000. Demo staff accounts (password `medflow-demo-2026`): `dr.jallow`, `dr.ceesay`,
+`nurse.bah`, `reception.sowe`, `lab.touray`, `pharm.njie`, `manager.camara`. Change or delete them before any real use.
+
+## Docker / production
 
 ```bash
 cp .env.example .env
 # Set strong DJANGO_SECRET_KEY and POSTGRES_PASSWORD in .env.
-docker compose up -d --build
-# Generate and run schema migrations on first setup:
-docker compose exec web python manage.py createsuperuser
+docker compose -f compose.prod.yml up -d --build
+docker compose -f compose.prod.yml exec web python manage.py createsuperuser
 ```
 
-Open http://localhost:8000/accounts/login/ . The first boot automatically runs schema generation/migration, static collection and seed setup. Map the web port behind an HTTPS reverse proxy before deploying beyond localhost. Use `python manage.py makemigrations hospital` only while developing the schema; the supplied initial migration is included.
+Boot runs committed migrations, `collectstatic` and the idempotent `bootstrap_hospital` seed (departments, lab
+catalog, 4 wards / 26 beds, medication catalog; no patients). All CSS, icons and fonts are self-hosted under
+`hospital/static/hospital/vendor/`, so the app works on an intranet with no internet access. Put it behind HTTPS and
+set `SECURE_SSL_REDIRECT=True` and `SECURE_HSTS_SECONDS` when the deployment is permanently on HTTPS.
 
-After creating staff users, add a **Staff profile** in `/admin/`, select a role, and optionally a department. Superusers may access everything; other accounts require an active StaffProfile. Clinical modules: doctor/nurse; pharmacy: pharmacy; laboratory: lab/doctor; front desk: reception/nurse. Administrative access to the Django admin is separately controlled by Django `is_staff` and granular model permissions: don't grant broad admin access to clinical workers.
+After creating staff users, add a **Staff profile** in `/admin/` with a role (doctor, nurse, reception, lab,
+pharmacy, finance, management, admin). Superusers may access everything; other accounts need an active profile.
+
+## Interface
+
+- **Overview** — a live “hospital pulse” ECG trace whose rate rises with waiting-room load (calm / busy / surging),
+  a six-stage patient-flow strip, weekly arrivals, occupancy, department load, urgent patients, low stock, audit feed.
+  Refreshes every 15 s via `/api/pulse/`.
+- **Queue** — drag-and-drop board (waiting → called → in consultation), triage colour stripes, live wait times,
+  “calling to Room N”. Invalid transitions are rejected server-side.
+- **Waiting-room display** (`/queue/display/`) — full-screen TV board with flip animation and optional chime.
+  Shows ticket codes only (e.g. `EM004`), never patient names.
+- **Patient chart** — wristband header, persistent allergy strip, merged timeline, latest vitals, forms and e-sign.
+- **Laboratory** — collect → process → result → verify pipeline. **Pharmacy** — draft → signed → dispensed lanes,
+  stock meters, live allergy/stock check while prescribing. **Beds** — ward floor map with discharge → cleaning → ready.
+- **Referrals** — progress tracker with enforced transitions. **Attendance** — clock in/out with shift ring.
+- **Forms & approvals** — visual form builder with live preview and drag-to-reorder; workflow builder showing the
+  approval chain; signature ledger.
+- **Search** — press `Ctrl K` (or `/`) anywhere to find a patient by name, MRN or phone, or jump to a page.
+
+Animations honour the operating system “reduce motion” setting.
 
 ## Modules included
 
@@ -52,12 +110,12 @@ Workflow `steps` JSON:
 
 ### Security note
 
-For HTTPS deployments set `SECURE_SSL_REDIRECT=True`, correct `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, and reverse-proxy `SECURE_PROXY_SSL_HEADER` only for a trusted proxy. Bootstrap uses a local binding (`127.0.0.1:8000`) deliberately. The Bootstrap stylesheet is a third-party CDN dependency; self-host it before production to control supply chain and availability.
+For HTTPS deployments set `SECURE_SSL_REDIRECT=True`, correct `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, and reverse-proxy `SECURE_PROXY_SSL_HEADER` only for a trusted proxy. Bootstrap uses a local binding (`127.0.0.1:8000`) deliberately. Bootstrap, Bootstrap Icons and the fonts are vendored locally (licences included alongside).
 
 ## Development utilities
 
 ```bash
-docker compose logs -f web
-docker compose exec web python manage.py check
-docker compose exec web python manage.py test
+USE_SQLITE=True python manage.py test hospital   # 13 workflow tests
+docker compose -f compose.prod.yml logs -f web
+docker compose -f compose.prod.yml exec web python manage.py check --deploy
 ```

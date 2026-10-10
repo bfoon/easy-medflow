@@ -1,1 +1,40 @@
-{% extends 'hospital/base.html' %}{% block heading %}Pharmacy & Clinical Prescriptions{% endblock %}{% block content %}<div class="alert alert-warning">Stock and allergy warnings are support tools, not evidence a medicine is safe. Full drug interaction, dosing, pregnancy and renal safety checking require separately validated clinical knowledge bases.</div><a class="btn btn-primary mb-3" href="{% url 'prescription_new' %}">+ Write Prescription</a><div class="row g-3"><div class="col-xl-8"><div class="card metric p-4"><h2 class="h5">Recent Prescriptions</h2><div class="table-responsive"><table class="table"><thead><tr><th>Patient</th><th>Medication</th><th>Directions / Qty</th><th>Status</th><th>Action</th></tr></thead><tbody>{% for p in prescriptions %}<tr><td><a href="{% url 'patient_chart' p.encounter.patient_id %}">{{p.encounter.patient}}</a></td><td>{{p.medication}}</td><td>{{p.directions}} / {{p.quantity}}</td><td>{{p.state}}</td><td>{% if p.state == 'draft' %}<form method="post" action="{% url 'prescription_sign' p.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">Clinician sign</button></form>{% elif p.state == 'signed' %}<form method="post" action="{% url 'prescription_dispense' p.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-success">Dispense</button></form>{% endif %}</td></tr>{% empty %}<tr><td colspan="5">No prescriptions</td></tr>{% endfor %}</tbody></table></div></div></div><div class="col-xl-4"><div class="card metric p-4"><h2 class="h5">Unexpired Stock (Units)</h2>{% for m,n in medications %}<div class="d-flex justify-content-between border-bottom py-2"><span>{{m}}</span><strong class="{% if n == 0 %}text-danger{% endif %}">{{n}}</strong></div>{% empty %}No medications configured{% endfor %}</div></div></div>{% endblock %}
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Pharmacy{% endblock %}
+{% block heading %}Pharmacy{% endblock %}
+{% block subheading %}<p class="sub">Prescriptions flow from draft to signed to dispensed. Stock is drawn from the earliest-expiring batch.</p>{% endblock %}
+{% block actions %}<a class="btn btn-primary" href="{% url 'prescription_new' %}"><i class="bi bi-capsule"></i>Write prescription</a>{% endblock %}
+{% block content %}
+<div class="alert-mf warn mb-4"><i class="bi bi-exclamation-triangle-fill"></i><div>Allergy checks match names only. Drug interactions, dosing, pregnancy and renal safety are <b>not</b> checked. A pharmacist must review every prescription.</div></div>
+<div class="grid g-main">
+  <div class="board" style="grid-template-columns:repeat(3,minmax(240px,1fr))">
+    {% for key, label, items in lanes %}
+    <section class="lane" style="min-height:360px">
+      <div class="lane-head">{{ label }}<span class="count">{{ items|length }}</span></div>
+      {% for x in items %}
+      <article class="rx-card">
+        <div class="med">{{ x.medication }}</div>
+        <div class="dir">{{ x.directions }}</div>
+        <div class="meta"><span>Qty {{ x.quantity }}</span><a href="{% url 'patient_chart' x.encounter.patient_id %}">{{ x.encounter.patient.full_name }}</a></div>
+        {% if x.override_reason %}<div class="small text-danger mt-1"><i class="bi bi-exclamation-octagon"></i> Override: {{ x.override_reason|truncatechars:60 }}</div>{% endif %}
+        {% if x.signed_at %}<div class="mt-2"><span class="stamp"><i class="bi bi-patch-check-fill"></i>{{ x.signed_by|display_name }} · {{ x.signed_at|date:'j M H:i' }}</span></div>{% endif %}
+        <div class="acts">
+          {% if x.state == 'draft' %}{% if can_sign %}<form method="post" action="{% url 'prescription_sign' x.pk %}" data-confirm="Sign {{ x.medication }} for {{ x.encounter.patient.full_name }}?">{% csrf_token %}<button class="btn btn-sm btn-ink"><i class="bi bi-pen"></i>Sign</button></form>{% else %}<span class="small muted">Awaiting a prescriber</span>{% endif %}
+          {% elif x.state == 'signed' %}{% if can_dispense %}<form method="post" action="{% url 'prescription_dispense' x.pk %}" data-confirm="Dispense {{ x.quantity }} × {{ x.medication }}?">{% csrf_token %}<button class="btn btn-sm btn-primary"><i class="bi bi-bag-check"></i>Dispense</button></form>{% else %}<span class="small muted">Awaiting pharmacy</span>{% endif %}{% endif %}
+        </div>
+      </article>
+      {% empty %}<div class="empty">Nothing here.</div>{% endfor %}
+    </section>
+    {% endfor %}
+  </div>
+  <section class="panel align-self-start">
+    <div class="panel-head"><h2>Stock on hand</h2><input class="form-control form-control-sm ms-auto" style="max-width:150px" placeholder="Filter" data-filter=".stock-row" aria-label="Filter stock"></div>
+    {% for s in stock %}
+    <div class="stock-row">
+      <div><b>{{ s.m.name }}</b><div class="small muted">{{ s.m.strength }} {{ s.m.form }}</div></div>
+      <div class="meter {% if s.level == 'out' %}red{% elif s.level == 'low' %}amber{% endif %}" title="Reorder at {{ s.m.reorder_level }}"><i style="--w:{{ s.pct }}%"></i></div>
+      <div class="qty">{{ s.qty }}</div>
+    </div>
+    {% empty %}<div class="empty">Add medications and stock batches in Configuration.</div>{% endfor %}
+  </section>
+</div>
+{% endblock %}

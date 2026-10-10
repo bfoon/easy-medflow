@@ -1,0 +1,48 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Laboratory{% endblock %}
+{% block heading %}Laboratory{% endblock %}
+{% block subheading %}<p class="sub">Orders move left to right: collect the specimen, process it, enter the result, then verify before release.</p>{% endblock %}
+{% block actions %}<a class="btn btn-primary" href="{% url 'lab_new' %}"><i class="bi bi-plus-lg"></i>Order test</a>{% endblock %}
+{% block content %}
+<div class="board mb-4">
+  {% for lane in board %}
+  <section class="lane labs" style="cursor:default">
+    <div class="lane-head">{{ lane.label }}<span class="count">{{ lane.orders|length }}</span></div>
+    {% for o in lane.orders %}
+    <article class="lab-card">
+      <div class="test"><span class="tube" style="--fill:{% if o.status == 'ordered' %}0%{% elif o.status == 'collected' %}45%{% elif o.status == 'processing' %}70%{% else %}100%{% endif %};{% if o.test.sample_type == 'Urine' %}--tube:var(--amber){% elif o.test.sample_type == 'Stool' %}--tube:#8A6A3D{% endif %}"></span>{{ o.test.name }}</div>
+      <div class="sub"><a href="{% url 'patient_chart' o.encounter.patient_id %}">{{ o.encounter.patient.full_name }}</a> · {{ o.test.sample_type|default:'Specimen' }} · {{ o.created_at|ago }} ago</div>
+      {% if o.specimen_id %}<div class="sub">Specimen {{ o.specimen_id }}</div>{% endif %}
+      {% if o.status == 'resulted' %}<div class="result {% if o.abnormal %}abn{% endif %}">{% if o.abnormal %}<b>Abnormal · </b>{% endif %}{{ o.result|linebreaksbr }}{% if o.reference_range %}<div class="small muted">Ref {{ o.reference_range }}</div>{% endif %}</div>{% endif %}
+      <div class="acts">
+        {% if o.status == 'ordered' %}
+          <form method="post" action="{% url 'lab_update' o.pk 'collect' %}" class="d-flex gap-1 w-100">{% csrf_token %}<input class="form-control form-control-sm" name="specimen_id" placeholder="Specimen ID (optional)"><button class="btn btn-sm btn-ink text-nowrap">Collected</button></form>
+        {% elif o.status == 'collected' %}
+          <form method="post" action="{% url 'lab_update' o.pk 'process' %}">{% csrf_token %}<button class="btn btn-sm btn-ink">Start processing</button></form>
+        {% elif o.status == 'processing' %}
+          <details class="w-100"><summary>Enter result</summary>
+            <form method="post" action="{% url 'lab_update' o.pk 'result' %}">{% csrf_token %}
+              <textarea class="form-control form-control-sm mb-2" name="result" rows="2" placeholder="Result with units" required></textarea>
+              <input class="form-control form-control-sm mb-2" name="reference_range" placeholder="Reference range">
+              <label class="small d-flex gap-2 align-items-center mb-2"><input type="checkbox" class="form-check-input m-0" name="abnormal"> Flag as abnormal</label>
+              <button class="btn btn-sm btn-primary">Submit result</button>
+            </form>
+          </details>
+        {% elif o.status == 'resulted' %}
+          <form method="post" action="{% url 'lab_update' o.pk 'verify' %}" data-confirm="Verify and release this result to the clinician?">{% csrf_token %}<button class="btn btn-sm btn-primary"><i class="bi bi-patch-check"></i>Verify &amp; release</button></form>
+        {% endif %}
+        <form method="post" action="{% url 'lab_update' o.pk 'cancel' %}" data-confirm="Cancel this {{ o.test.name }} order?" class="ms-auto">{% csrf_token %}<button class="btn btn-sm btn-ghost" title="Cancel order" aria-label="Cancel order"><i class="bi bi-x-lg"></i></button></form>
+      </div>
+    </article>
+    {% empty %}<div class="empty">Nothing here.</div>{% endfor %}
+  </section>
+  {% endfor %}
+</div>
+<section class="panel">
+  <div class="panel-head"><h2>Recently released</h2><span class="hint">Verified results</span></div>
+  <div class="scroll-x"><table class="mini-table"><thead><tr><th>Test</th><th>Patient</th><th>Result</th><th>Reference</th><th>Verified</th></tr></thead><tbody>
+  {% for o in done %}<tr><td><b>{{ o.test.name }}</b></td><td><a href="{% url 'patient_chart' o.encounter.patient_id %}">{{ o.encounter.patient.full_name }}</a></td><td>{% if o.abnormal %}<span class="tag red me-1">Abnormal</span>{% endif %}{{ o.result|truncatechars:80 }}</td><td class="small muted">{{ o.reference_range|default:'—' }}</td><td class="small muted">{{ o.verified_at|date:'j M H:i' }}</td></tr>
+  {% empty %}<tr><td colspan="5" class="empty">No verified results yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

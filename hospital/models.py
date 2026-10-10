@@ -38,6 +38,15 @@ class Patient(Tracked):
     def save(self,*a,**kw):
         if not self.mrn: self.mrn=f'MF-{uuid.uuid4().hex[:10].upper()}'
         super().save(*a,**kw)
+    @property
+    def full_name(self):return f'{self.first_name} {self.last_name}'
+    @property
+    def initials(self):return (self.first_name[:1]+self.last_name[:1]).upper()
+    @property
+    def age(self):
+        if not self.dob:return None
+        t=timezone.localdate()
+        return t.year-self.dob.year-((t.month,t.day)<(self.dob.month,self.dob.day))
     def __str__(self):return f'{self.first_name} {self.last_name} ({self.mrn})'
 
 class Allergy(Tracked):
@@ -76,18 +85,32 @@ class Encounter(Tracked):
 class QueueTicket(Tracked):
     STATES=[(x,x.title()) for x in ['waiting','called','in_service','completed','skipped','cancelled']]
     patient=models.ForeignKey(Patient,on_delete=models.PROTECT,related_name='tickets')
-    encounter=models.ForeignKey(Encounter,on_delete=models.PROTECT,related_name='tickets')
+    encounter=models.ForeignKey(Encounter,on_delete=models.PROTECT,related_name='tickets',null=True,blank=True,help_text='Leave blank to open a new visit automatically')
     department=models.ForeignKey(Department,on_delete=models.PROTECT)
+    counter=models.CharField(max_length=40,blank=True,help_text='Room or desk shown on the waiting-room display, e.g. Room 3')
     ticket_number=models.CharField(max_length=30,unique=True,editable=False)
-    priority=models.PositiveSmallIntegerField(default=3,help_text='1 urgent, 3 normal; requires staff clinical triage')
+    PRIORITY=[(1,'1 · Emergency'),(2,'2 · Urgent'),(3,'3 · Standard'),(4,'4 · Non-urgent')]
+    priority=models.PositiveSmallIntegerField(default=3,choices=PRIORITY,help_text='Clinical triage category; must be assessed by trained staff')
     status=models.CharField(max_length=20,choices=STATES,default='waiting')
     called_at=models.DateTimeField(null=True,blank=True)
+    started_at=models.DateTimeField(null=True,blank=True)
+    completed_at=models.DateTimeField(null=True,blank=True)
+    display_code=models.CharField(max_length=12,blank=True,editable=False,help_text='Short code announced in the waiting room')
     def save(self,*a,**kw):
         if not self.ticket_number:self.ticket_number=f'Q-{timezone.now():%y%m%d}-{uuid.uuid4().hex[:6].upper()}'
+        if not self.display_code:
+            words=self.department.name.split()
+            prefix=(''.join(w[0] for w in words[:2]) if len(words)>1 else words[0][:2]).upper()
+            n=QueueTicket.objects.filter(department=self.department,created_at__date=timezone.localdate()).count()+1
+            self.display_code=f'{prefix}{n:03d}'
         super().save(*a,**kw)
     def clean(self):
         if self.encounter_id and self.encounter.patient_id!=self.patient_id:raise ValidationError('Ticket patient must match encounter patient')
-    def __str__(self):return self.ticket_number
+    @property
+    def wait_minutes(self):
+        end=self.called_at or timezone.now()
+        return int((end-self.created_at).total_seconds()//60)
+    def __str__(self):return self.display_code or self.ticket_number
 
 class Attendance(Tracked):
     staff=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
@@ -112,6 +135,8 @@ class LabOrder(Tracked):
     specimen_id=models.CharField(max_length=80,blank=True)
     result=models.TextField(blank=True)
     reference_range=models.CharField(max_length=100,blank=True)
+    abnormal=models.BooleanField(default=False)
+    resulted_at=models.DateTimeField(null=True,blank=True)
     verified_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True)
     verified_at=models.DateTimeField(null=True,blank=True)
     def __str__(self):return f'{self.test} / {self.encounter.patient.mrn}'
@@ -121,6 +146,7 @@ class Medication(Tracked):
     generic_name=models.CharField(max_length=180,blank=True)
     form=models.CharField(max_length=100,blank=True)
     strength=models.CharField(max_length=100,blank=True)
+    reorder_level=models.PositiveIntegerField(default=50)
     active=models.BooleanField(default=True)
     def __str__(self):return f'{self.name} {self.strength}'
 
@@ -159,6 +185,7 @@ class Ward(Tracked):
 class Bed(Tracked):
     ward=models.ForeignKey(Ward,on_delete=models.PROTECT)
     code=models.CharField(max_length=30,unique=True)
+    kind=models.CharField(max_length=20,choices=[('general','General'),('icu','ICU'),('maternity','Maternity'),('pediatric','Pediatric'),('isolation','Isolation')],default='general')
     state=models.CharField(max_length=20,choices=[('available','Available'),('occupied','Occupied'),('cleaning','Cleaning'),('maintenance','Maintenance')],default='available')
     def __str__(self):return f'{self.ward} / {self.code}'
 

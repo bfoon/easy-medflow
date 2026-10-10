@@ -1,1 +1,39 @@
-{% extends 'hospital/base.html' %}{% block heading %}Bed Board & Admissions{% endblock %}{% block content %}<a class="btn btn-primary mb-3" href="{% url 'admission_new' %}">+ Admit Patient</a><div class="row g-3 mb-4">{% for b in beds %}<div class="col-6 col-md-3 col-xl-2"><div class="card metric p-3"><b>{{b.code}}</b><small>{{b.ward}}</small><span class="badge {% if b.state == 'available' %}bg-success{% elif b.state == 'occupied' %}bg-danger{% else %}bg-warning text-dark{% endif %}">{{b.state}}</span></div></div>{% empty %}<p>Configure wards and beds in Administration.</p>{% endfor %}</div><div class="card metric p-4"><h2 class="h5">Active Admissions</h2>{% for a in admissions %}<div class="d-flex justify-content-between align-items-center border-bottom py-2"><div>{{a.encounter.patient}} · {{a.bed}} · {{a.admitted_at}}</div><form method="post" action="{% url 'admission_discharge' a.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">Discharge to cleaning</button></form></div>{% empty %}<p>No active admissions</p>{% endfor %}</div>{% endblock %}
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Beds & wards{% endblock %}
+{% block heading %}Beds &amp; wards{% endblock %}
+{% block subheading %}<p class="sub">After discharge a bed goes to cleaning. Mark it ready once it has been turned over.</p>{% endblock %}
+{% block actions %}<a class="btn btn-primary" href="{% url 'admission_new' %}"><i class="bi bi-hospital"></i>Admit patient</a>{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap align-items-center gap-3 mb-4">
+  <div class="legend">
+    <span><i style="background:#fff;border-color:#9FD3C6"></i>Available · {{ counts.available|default:0 }}</span>
+    <span><i style="background:var(--ink);border-color:var(--ink)"></i>Occupied · {{ counts.occupied|default:0 }}</span>
+    <span><i style="background:var(--amber-wash);border-color:var(--amber)"></i>Cleaning · {{ counts.cleaning|default:0 }}</span>
+    <span><i style="background:repeating-linear-gradient(135deg,#fff 0 3px,#ddd 3px 6px)"></i>Maintenance · {{ counts.maintenance|default:0 }}</span>
+  </div>
+</div>
+{% for w in wards %}
+<section class="ward">
+  <div class="ward-head"><h2>{{ w.ward.name }}</h2><span class="tag {% if w.free == 0 %}red{% elif w.free <= 2 %}amber{% else %}teal{% endif %}">{{ w.free }} of {{ w.total }} free</span></div>
+  <div class="ward-floor">
+    {% for b in w.beds %}
+    <div class="bed {{ b.state }}">
+      <svg class="cot" width="30" height="20" viewBox="0 0 30 20" aria-hidden="true"><path d="M2 3v15M28 10v8M2 14h26M2 10h26" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><rect x="5" y="5" width="7" height="5" rx="2" fill="currentColor" opacity=".5"/></svg>
+      <span class="code">{{ b.code }}</span>
+      <span class="kind">{{ b.get_kind_display }}</span>
+      {% if b.admission %}
+        <div class="pt"><span class="avatar {{ b.admission.encounter.patient.sex }}">{{ b.admission.encounter.patient.initials }}</span><span><a href="{% url 'patient_chart' b.admission.encounter.patient_id %}">{{ b.admission.encounter.patient.full_name }}</a><br><span style="font-size:.74rem;opacity:.75">{{ b.admission.admitted_at|ago }} · since {{ b.admission.admitted_at|date:'j M' }}</span></span></div>
+        <form method="post" action="{% url 'admission_discharge' b.admission.pk %}" data-confirm="Discharge {{ b.admission.encounter.patient.full_name }} from {{ b.code }}?">{% csrf_token %}<button class="btn btn-sm btn-ghost">Discharge</button></form>
+      {% else %}
+        <span class="state"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:currentColor;display:inline-block"></span>{{ b.get_state_display }}</span>
+        {% if b.state == 'cleaning' or b.state == 'maintenance' %}<form method="post" action="{% url 'bed_ready' b.pk %}">{% csrf_token %}<button class="btn btn-sm btn-ghost"><i class="bi bi-stars"></i>Mark ready</button></form>
+        {% elif b.state == 'available' %}<a class="btn btn-sm btn-ghost mt-2" href="{% url 'admission_new' %}?bed={{ b.pk }}">Assign</a>{% endif %}
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% empty %}
+<div class="panel empty"><i class="bi bi-hospital"></i>No wards configured. Add wards and beds in Configuration, or run <code>python manage.py bootstrap_hospital</code>.</div>
+{% endfor %}
+{% endblock %}

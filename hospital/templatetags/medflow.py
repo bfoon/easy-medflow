@@ -1,0 +1,68 @@
+from django import template
+from django.utils import timezone
+
+register = template.Library()
+
+
+@register.simple_tag(takes_context=True)
+def nav_active(context, *prefixes):
+    """'active' when the current path is under any given prefix ('/' matches only the dashboard)."""
+    path = context['request'].path
+    for p in prefixes:
+        if (p == '/' and path == '/') or (p != '/' and path.startswith(p)):
+            return 'active'
+    return ''
+
+
+@register.filter
+def user_initials(user):
+    name = (user.get_full_name() or user.get_username() or '?').split()
+    return ''.join(n[0] for n in name[:2]).upper()
+
+
+@register.filter
+def display_name(user):
+    return user.get_full_name() or user.get_username() if user else 'System'
+
+
+@register.filter
+def ago(value):
+    """Compact relative time: 'now', '4m', '2h', '3d'."""
+    if not value:
+        return ''
+    s = int((timezone.now() - value).total_seconds())
+    if s < 60:
+        return 'now'
+    if s < 3600:
+        return f'{s // 60}m'
+    if s < 86400:
+        return f'{s // 3600}h'
+    return f'{s // 86400}d'
+
+
+@register.filter
+def get_item(d, key):
+    return d.get(key) if hasattr(d, 'get') else None
+
+
+@register.filter
+def field_type(bound_field):
+    return bound_field.field.widget.__class__.__name__.lower()
+
+
+STATUS_TONE = {
+    'waiting': 'amber', 'called': 'indigo', 'in_service': 'teal', 'completed': 'teal', 'skipped': '', 'cancelled': '',
+    'open': 'teal', 'draft': 'amber', 'signed': 'indigo', 'dispensed': 'teal',
+    'ordered': 'amber', 'collected': 'indigo', 'processing': 'indigo', 'resulted': 'plum', 'verified': 'teal',
+    'sent': 'indigo', 'accepted': 'teal', 'declined': 'red', 'transferred': 'plum',
+    'active': 'red', 'inactive': '', 'resolved': 'teal', 'history': '',
+    'submitted': 'amber', 'approved': 'teal', 'rejected': 'red',
+    'available': 'teal', 'occupied': 'ink', 'cleaning': 'amber', 'maintenance': '',
+    'emergency': 'red', 'urgent': 'amber', 'routine': 'teal',
+    'severe': 'red', 'moderate': 'amber', 'mild': '', 'unknown': '',
+}
+
+
+@register.filter
+def tone(status):
+    return STATUS_TONE.get(str(status), '')

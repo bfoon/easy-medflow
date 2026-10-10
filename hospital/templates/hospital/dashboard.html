@@ -1,1 +1,118 @@
-{% extends 'hospital/base.html' %}{% block heading %}Operations Dashboard{% endblock %}{% block content %}<div class="row g-3"><div class="col-md-4"><div class="card metric p-4"><div class="text-secondary">Registered Patients</div><div class="display-5 fw-bold">{{patients}}</div><a href="{% url 'patients' %}">Patient charts →</a></div></div><div class="col-md-4"><div class="card metric p-4"><div class="text-secondary">Waiting Tickets</div><div class="display-5 fw-bold">{{waiting}}</div><a href="{% url 'queue' %}">Manage queue →</a></div></div><div class="col-md-4"><div class="card metric p-4"><div class="text-secondary">Available Beds</div><div class="display-5 fw-bold">{{beds_free}}</div><a href="{% url 'beds' %}">Bed board →</a></div></div><div class="col-md-4"><div class="card metric p-4"><div class="text-secondary">Open Encounters</div><div class="display-5 fw-bold">{{open_encounters}}</div></div></div><div class="col-md-4"><div class="card metric p-4"><div class="text-secondary">Active Referrals</div><div class="display-5 fw-bold">{{referrals_open}}</div></div></div><div class="col-md-4"><div class="card metric p-4"><div class="text-secondary">Signed Rx Awaiting Dispense</div><div class="display-5 fw-bold">{{prescriptions_pending}}</div></div></div></div><div class="card metric mt-4 p-4"><h2 class="h5">Start a workflow</h2><div class="d-flex flex-wrap gap-2"><a class="btn btn-primary" href="{% url 'patient_new' %}">Register Patient</a><a class="btn btn-outline-primary" href="{% url 'encounter_new' %}">New Encounter</a><a class="btn btn-outline-primary" href="{% url 'ticket_new' %}">Issue Ticket</a><a class="btn btn-outline-primary" href="{% url 'referral_new' %}">Create Referral</a></div></div>{% endblock %}
+{% extends 'hospital/base.html' %}{% load medflow humanize %}
+{% block title %}Overview{% endblock %}
+{% block topbar %}{% endblock %}
+{% block content %}
+<section class="monitor {% if mood == 'Busy' %}busy{% elif mood == 'Surging' %}surging{% endif %}" data-initial-bpm="{{ bpm }}">
+  <div class="monitor-grid"></div>
+  <div class="monitor-top">
+    <div>
+      <div class="greet">{{ greeting }}, {{ request.user.first_name|default:request.user.username }}</div>
+      <h1>{% now "l j F" %}</h1>
+      {% if urgent %}<a class="urgent-note" href="{% url 'queue' %}"><i class="bi bi-exclamation-triangle-fill"></i><span><span data-live="urgent">{{ urgent }}</span> emergency or urgent patient{{ urgent|pluralize }} waiting</span></a>{% endif %}
+    </div>
+    <div class="bpm" title="The hospital pulse rises as the waiting room fills">
+      <div class="bpm-num" data-pulse-bpm>{{ bpm }}</div>
+      <div class="bpm-meta"><b><i class="bi bi-heart-pulse-fill heart"></i> <span data-pulse-mood>{{ mood }}</span></b><span>Hospital pulse</span></div>
+    </div>
+  </div>
+  <canvas class="ecg" data-ecg data-bpm="{{ bpm }}" aria-label="Hospital pulse trace, {{ bpm }} beats per minute, {{ mood }}"></canvas>
+  <div class="monitor-caption"><span><span data-live="waiting">{{ waiting }}</span> waiting</span><span><span data-live="served_today">{{ served_today }}</span> seen today</span><span><span data-live="occupancy">{{ occupancy }}</span>% beds occupied</span><span>{{ on_duty }} staff on duty</span></div>
+</section>
+
+<nav class="flow" aria-label="Patient flow today">
+  {% for f in flow %}
+  <a href="{{ f.url }}"><span class="step-n">Stage {{ forloop.counter }}</span><span class="val" data-flow="{{ f.key }}" data-count="{{ f.value }}">{{ f.value }}</span><span class="lbl">{{ f.label }}</span></a>
+  {% endfor %}
+  <span class="stream" aria-hidden="true"></span>
+</nav>
+
+<div class="grid g-main">
+  <div class="stack">
+    <div class="grid g-2">
+      <section class="panel">
+        <div class="panel-head"><h2>Arrivals this week</h2><span class="hint">Tickets issued per day</span></div>
+        <div class="bars">
+          {% for d in week %}<div class="bar {% if d.today %}today{% endif %}" style="--h:{{ d.pct }}%;--i:{{ forloop.counter0 }}"><b>{{ d.value }}</b><i></i><span>{{ d.label }}</span></div>{% endfor %}
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>Bed occupancy</h2><a class="more" href="{% url 'beds' %}">Bed board</a></div>
+        <div class="d-flex align-items-center gap-4">
+          <div class="ring" style="--p:{{ occupancy }};{% if occupancy >= 90 %}--ring:var(--red){% elif occupancy >= 75 %}--ring:var(--amber){% endif %}"><div><b>{{ occupancy }}%</b><small>occupied</small></div></div>
+          <ul class="plain ruled flex-fill">
+            <li class="d-flex"><span class="muted">Available</span><b class="ms-auto">{{ beds_free }}</b></li>
+            <li class="d-flex"><span class="muted">Occupied</span><b class="ms-auto">{{ beds_occupied }}</b></li>
+            <li class="d-flex"><span class="muted">Total beds</span><b class="ms-auto">{{ beds_total }}</b></li>
+          </ul>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Department load</h2><span class="hint">Bar length relative to the busiest; colour by number waiting</span><a class="more" href="{% url 'queue' %}">Open queue</a></div>
+      {% if departments %}
+      <ul class="plain ruled">
+        {% for d in departments %}
+        <li>
+          <div class="d-flex align-items-baseline mb-2"><b>{{ d.name }}</b><span class="ms-auto small muted">{{ d.waiting }} waiting · {{ d.active }} in consultation</span></div>
+          <div class="meter {% if d.waiting >= 6 %}red{% elif d.waiting >= 3 %}amber{% endif %}" title="Red at 6+ waiting, amber at 3+"><i style="--w:{{ d.pct }}%"></i></div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}<div class="empty"><i class="bi bi-cup-hot"></i>No one is waiting. Issue a ticket when the next patient arrives.</div>{% endif %}
+    </section>
+
+    {% if urgent_tickets %}
+    <section class="panel">
+      <div class="panel-head"><h2>Needs attention first</h2><span class="hint">Highest triage priority, longest wait</span></div>
+      <ul class="plain ruled">
+        {% for t in urgent_tickets %}
+        <li class="d-flex align-items-center gap-3 p{{ t.priority }}">
+          <span class="tri-tag">{{ t.get_priority_display }}</span>
+          <a href="{% url 'patient_chart' t.patient_id %}"><b>{{ t.patient.full_name }}</b></a>
+          <span class="muted small">{{ t.department }} · {{ t }}</span>
+          <span class="ms-auto small {% if t.wait_minutes > 30 %}text-danger fw-bold{% else %}muted{% endif %}">{{ t.wait_minutes }} min</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+  </div>
+
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Start something</h2></div>
+      <div class="quick">
+        <a href="{% url 'patient_new' %}"><i class="bi bi-person-plus"></i>Register patient</a>
+        <a href="{% url 'ticket_new' %}"><i class="bi bi-ticket-perforated"></i>Issue ticket</a>
+        <a href="{% url 'encounter_new' %}"><i class="bi bi-clipboard2-pulse"></i>New encounter</a>
+        <a href="{% url 'prescription_new' %}"><i class="bi bi-capsule-pill"></i>Prescribe</a>
+        <a href="{% url 'admission_new' %}"><i class="bi bi-hospital"></i>Admit patient</a>
+        <a href="{% url 'queue_display' %}" target="_blank"><i class="bi bi-tv"></i>Waiting-room screen</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Running low</h2><a class="more" href="{% url 'pharmacy' %}">Pharmacy</a></div>
+      {% if low_stock %}
+      <ul class="plain ruled">
+        {% for m, qty in low_stock %}
+        <li class="d-flex align-items-center gap-2"><span>{{ m }}</span><span class="ms-auto tag {% if qty == 0 %}red{% else %}amber{% endif %}">{% if qty == 0 %}Out of stock{% else %}{{ qty }} left{% endif %}</span></li>
+        {% endfor %}
+      </ul>
+      {% else %}<div class="empty"><i class="bi bi-box-seam"></i>All medicines are above their reorder level.</div>{% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Recent activity</h2><span class="hint">From the audit log</span></div>
+      {% if activity %}
+      <ul class="plain ruled activity">
+        {% for a in activity %}
+        <li><span class="avatar">{{ a.e.actor|user_initials }}</span><span><b>{{ a.e.actor|display_name }}</b> {{ a.label }}</span><time datetime="{{ a.e.occurred_at|date:'c' }}">{{ a.e.occurred_at|ago }}</time></li>
+        {% endfor %}
+      </ul>
+      {% else %}<div class="empty">Actions taken in MedFlow appear here.</div>{% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

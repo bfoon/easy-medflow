@@ -1,0 +1,18 @@
+{% extends 'hospital/base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block heading %}{{ title }}{% endblock %}
+{% block subheading %}{% if subtitle %}<p class="sub">{{ subtitle }}</p>{% endif %}{% endblock %}
+{% block content %}
+<form method="post" novalidate class="grid g-main">
+  {% csrf_token %}
+  <section class="panel">
+    {% for e in form.non_field_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ e }}</div></div>{% endfor %}
+    <div class="form-grid">{% for field in form %}{% include 'hospital/_field.html' %}{% endfor %}</div>
+    <div class="form-actions"><button class="btn btn-primary"><i class="bi bi-check2"></i>Save draft</button><a href="javascript:history.back()" class="btn btn-ghost">Cancel</a></div>
+  </section>
+  <aside class="panel align-self-start" style="position:sticky;top:20px">
+    <div class="panel-head"><h2><i class="bi bi-shield-plus me-1" style="color:var(--teal)"></i>Safety check</h2><span class="hint">Updates as you type</span></div>
+    <div data-rx-check></div>
+  </aside>
+</form>
+{% endblock %}

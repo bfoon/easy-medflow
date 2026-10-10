@@ -1,0 +1,117 @@
+{% extends 'hospital/base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block heading %}{{ title }}{% endblock %}
+{% block subheading %}<p class="sub">Add fields on the left and see the form exactly as staff will fill it on the right.</p>{% endblock %}
+{% block content %}
+<form method="post" novalidate id="builder-form">
+  {% csrf_token %}{{ form.schema }}
+  {% for e in form.non_field_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ e }}</div></div>{% endfor %}
+  {% for e in form.schema.errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ e }}</div></div>{% endfor %}
+  <div class="builder">
+    <section class="panel">
+      <div class="form-grid">
+        {% with field=form.name %}{% include 'hospital/_field.html' %}{% endwith %}
+        {% with field=form.slug %}{% include 'hospital/_field.html' %}{% endwith %}
+      </div>
+      {% with field=form.published %}{% include 'hospital/_field.html' %}{% endwith %}
+      <div class="label-sm mb-2">Add a field</div>
+      <div class="type-picker" id="types">
+        <button type="button" data-type="text"><i class="bi bi-input-cursor-text"></i> Short text</button>
+        <button type="button" data-type="textarea"><i class="bi bi-text-paragraph"></i> Long text</button>
+        <button type="button" data-type="number"><i class="bi bi-123"></i> Number</button>
+        <button type="button" data-type="date"><i class="bi bi-calendar3"></i> Date</button>
+        <button type="button" data-type="select"><i class="bi bi-menu-button-wide"></i> Choice</button>
+        <button type="button" data-type="checkbox"><i class="bi bi-check2-square"></i> Checkbox</button>
+      </div>
+      <div id="fields"></div>
+      <div class="empty" id="no-fields"><i class="bi bi-ui-checks"></i>No fields yet. Choose a field type above.</div>
+      <div class="form-actions"><button class="btn btn-primary"><i class="bi bi-check2"></i>Save form</button><a href="{% url 'studio' %}" class="btn btn-ghost">Cancel</a><span class="ms-auto small muted" id="field-count"></span></div>
+    </section>
+    <aside class="preview-sheet" aria-label="Live preview">
+      <div class="label-sm mb-2"><i class="bi bi-eye me-1"></i>Live preview</div>
+      <h3 id="pv-title">Untitled form</h3>
+      <div class="ph">Patient name · MRN appear here when the form is filled</div>
+      <div id="preview"></div>
+    </aside>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const hidden = document.getElementById('id_schema'), list = document.getElementById('fields'), pv = document.getElementById('preview');
+  const nameIn = document.getElementById('id_name'), slugIn = document.getElementById('id_slug');
+  const LABELS = {text:'Short text', textarea:'Long text', number:'Number', date:'Date', select:'Choice', checkbox:'Checkbox'};
+  let fields = [];
+  try { const s = JSON.parse(hidden.value || '{}'); fields = Array.isArray(s.fields) ? s.fields : []; } catch (_) {}
+  const keyify = s => (s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/^(\d)/, 'f_$1') || 'field';
+  const uniqueKey = (base, skip) => { let k = base, n = 2; while (fields.some((f, i) => i !== skip && f.key === k)) k = `${base}_${n++}`; return k; };
+  let slugTouched = !!slugIn.value;
+  slugIn.addEventListener('input', () => { slugTouched = true; });
+  nameIn.addEventListener('input', () => {
+    if (!slugTouched) slugIn.value = nameIn.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    document.getElementById('pv-title').textContent = nameIn.value || 'Untitled form';
+  });
+  document.getElementById('pv-title').textContent = nameIn.value || 'Untitled form';
+
+  function sync() {
+    hidden.value = JSON.stringify({fields});
+    document.getElementById('no-fields').hidden = fields.length > 0;
+    document.getElementById('field-count').textContent = fields.length ? `${fields.length} field${fields.length > 1 ? 's' : ''}` : '';
+    pv.innerHTML = fields.map(f => {
+      const req = f.required ? ' <span class="text-danger">*</span>' : '';
+      if (f.type === 'checkbox') return `<div class="field check"><input type="checkbox" class="form-check-input" disabled><label class="form-label">${esc(f.label)}</label></div>`;
+      let ctl;
+      if (f.type === 'textarea') ctl = `<textarea class="form-control" rows="3" disabled></textarea>`;
+      else if (f.type === 'select') ctl = `<select class="form-select" disabled>${(f.options || []).map(o => `<option>${esc(o)}</option>`).join('') || '<option>Add options…</option>'}</select>`;
+      else ctl = `<input class="form-control" type="${f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}" disabled>`;
+      return `<div class="field"><label class="form-label">${esc(f.label || 'Untitled field')}${req}</label>${ctl}</div>`;
+    }).join('') || '<div class="empty">Your form will appear here.</div>';
+  }
+  function render() {
+    list.innerHTML = fields.map((f, i) => `
+      <div class="fld" draggable="true" data-i="${i}">
+        <div class="fld-head"><i class="bi bi-grip-vertical grip" title="Drag to reorder"></i><span class="tag teal">${LABELS[f.type]}</span><span class="small muted">key: ${esc(f.key)}</span>
+          <span class="x"><button type="button" data-act="up" title="Move up" aria-label="Move up"><i class="bi bi-arrow-up"></i></button><button type="button" data-act="down" title="Move down" aria-label="Move down"><i class="bi bi-arrow-down"></i></button><button type="button" data-act="del" title="Remove" aria-label="Remove field"><i class="bi bi-trash3"></i></button></span></div>
+        <div class="row-2">
+          <input class="form-control" data-prop="label" value="${esc(f.label)}" placeholder="Question or label" aria-label="Field label">
+          <label class="small d-flex align-items-center gap-2"><input type="checkbox" class="form-check-input m-0" data-prop="required" ${f.required ? 'checked' : ''} ${f.type === 'checkbox' ? 'disabled' : ''}> Required</label>
+        </div>
+        ${f.type === 'select' ? `<input class="form-control mt-2" data-prop="options" value="${esc((f.options || []).join(', '))}" placeholder="Options, separated by commas" aria-label="Options">` : ''}
+      </div>`).join('');
+    sync();
+  }
+  document.getElementById('types').addEventListener('click', e => {
+    const b = e.target.closest('[data-type]'); if (!b) return;
+    const label = LABELS[b.dataset.type] + ' ' + (fields.length + 1);
+    fields.push({key: uniqueKey(keyify(label)), label, type: b.dataset.type, required: false, ...(b.dataset.type === 'select' ? {options: ['Yes', 'No']} : {})});
+    render(); list.lastElementChild?.querySelector('[data-prop="label"]').select();
+  });
+  list.addEventListener('input', e => {
+    const el = e.target, i = +el.closest('.fld').dataset.i, f = fields[i], prop = el.dataset.prop;
+    if (prop === 'label') { f.label = el.value; f.key = uniqueKey(keyify(el.value), i); el.closest('.fld').querySelector('.muted').textContent = 'key: ' + f.key; }
+    if (prop === 'required') f.required = el.checked;
+    if (prop === 'options') f.options = el.value.split(',').map(s => s.trim()).filter(Boolean);
+    sync();
+  });
+  list.addEventListener('click', e => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const i = +b.closest('.fld').dataset.i;
+    if (b.dataset.act === 'del') fields.splice(i, 1);
+    if (b.dataset.act === 'up' && i > 0) [fields[i - 1], fields[i]] = [fields[i], fields[i - 1]];
+    if (b.dataset.act === 'down' && i < fields.length - 1) [fields[i + 1], fields[i]] = [fields[i], fields[i + 1]];
+    render();
+  });
+  let dragFrom = null;
+  list.addEventListener('dragstart', e => { const f = e.target.closest('.fld'); if (f) { dragFrom = +f.dataset.i; e.dataTransfer.effectAllowed = 'move'; } });
+  list.addEventListener('dragover', e => { const f = e.target.closest('.fld'); if (f) { e.preventDefault(); list.querySelectorAll('.drag-over').forEach(x => x.classList.remove('drag-over')); f.classList.add('drag-over'); } });
+  list.addEventListener('drop', e => {
+    const f = e.target.closest('.fld'); if (!f || dragFrom === null) return; e.preventDefault();
+    const to = +f.dataset.i, [m] = fields.splice(dragFrom, 1); fields.splice(to, 0, m); dragFrom = null; render();
+  });
+  document.getElementById('builder-form').addEventListener('submit', sync);
+  render();
+})();
+</script>
+{% endblock %}

@@ -1,1 +1,155 @@
-{% extends 'hospital/base.html' %}{% block heading %}Patient Chart · {{p.first_name}} {{p.last_name}}{% endblock %}{% block content %}<div class="alert alert-warning"><strong>Medical alerts:</strong> {{p.medical_alerts|default:'No manually entered alerts. Confirm allergy status directly with patient.'}}<div class="small">Known allergies: {% for x in allergies %}<span class="badge bg-danger me-1">{{x.substance}} ({{x.severity}})</span>{% empty %}None documented — this does NOT mean no allergies{% endfor %}</div></div><div class="card metric p-4 mb-4"><div class="row"><div class="col-md-3"><strong>MRN</strong><div>{{p.mrn}}</div></div><div class="col-md-3"><strong>Born</strong><div>{{p.dob}}</div></div><div class="col-md-3"><strong>Sex</strong><div>{{p.get_sex_display}}</div></div><div class="col-md-3"><strong>Contact</strong><div>{{p.phone|default:'Not provided'}}</div></div></div><div class="d-flex flex-wrap gap-2 mt-3"><a class="btn btn-outline-primary btn-sm" href="{% url 'encounter_new' %}">New Encounter</a><a class="btn btn-outline-primary btn-sm" href="{% url 'prescription_new' %}">Prescribe</a><a class="btn btn-outline-primary btn-sm" href="{% url 'referral_new' %}">Refer</a></div></div><div class="row g-3"><div class="col-lg-6"><div class="card metric p-4"><h2 class="h5">Conditions / Disease History</h2>{% for x in conditions %}<div class="border-bottom py-2">{{x.name}} <span class="badge bg-secondary">{{x.status}}</span> <small>{{x.onset}}</small></div>{% empty %}No conditions recorded{% endfor %}<h2 class="h5 mt-4">Consultation Timeline</h2>{% for x in encounters %}<div class="border-bottom py-2"><b>{{x.created_at|date:'d M Y H:i'}}</b> · {{x.reason}}<div class="small">Diagnosis: {{x.diagnosis}} | Assessment: {{x.assessment}} | Plan: {{x.plan}} | Vitals: {{x.vitals}}</div></div>{% empty %}No encounters{% endfor %}</div></div><div class="col-lg-6"><div class="card metric p-4"><h2 class="h5">Medication History</h2>{% for x in prescriptions %}<div class="border-bottom py-2">{{x.medication}} · {{x.directions}} <span class="badge bg-info text-dark">{{x.state}}</span></div>{% empty %}No prescriptions{% endfor %}<h2 class="h5 mt-4">Laboratory History</h2>{% for x in labs %}<div class="border-bottom py-2">{{x.test}} · {{x.status}}<div class="small">{{x.result|default:'No result yet'}}</div></div>{% empty %}No tests{% endfor %}<h2 class="h5 mt-4">Referrals / Care Coordination</h2>{% for x in referrals %}<div class="border-bottom py-2">{{x.destination}} · {{x.urgency}} · {{x.status}}</div>{% empty %}No referrals{% endfor %}<h2 class="h5 mt-4">Admissions</h2>{% for x in admissions %}<div>{{x.bed}} · {{x.admitted_at}} → {{x.discharged_at|default:'admitted'}}</div>{% empty %}No admissions{% endfor %}<h2 class="h5 mt-4">Forms and E-sign</h2>{% for x in submissions %}<div class="border-bottom py-2">{{x.definition.name}} · {{x.status}}<form method="post" action="{% url 'submission_sign' x.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary mt-1">Sign form</button></form></div>{% empty %}No completed forms{% endfor %}</div></div></div><div class="card metric p-4 mt-3"><h2 class="h5">Available Hospital Forms</h2>{% for f in available_forms %}<div><a href="{% url 'fill_form' f.pk p.pk %}">{{f.name}} →</a></div>{% empty %}<p class="mb-0 text-secondary">Open Forms & Flows Studio to configure forms, or use links of the form /studio/forms/FORM_ID/fill/{{p.id}}/</p>{% endfor %}</div>{% endblock %}
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ p.full_name }}{% endblock %}
+{% block topbar %}{% endblock %}
+{% block content %}
+{% with active_allergies=allergies %}
+<section class="wristband {% if p.medical_alerts or allergies %}alerting{% endif %}">
+  <span class="avatar xl {{ p.sex }}">{{ p.initials }}</span>
+  <div>
+    <h1>{{ p.full_name }}</h1>
+    <div class="facts">
+      <span><b>{{ p.mrn }}</b></span>
+      <span>{{ p.get_sex_display }}{% if p.age is not None %}, <b>{{ p.age }}</b> yrs{% endif %}</span>
+      <span>Born <b>{{ p.dob|date:'j M Y' }}</b></span>
+      {% if p.blood_group %}<span>Blood <b>{{ p.blood_group }}</b></span>{% endif %}
+      <span><i class="bi bi-telephone"></i> {{ p.phone|default:'No phone' }}</span>
+      {% if current_admission %}<span class="tag ink"><i class="bi bi-hospital"></i>In {{ current_admission.bed }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="actions">
+    {% if open_encounter %}<a class="btn btn-primary" href="{% url 'encounter_detail' open_encounter.pk %}"><i class="bi bi-clipboard2-pulse"></i>Open current visit</a>
+    {% else %}<a class="btn btn-primary" href="{% url 'encounter_new' %}?patient={{ p.pk }}"><i class="bi bi-clipboard2-plus"></i>Start encounter</a>{% endif %}
+    <a class="btn btn-ghost" href="{% url 'ticket_new' %}?patient={{ p.pk }}"><i class="bi bi-ticket-perforated"></i>Queue</a>
+    <div class="dropdown">
+      <button class="btn btn-ghost" data-bs-toggle="dropdown" aria-expanded="false" onclick="this.nextElementSibling.classList.toggle('show')"><i class="bi bi-three-dots"></i></button>
+      <ul class="dropdown-menu dropdown-menu-end" style="right:0;left:auto;top:110%">
+        <li><a class="dropdown-item" href="{% url 'allergy_new' p.pk %}">Record allergy</a></li>
+        <li><a class="dropdown-item" href="{% url 'condition_new' p.pk %}">Add condition</a></li>
+        {% if open_encounter %}
+        <li><a class="dropdown-item" href="{% url 'prescription_new' %}?encounter={{ open_encounter.pk }}">Prescribe</a></li>
+        <li><a class="dropdown-item" href="{% url 'lab_new' %}?encounter={{ open_encounter.pk }}">Order lab test</a></li>
+        <li><a class="dropdown-item" href="{% url 'referral_new' %}?encounter={{ open_encounter.pk }}">Refer</a></li>
+        <li><a class="dropdown-item" href="{% url 'admission_new' %}?encounter={{ open_encounter.pk }}">Admit</a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</section>
+
+{% if p.medical_alerts %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div><b>Medical alert.</b> {{ p.medical_alerts }}</div></div>{% endif %}
+<div class="allergy-strip {% if not allergies %}none{% endif %}">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  {% if allergies %}<b>Allergies</b>{% for a in allergies %}{% if a.status == 'active' %}<span class="tag">{{ a.substance }} · {{ a.severity }}</span>{% endif %}{% endfor %}
+  {% else %}<b>No allergies documented.</b> This does not mean the patient has none. Ask and record before prescribing.{% endif %}
+  <a class="ms-auto small fw-semibold" href="{% url 'allergy_new' p.pk %}" style="color:inherit">Record allergy</a>
+</div>
+{% endwith %}
+
+<div class="grid g-main">
+  <section class="panel" data-tabs>
+    <div class="tabs" role="tablist">
+      <button data-tab="timeline" role="tab">Timeline</button>
+      <button data-tab="visits" role="tab">Visits<span class="n">{{ encounters|length }}</span></button>
+      <button data-tab="meds" role="tab">Medications<span class="n">{{ prescriptions|length }}</span></button>
+      <button data-tab="labs" role="tab">Labs<span class="n">{{ labs|length }}</span></button>
+      <button data-tab="care" role="tab">Referrals &amp; stays</button>
+      <button data-tab="forms" role="tab">Forms<span class="n">{{ submissions|length }}</span></button>
+    </div>
+
+    <div class="tab-pane" data-pane="timeline">
+      <div class="tl-legend"><span style="--k:var(--teal)">Visit</span><span style="--k:var(--amber)">Prescription</span><span style="--k:var(--indigo)">Lab</span><span style="--k:var(--plum)">Referral</span><span style="--k:var(--red)">Admission</span></div>
+      {% if timeline %}
+      <ul class="timeline">
+        {% for t in timeline %}
+        <li class="tl-item {{ t.kind }}">
+          <div class="t">{% if t.url %}<a href="{{ t.url }}">{{ t.title }}</a>{% else %}{{ t.title }}{% endif %}{% if t.flag %} <span class="tag red">Abnormal</span>{% endif %}</div>
+          <div class="m">{{ t.meta }} · {{ t.when|date:'j M Y, H:i' }}</div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}<div class="empty"><i class="bi bi-journal-medical"></i>No clinical history yet. Start an encounter to begin the record.</div>{% endif %}
+    </div>
+
+    <div class="tab-pane" data-pane="visits">
+      <div class="scroll-x"><table class="mini-table"><thead><tr><th>Date</th><th>Reason</th><th>Department</th><th>Clinician</th><th>Status</th></tr></thead><tbody>
+      {% for e in encounters %}<tr><td>{{ e.created_at|date:'j M Y' }}</td><td><a href="{% url 'encounter_detail' e.pk %}">{{ e.reason }}</a>{% if e.diagnosis %}<div class="small muted">{{ e.diagnosis|truncatechars:70 }}</div>{% endif %}</td><td>{{ e.department|default:'—' }}</td><td>{{ e.clinician|display_name }}</td><td><span class="tag {{ e.status|tone }}">{{ e.get_status_display }}</span></td></tr>
+      {% empty %}<tr><td colspan="5" class="empty">No visits recorded.</td></tr>{% endfor %}
+      </tbody></table></div>
+    </div>
+
+    <div class="tab-pane" data-pane="meds">
+      <div class="scroll-x"><table class="mini-table"><thead><tr><th>Medication</th><th>Directions</th><th>Qty</th><th>Status</th><th>Date</th></tr></thead><tbody>
+      {% for x in prescriptions %}<tr><td><b>{{ x.medication }}</b></td><td>{{ x.directions }}</td><td>{{ x.quantity }}</td><td><span class="tag {{ x.state|tone }}">{{ x.get_state_display }}</span></td><td class="small muted">{{ x.created_at|date:'j M Y' }}</td></tr>
+      {% empty %}<tr><td colspan="5" class="empty">No prescriptions.</td></tr>{% endfor %}
+      </tbody></table></div>
+    </div>
+
+    <div class="tab-pane" data-pane="labs">
+      <div class="scroll-x"><table class="mini-table"><thead><tr><th>Test</th><th>Result</th><th>Reference</th><th>Status</th><th>Date</th></tr></thead><tbody>
+      {% for x in labs %}<tr><td><b>{{ x.test.name }}</b></td><td>{% if x.result %}<span {% if x.abnormal %}class="text-danger fw-semibold"{% endif %}>{{ x.result|linebreaksbr }}</span>{% else %}<span class="muted">Pending</span>{% endif %}</td><td class="small muted">{{ x.reference_range|default:'—' }}</td><td><span class="tag {{ x.status|tone }}">{{ x.get_status_display }}</span></td><td class="small muted">{{ x.created_at|date:'j M Y' }}</td></tr>
+      {% empty %}<tr><td colspan="5" class="empty">No lab orders.</td></tr>{% endfor %}
+      </tbody></table></div>
+    </div>
+
+    <div class="tab-pane" data-pane="care">
+      <h3 class="h6 mb-2">Referrals</h3>
+      <ul class="plain ruled mb-4">
+        {% for r in referrals %}<li class="d-flex gap-2 align-items-center flex-wrap"><b>{{ r.destination }}</b><span class="muted small">{{ r.speciality }}</span><span class="tag {{ r.urgency|tone }}">{{ r.get_urgency_display }}</span><span class="tag {{ r.status|tone }} ms-auto">{{ r.get_status_display }}</span></li>
+        {% empty %}<li class="muted">No referrals.</li>{% endfor %}
+      </ul>
+      <h3 class="h6 mb-2">Admissions</h3>
+      <ul class="plain ruled">
+        {% for a in admissions %}<li class="d-flex gap-2 align-items-center"><b>{{ a.bed }}</b><span class="muted small">{{ a.admitted_at|date:'j M Y H:i' }} → {% if a.discharged_at %}{{ a.discharged_at|date:'j M Y H:i' }}{% else %}present{% endif %}</span>{% if not a.discharged_at %}<span class="tag ink ms-auto">Current</span>{% endif %}</li>
+        {% empty %}<li class="muted">No admissions.</li>{% endfor %}
+      </ul>
+    </div>
+
+    <div class="tab-pane" data-pane="forms">
+      {% if available_forms %}
+      <form class="d-flex gap-2 mb-3" method="get" action="{% url 'fill_form_pick' %}">
+        <input type="hidden" name="patient" value="{{ p.pk }}">
+        <select class="form-select" name="form" aria-label="Form to complete">{% for f in available_forms %}<option value="{{ f.pk }}">{{ f.name }}</option>{% endfor %}</select>
+        <button class="btn btn-ink text-nowrap">Fill form</button>
+      </form>
+      {% endif %}
+      <ul class="plain ruled">
+        {% for s in submissions %}
+        <li class="d-flex align-items-center gap-2 flex-wrap">
+          <b>{{ s.definition.name }}</b><span class="muted small">{{ s.created_at|date:'j M Y H:i' }}</span>
+          <span class="tag {{ s.status|tone }}">{{ s.get_status_display }}</span>
+          <span class="ms-auto">{% with sig=s.signature_set.all|first %}{% if sig %}<span class="stamp" title="SHA-256 {{ sig.document_hash }}"><i class="bi bi-patch-check-fill"></i>Signed {{ sig.signed_at|date:'j M' }}</span>
+          {% elif s.status != 'rejected' %}<form method="post" action="{% url 'submission_sign' s.pk %}" data-confirm="Sign this {{ s.definition.name }}? Your name, the time and a hash of its contents are recorded permanently.">{% csrf_token %}<button class="btn btn-sm btn-ghost"><i class="bi bi-pen"></i>E-sign</button></form>{% endif %}{% endwith %}</span>
+        </li>
+        {% empty %}<li class="empty">No forms completed for this patient.</li>{% endfor %}
+      </ul>
+    </div>
+  </section>
+
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Latest vitals</h2>{% if vitals_at %}<span class="hint">{{ vitals_at|date:'j M, H:i' }}</span>{% endif %}</div>
+      {% if vitals %}<div class="vitals">{% for label, unit, val in vitals %}<div class="vital"><span>{{ label }}</span><b>{{ val }}</b><small>{{ unit }}</small></div>{% endfor %}</div>
+      {% else %}<div class="empty">No vitals recorded yet.</div>{% endif %}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Conditions</h2><a class="more" href="{% url 'condition_new' p.pk %}">Add</a></div>
+      <ul class="plain ruled">
+        {% for c in conditions %}<li class="d-flex gap-2 align-items-baseline"><span>{{ c.name }}{% if c.code %} <span class="small muted">{{ c.code }}</span>{% endif %}</span><span class="tag {% if c.status == 'active' %}amber{% endif %} ms-auto">{{ c.get_status_display }}</span></li>
+        {% empty %}<li class="muted small">No conditions recorded.</li>{% endfor %}
+      </ul>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Allergy register</h2></div>
+      <ul class="plain ruled">
+        {% for a in allergies %}<li><div class="d-flex gap-2"><b>{{ a.substance }}</b><span class="tag {{ a.severity|tone }} ms-auto">{{ a.get_severity_display }}</span></div><div class="small muted">{{ a.reaction }} · {{ a.get_status_display }}</div></li>
+        {% empty %}<li class="muted small">Nothing recorded.</li>{% endfor %}
+      </ul>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Contact</h2></div>
+      <div class="small"><div class="label-sm">Address</div><p>{{ p.address|default:'Not recorded'|linebreaksbr }}</p><div class="label-sm">Emergency contact</div><p class="mb-0">{{ p.emergency_contact|default:'Not recorded' }}</p></div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>document.addEventListener('click',e=>{if(!e.target.closest('.dropdown'))document.querySelectorAll('.dropdown-menu.show').forEach(m=>m.classList.remove('show'))})</script>{% endblock %}

@@ -1,0 +1,59 @@
+{% extends 'hospital/base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block heading %}{{ title }}{% endblock %}
+{% block subheading %}<p class="sub">Each step is approved by someone with the chosen role, in order. A rejection at any step closes the workflow.</p>{% endblock %}
+{% block content %}
+<form method="post" novalidate id="wf-form">
+  {% csrf_token %}{{ form.steps }}
+  {% for e in form.non_field_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ e }}</div></div>{% endfor %}
+  <div class="builder">
+    <section class="panel">
+      {% with field=form.name %}{% include 'hospital/_field.html' %}{% endwith %}
+      {% with field=form.active %}{% include 'hospital/_field.html' %}{% endwith %}
+      <div class="label-sm mb-2">Approval steps</div>
+      <div id="steps"></div>
+      <button type="button" class="btn btn-ghost w-100" id="add-step" style="border-style:dashed"><i class="bi bi-plus-lg"></i>Add step</button>
+      <div class="form-actions mt-3"><button class="btn btn-primary"><i class="bi bi-check2"></i>Save workflow</button><a href="{% url 'studio' %}" class="btn btn-ghost">Cancel</a></div>
+    </section>
+    <aside class="preview-sheet">
+      <div class="label-sm mb-3"><i class="bi bi-diagram-3 me-1"></i>How a submission travels</div>
+      <div class="chain" id="chain"></div>
+    </aside>
+  </div>
+</form>
+{{ roles|json_script:"wf-roles" }}
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const ROLES = JSON.parse(document.getElementById('wf-roles').textContent);
+  const hidden = document.getElementById('id_steps'), box = document.getElementById('steps'), chain = document.getElementById('chain');
+  let steps = [];
+  try { const v = JSON.parse(hidden.value || '[]'); steps = Array.isArray(v) ? v : []; } catch (_) {}
+  if (!steps.length) steps = [{name: 'Nurse review', role: 'nurse'}, {name: 'Doctor approval', role: 'doctor'}];
+  const sync = () => {
+    hidden.value = JSON.stringify(steps);
+    chain.innerHTML = `<div class="step"><div class="node"><b><i class="bi bi-send"></i></b></div><div class="body"><b>Form submitted</b><div class="small muted">By any clinical staff member</div></div></div>` +
+      steps.map((s, i) => `<div class="step"><div class="node"><b>${i + 1}</b></div><div class="body"><b>${esc(s.name || 'Untitled step')}</b><div class="small muted text-capitalize">Approved by a ${esc(s.role)}</div></div></div>`).join('') +
+      `<div class="step end"><div class="node"><b><i class="bi bi-check2"></i></b></div><div class="body"><b>Approved</b><div class="small muted">Ready to e-sign</div></div></div>`;
+  };
+  const render = () => {
+    box.innerHTML = steps.map((s, i) => `<div class="fld" data-i="${i}"><div class="fld-head"><span class="tag ink">Step ${i + 1}</span><span class="x"><button type="button" data-act="up" aria-label="Move up"><i class="bi bi-arrow-up"></i></button><button type="button" data-act="down" aria-label="Move down"><i class="bi bi-arrow-down"></i></button><button type="button" data-act="del" aria-label="Remove step"><i class="bi bi-trash3"></i></button></span></div>
+      <div class="row-2"><input class="form-control" data-prop="name" value="${esc(s.name)}" placeholder="Step name" aria-label="Step name"><select class="form-select text-capitalize" data-prop="role" aria-label="Approver role">${ROLES.map(r => `<option value="${r}" ${r === s.role ? 'selected' : ''}>${r}</option>`).join('')}</select></div></div>`).join('');
+    sync();
+  };
+  box.addEventListener('input', e => { const i = +e.target.closest('.fld').dataset.i; steps[i][e.target.dataset.prop] = e.target.value; sync(); });
+  box.addEventListener('click', e => {
+    const b = e.target.closest('[data-act]'); if (!b) return; const i = +b.closest('.fld').dataset.i;
+    if (b.dataset.act === 'del') steps.splice(i, 1);
+    if (b.dataset.act === 'up' && i > 0) [steps[i - 1], steps[i]] = [steps[i], steps[i - 1]];
+    if (b.dataset.act === 'down' && i < steps.length - 1) [steps[i + 1], steps[i]] = [steps[i], steps[i + 1]];
+    render();
+  });
+  document.getElementById('add-step').addEventListener('click', () => { steps.push({name: '', role: 'doctor'}); render(); box.lastElementChild.querySelector('input').focus(); });
+  document.getElementById('wf-form').addEventListener('submit', sync);
+  render();
+})();
+</script>
+{% endblock %}
