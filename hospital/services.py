@@ -12,10 +12,11 @@ def availability(medication):
 
 def prescription_warnings(encounter,medication,quantity):
     allergies=list(encounter.patient.allergies.filter(status='active').values('substance','reaction','severity'))
-    names=' '.join([medication.name,medication.generic_name]).casefold()
-    # Exact-name screening only. No synonyms, classes, cross-reactivity or interactions; do not treat absence as safe.
-    possible=[a for a in allergies if a['substance'].strip() and a['substance'].casefold().strip() in names]
-    return {'possible_allergy_matches':possible,'documented_allergies':allergies,'inventory_available':availability(medication),'insufficient_stock':availability(medication)<quantity,'disclaimer':CLINICAL_DISCLAIMER}
+    # Name and drug-class screening (e.g. penicillin allergy flags amoxicillin) plus known cross-reactions as cautions.
+    # It does not cover every class or interaction; absence of a warning is not proof of safety.
+    from .clinical import allergy_matches
+    possible,cautions=allergy_matches(allergies,medication)
+    return {'possible_allergy_matches':possible,'allergy_cautions':cautions,'documented_allergies':allergies,'inventory_available':availability(medication),'insufficient_stock':availability(medication)<quantity,'disclaimer':CLINICAL_DISCLAIMER}
 
 def prescription_check(prescription):
     """Safety summary for every line of a prescription: possible allergy matches and stock."""
@@ -217,3 +218,91 @@ def advance_workflow(run,user,action,comment=''):
     r.save(update_fields=['step_index','status'])
     r.submission.save(update_fields=['status'])
     return r
+
+
+# ------------------------------------------------------------------ billing
+import math
+from decimal import Decimal as _D
+from datetime import timedelta as _td
+
+def _tariff(code):
+    return Tariff.objects.filter(code=code, active=True).first()
+
+def open_invoice_for(encounter, user):
+    """The visit's current bill (draft, issued or part-paid), or a new draft."""
+    inv = encounter.invoices.exclude(status__in=['void', 'paid']).order_by('-created_at').first()
+    return inv or Invoice.objects.create(patient=encounter.patient, encounter=encounter, created_by=user)
+
+@transaction.atomic
+def capture_charges(invoice):
+    """Add every billable item for the visit that is not yet on any live bill. Returns the number of lines added."""
+    if invoice.status in ('void', 'paid') or not invoice.encounter_id:
+        return 0
+    enc = invoice.encounter
+    billed = set(InvoiceLine.objects.filter(invoice__patient=invoice.patient).exclude(invoice__status='void').values_list('source', flat=True))
+    added = 0
+    def add(cat, desc, qty, price, source):
+        nonlocal added
+        if source in billed or price is None or _D(price) <= 0:
+            return
+        InvoiceLine.objects.create(invoice=invoice, category=cat, description=desc[:200], quantity=qty, unit_price=price, source=source)
+        billed.add(source); added += 1
+    emergency = enc.department and enc.department.name == 'Emergency'
+    t = _tariff('consultation-emergency' if emergency else 'consultation')
+    if t:
+        add('consultation', t.name + (f' · {enc.department}' if enc.department else ''), 1, t.amount, f'consult:{enc.pk}')
+    for o in enc.labs.exclude(status='cancelled').select_related('test'):
+        add('lab', o.test.name, 1, o.test.price, f'lab_order:{o.pk}')
+    for im in enc.imaging.exclude(status='cancelled'):
+        t = _tariff(f'imaging-{im.modality}')
+        if t:
+            add('imaging', f'{im.get_modality_display()} · {im.region}', 1, t.amount, f'imaging:{im.pk}')
+    # One line per medicine, even when it was drawn from several stock batches. Each draw's id is kept in the
+    # line's source, so no draw can ever be billed twice.
+    billed_draws = {int(x) for src in billed if src.startswith('dispense:') for x in src[9:].split(',') if x.isdigit()}
+    groups = {}
+    for d in Dispense.objects.filter(prescription__encounter=enc).exclude(pk__in=billed_draws).select_related('item__medication', 'batch__medication').order_by('pk'):
+        med = d.item.medication if d.item_id else d.batch.medication
+        groups.setdefault((d.item_id, med.pk), (med, []))[1].append(d)
+    for med, draws in groups.values():
+        ids, qty = [str(d.pk) for d in draws], sum(d.quantity for d in draws)
+        chunks, cur = [], []
+        for i in ids:   # keep each source within the field length
+            if len('dispense:' + ','.join(cur + [i])) > 60:
+                chunks.append(cur); cur = []
+            cur.append(i)
+        chunks.append(cur)
+        if len(chunks) == 1:
+            add('pharmacy', f'{med} × {qty}', qty, med.unit_price, 'dispense:' + ','.join(ids))
+        else:
+            by_id = {str(d.pk): d for d in draws}
+            for ch in chunks:
+                q = sum(by_id[i].quantity for i in ch)
+                add('pharmacy', f'{med} × {q}', q, med.unit_price, 'dispense:' + ','.join(ch))
+    now = timezone.now()
+    for a in enc.admissions.select_related('bed'):
+        t = _tariff(f'bed-{a.bed.kind}') or _tariff('bed-general')
+        if not t:
+            continue
+        days = max(1, math.ceil(((a.discharged_at or now) - a.admitted_at).total_seconds() / 86400))
+        for n in range(1, days + 1):
+            day = timezone.localtime(a.admitted_at + _td(days=n - 1))
+            add('bed', f'{t.name} · {a.bed.code} · day {n} ({day:%d %b})', 1, t.amount, f'bed:{a.pk}:{n}')
+    return added
+
+@transaction.atomic
+def record_payment(invoice, amount, method, reference, user):
+    inv = Invoice.objects.select_for_update().get(pk=invoice.pk)
+    if inv.status not in ('issued', 'partial'):
+        raise ValidationError('Issue the bill before taking payment.')
+    amount = _D(str(amount)).quantize(_D('0.01'))
+    if amount <= 0:
+        raise ValidationError('Enter an amount above zero.')
+    if amount > inv.balance:
+        raise ValidationError(f'That is more than the balance of D{inv.balance}.')
+    if method in ('wave', 'afrimoney', 'qmoney', 'card', 'bank') and not reference.strip():
+        raise ValidationError('Enter the transaction reference for mobile money, card or bank payments.')
+    pay = Payment.objects.create(invoice=inv, amount=amount, method=method, reference=reference.strip()[:80], received_by=user)
+    inv.refresh_status(); inv.save(update_fields=['status', 'updated_at'])
+    AuditEvent.objects.create(actor=user, action='payment', target=f'invoice:{inv.pk}', details={'amount': str(amount), 'method': method})
+    return pay

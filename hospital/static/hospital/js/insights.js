@@ -98,7 +98,7 @@
       document.body.appendChild(s); setTimeout(() => s.remove(), 900);
     }
   }
-  async function acknowledge(valueId, btn) {
+  async function acknowledge(valueId, btn) {  // returns a promise so the pop-up can close afterwards
     btn.disabled = true;
     try {
       const res = await fetch(root.dataset.ackUrl.replace('/0/', `/${valueId}/`), {method: 'POST', credentials: 'same-origin', headers: {'X-CSRFToken': csrf()}});
@@ -110,6 +110,33 @@
     } catch (err) { console.error('ack failed', err); btn.disabled = false; window.mfToast?.('Could not save the review. Try again.', 'error'); }
   }
   root.addEventListener('click', e => { const b = e.target.closest('[data-ack]'); if (b) acknowledge(+b.dataset.ack, b); });
+
+  /* ------------------------------------------------------------ result pop-up: meaning, trend, history, suggested actions */
+  function openParam(id) {
+    const p = DATA.params.find(x => x.id === id); if (!p) return;
+    const KB = window.MFKnowledge || {}, kb = KB[p.code] || {}, f = p.latest.flag;
+    const steps = (kb[f] || (isAbn(f) ? (KB._default || {})[f[0]] : null) || []);
+    const actions = isAbn(f) && steps.length ? `<div class="label-sm mt-3 mb-1">Suggested next steps</div><ol class="kb-steps">${steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>` : '';
+    const repeat = DATA.open_encounter ? `<button class="btn btn-sm btn-primary" data-drawer="${esc(DATA.lab_new_url)}?encounter=${DATA.open_encounter}&test=${p.test_id}" data-title="Repeat ${esc(p.test)}"><i class="bi bi-arrow-repeat"></i>Repeat ${esc(p.test)}</button>` : '';
+    const ack = isAbn(f) && !p.latest.ack ? `<button class="btn btn-sm btn-ink" data-ack="${p.latest.value_id}"><i class="bi bi-eye"></i>Mark reviewed</button>` : (p.latest.ack ? `<span class="acked"><i class="bi bi-check2-circle"></i> Reviewed by ${esc(p.latest.ack_by)}</span>` : '');
+    window.mfModal(`${p.name} · ${p.test}`, `
+      <div class="kb-top ${flagClass(f)}"><div><span class="kb-val">${esc(p.latest.display)}</span> <span class="muted">${esc(p.unit)}</span></div><span class="flag ${flagClass(f)}">${FLAG_TEXT[f] || ''}</span><span class="small muted">Reference ${esc(p.range || '—')} · ${esc(p.latest.date)}</span></div>
+      ${kb.about ? `<p class="mt-2 mb-1">${esc(kb.about)}</p>` : ''}
+      ${rangeBar(p)}
+      ${p.history.filter(h => h.num != null).length >= 2 ? `<div class="kb-chart">${lineChart(p, 620, 200, true)}</div>` : ''}
+      ${actions}
+      <div class="label-sm mt-3 mb-1">History</div>
+      <table class="mini-table"><thead><tr><th>Date</th><th>Result</th><th>Flag</th></tr></thead><tbody>${p.history.slice().reverse().map(h => `<tr><td class="small">${esc(h.date)}</td><td><b>${esc(h.display)}</b> ${esc(p.unit)}${h.preliminary ? ' <span class="tag amber">Preliminary</span>' : ''}</td><td><span class="flag ${flagClass(h.flag)}">${FLAG_TEXT[h.flag] || ''}</span></td></tr>`).join('')}</tbody></table>
+      <div class="d-flex gap-2 flex-wrap mt-3">${repeat}${ack}</div>
+      <p class="form-text mt-3 mb-0">Suggested steps are general guidance, not a protocol. Follow local guidelines and your clinical judgement.</p>`);
+    drawLines(document.getElementById('modal-body'));
+  }
+  root.addEventListener('click', e => {
+    if (e.target.closest('button, a, input, summary')) return;
+    const el = e.target.closest('[data-param]'); if (el) openParam(+el.dataset.param);
+  });
+  root.addEventListener('keydown', e => { const el = e.target.closest('[data-param]'); if (el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openParam(+el.dataset.param); } });
+  document.getElementById('modal')?.addEventListener('click', e => { const b = e.target.closest('[data-ack]'); if (b) { acknowledge(+b.dataset.ack, b).then(() => { document.getElementById('modal').hidden = true; }); } });
   root.addEventListener('click', e => {
     const t = e.target.closest('[data-img]'); if (!t) return;
     const im = (DATA.imaging || []).find(x => x.id === +t.dataset.im);
@@ -202,7 +229,7 @@
   function paramRow(p, withChart) {
     const f = p.latest.flag, cls = flagClass(f);
     const ack = isAbn(f) ? (p.latest.ack ? `<span class="acked"><i class="bi bi-check2-circle"></i> Reviewed by ${esc(p.latest.ack_by)}</span>` : `<button class="btn btn-sm btn-ink" data-ack="${p.latest.value_id}"><i class="bi bi-eye"></i>Mark reviewed</button>`) : '';
-    return `<div class="prow ${cls}">
+    return `<div class="prow ${cls}" data-param="${p.id}" role="button" tabindex="0" title="Open details">
       <div class="prow-top"><span class="pname">${esc(p.name)}<small>${esc(p.test)}</small></span>
         <span class="pval"><b>${esc(p.latest.display)}</b> <small>${esc(p.unit)}</small></span></div>
       <div class="prow-mid"><span class="flag ${cls}">${FLAG_TEXT[f] || ''}</span><span class="small muted">Ref ${esc(p.range || '—')}</span>${p.latest.preliminary ? '<span class="tag amber">Preliminary</span>' : ''}<span class="small muted ms-auto">${esc(p.latest.date)}</span></div>
@@ -262,7 +289,7 @@
       (open.length ? open.map(p => paramRow(p, false)).join('') : '<div class="alert-mf info mb-3"><i class="bi bi-check2-all"></i><div>All out-of-range results have been reviewed.</div></div>') +
       (seen.length ? `<details class="seen-group"><summary>Reviewed (${seen.length})</summary>${seen.map(p => paramRow(p, false)).join('')}</details>` : '');
     const trend = params.filter(p => p.history.filter(h => h.num != null).length >= 2);
-    $('#trends').innerHTML = trend.length ? trend.map(p => `<div class="trend ${flagClass(p.latest.flag)}"><div class="d-flex align-items-baseline gap-2"><b>${esc(p.name)}</b><span class="small muted">${esc(p.test)}</span><span class="ms-auto tval">${esc(p.latest.display)} <small>${esc(p.unit)}</small></span></div>${lineChart(p)}</div>`).join('')
+    $('#trends').innerHTML = trend.length ? trend.map(p => `<div class="trend ${flagClass(p.latest.flag)}" data-param="${p.id}" role="button" tabindex="0" title="Open details"><div class="d-flex align-items-baseline gap-2"><b>${esc(p.name)}</b><span class="small muted">${esc(p.test)}</span><span class="ms-auto tval">${esc(p.latest.display)} <small>${esc(p.unit)}</small></span></div>${lineChart(p)}</div>`).join('')
       : '<div class="empty">Trends appear once a test has been done at least twice.</div>';
     drawLines($('#trends'));
     const ims = DATA.imaging || [];

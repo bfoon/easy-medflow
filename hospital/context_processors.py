@@ -6,7 +6,7 @@ def medflow(request):
     embed = request.GET.get('embed') == '1' or request.POST.get('embed') == '1'
     if not getattr(request, 'user', None) or not request.user.is_authenticated:
         return {'embed': embed}
-    from .models import ImagingOrder, QueueTicket, LabOrder, LabRequest, Prescription, Referral, WorkflowRun
+    from .models import Invoice, ImagingOrder, QueueTicket, LabOrder, LabRequest, Prescription, Referral, WorkflowRun
     from .views import role_of
     return {
         'embed': embed,
@@ -18,5 +18,6 @@ def medflow(request):
             'referrals': Referral.objects.filter(Q(status='sent') | Q(status='accepted')).count(),
             'studio': WorkflowRun.objects.filter(status='open').count(),
             'imaging': ImagingOrder.objects.filter(status__in=['requested', 'acquired']).count(),
+            'bills': Invoice.objects.filter(status='draft').count(),
         },
     }

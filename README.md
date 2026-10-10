@@ -42,6 +42,8 @@ These credentials are for local use only. For real patients use the production s
 | `Bind for 127.0.0.1:8000 failed: port is already allocated` | Another program (often a PyCharm run configuration) or an older MedFlow stack uses port 8000. Stop it, or start with `$env:MEDFLOW_PORT=8080; docker compose up -d`. |
 | Running Django directly in PyCharm against the Docker database | Set `POSTGRES_HOST=localhost`, `POSTGRES_PORT=5433`, `POSTGRES_PASSWORD=medflow-dev-password`, `DJANGO_DEBUG=True`. Or use `USE_SQLITE=True` for a local file database. |
 
+| Buttons do nothing, the side panel shows at the bottom of the page, or animations are missing after an update | The browser is using old CSS/JavaScript from its cache. From this version every CSS/JS link carries a content fingerprint, so this cannot recur; press **Ctrl+F5** once after installing it. |
+
 After a reboot or a Docker Desktop restart, `web` and `worker` wait up to 90 seconds for the database instead of crashing.
 
 ## Quick start (local, no Docker)
@@ -186,6 +188,36 @@ Click any bed on the bed board for its page: the current patient with length of 
 tests, quick actions (prescribe, order tests, discharge), a ward strip to jump between beds, 30-day occupancy,
 average stay, and everyone who has used the bed. Empty beds can be taken out of service with a reason.
 
+## Finance
+
+Prices live in one place: services (consultations, imaging, bed-days, procedures) under *Finance → Price list*,
+lab tests and medicines on their own records. *Bill current visit* (patient page) or *Bill* (visit page) opens the
+visit's bill and captures every charge: consultation, lab tests, imaging, medicines actually dispensed and bed-days.
+Each charge is recorded with its source, so nothing is billed twice. Issue the bill, then take payments by cash,
+Wave, Afrimoney, QMoney, card, bank transfer or insurance, including part-payments; mobile money and card need a
+transaction reference. Insurance is a percentage split, with the patient's and insurer's balances tracked
+separately. Discounts need a reason and finance staff; payments and bills are voided with a reason, never deleted.
+The finance dashboard shows collections, payment methods, unpaid balances by age and revenue mix. Roles: `finance`
+and `reception` take payments; only `finance` and admins give discounts or void.
+
+## Decision support
+
+While prescribing or ordering tests, a panel shows the patient's allergies, safety checks and suggestions:
+allergies are matched by name and by drug class (a penicillin allergy flags amoxicillin; cephalosporins get a
+cross-reaction caution); risky combinations with results or conditions (e.g. metformin with raised creatinine,
+NSAIDs with kidney disease or hypertension); missing work-up (malaria without a test, chest pain without troponin);
+and results that do not fit the diagnosis (negative malaria test, raised troponin without a cardiac diagnosis). The
+visit page shows the same *Clinical safety review*. Suggestions show what colleagues here usually ordered or
+prescribed for the same diagnosis and how those patients did, with one-click *Add* (needs 3+ past visits).
+
+Click any trend chart or flagged result in *Lab insights* for its meaning, full trend, history, suggested next steps
+and buttons to repeat the test or mark it reviewed. *Play history* on the patient page replays the whole record.
+
+**AI.** Off by default. Set `CLINICAL_AI_ENABLED=True`, `CLINICAL_AI_ENDPOINT` and `CLINICAL_AI_TOKEN` to send a
+de-identified context (no name, record number, phone, address, date of birth, real dates or free-text notes) from the
+server to an approved service; *What AI would see* on the visit page shows exactly that payload. Without AI the
+rule-based checks still run. All suggestions are advisory and need clinician review.
+
 ## Modules included
 
 - Patient MRN, demographics, longitudinal encounters, symptoms, assessments, diagnoses, vitals, conditions, allergies, medications, labs, admissions, referrals, structured forms and chart timeline.
@@ -227,7 +259,7 @@ For HTTPS deployments set `SECURE_SSL_REDIRECT=True`, correct `DJANGO_ALLOWED_HO
 ## Development utilities
 
 ```bash
-USE_SQLITE=True python manage.py test hospital   # 39 workflow tests
+USE_SQLITE=True python manage.py test hospital   # 50 workflow tests
 docker compose -f compose.prod.yml logs -f web
 docker compose -f compose.prod.yml exec web python manage.py check --deploy
 ```

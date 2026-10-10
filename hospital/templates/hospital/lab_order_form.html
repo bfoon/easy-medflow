@@ -1,4 +1,4 @@
-{% extends 'hospital/base.html' %}
+{% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}Order tests{% endblock %}
 {% block heading %}New lab request{% endblock %}
 {% block subheading %}<p class="sub">Pick a visit and tick every test you need. They go to the lab together as one request for this patient.</p>{% endblock %}
@@ -34,6 +34,7 @@
     <h3 id="sum-n">No tests selected</h3>
     <ul class="plain ruled my-3" id="sum-list"></ul>
     <p class="small muted" id="sum-tat"></p>
+    <div id="ds" class="ds-inline mb-3"></div>
     <div class="field"><label class="form-label" for="priority">Priority</label>
       <select class="form-select" id="priority" name="priority">{% for v, l in priorities %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
     <div class="field"><label class="form-label" for="clinical_notes">Clinical notes for the lab</label>
@@ -44,6 +45,7 @@
 </form>
 {% endblock %}
 {% block scripts %}
+<script src="{% asset 'hospital/js/decision.js' %}"></script>
 <script>
 (() => {
   const boxes = [...document.querySelectorAll('input[name="tests"]')], list = document.getElementById('sum-list');
@@ -55,7 +57,11 @@
     document.getElementById('sum-tat').textContent = on.length ? `Longest expected turnaround: about ${Math.max(...on.map(b => +b.dataset.tat))} hours.` : '';
     document.getElementById('sum-btn').disabled = !on.length;
   };
-  boxes.forEach(b => b.addEventListener('change', sync)); sync();
+  const ds = MFDecision.mount({box: document.getElementById('ds'), url: "{% url 'api_clinical' %}", mode: 'lab',
+    encounter: () => document.getElementById('enc').value, tests: () => boxes.filter(b => b.checked).map(b => b.value),
+    onAddTest: id => { const b = boxes.find(x => x.value === String(id)); if (b) { b.checked = true; sync(); b.closest('.test-pick').scrollIntoView({behavior: 'smooth', block: 'center'}); } }});
+  boxes.forEach(b => b.addEventListener('change', () => { sync(); ds.refresh(); })); sync();
+  document.getElementById('enc').addEventListener('change', () => ds.refresh());
   let cat = '';
   const filter = () => {
     const q = document.getElementById('test-search').value.trim().toLowerCase();

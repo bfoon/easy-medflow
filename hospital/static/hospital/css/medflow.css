@@ -782,8 +782,13 @@ details.inform[open]{flex-basis:100%}
 .complete-pop .pop-card{position:absolute;right:0;top:calc(100% + 6px);z-index:20;width:280px}
 .print-slip{display:none}
 @media print{
-  body *{visibility:hidden}.print-slip,.print-slip *{visibility:visible}
-  .print-slip{display:block;position:absolute;inset:0;padding:30px;font-size:14px}.print-slip h2{font-size:20px}.print-slip .sig{margin-top:40px}
+  /* never print navigation or overlays */
+  .rail,.utility,.topbar .actions,.toasts,.drawer,.drawer-backdrop,.palette-backdrop,.modal-mf,.menu-btn{display:none!important}
+  .shell{display:block}.main{padding:0}.page-enter{animation:none}
+  /* pages with a dedicated printout (patient note, receipt) print only that */
+  body:has(.print-slip) .page-enter>:not(.print-slip),body:has(.print-slip) .topbar{display:none!important}
+  .print-slip{display:block!important;padding:10px;font-size:14px}.print-slip h2{font-size:20px}.print-slip .sig{margin-top:40px}
+  body:has(.print-area) .page-enter>:not(.print-area),body:has(.print-area) .topbar{display:none!important}
 }
 
 /* ============================================================= imaging */
@@ -996,3 +1001,112 @@ details.inform[open]{flex-basis:100%}
 .bed-empty h2{color:var(--ink);font-size:1.3rem}
 .panel.flush .mini-table th:first-child,.panel.flush .mini-table td:first-child{padding-left:22px}
 .panel.flush .mini-table th:last-child,.panel.flush .mini-table td:last-child{padding-right:22px}
+.drawer[hidden],.drawer-backdrop[hidden]{display:none!important}
+
+/* ============================================================= finance */
+.fin-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width:900px){.fin-kpis{grid-template-columns:repeat(2,1fr)}}
+a.kpi{text-decoration:none;color:inherit;transition:border-color .2s}a.kpi:hover{border-color:var(--teal)}
+.kpi.good b{color:var(--teal-2)}
+.fin-bars{height:190px}.fin-bars .bar b{font-size:.7rem}.fin-bars .bar span{font-size:.66rem;white-space:nowrap}
+.pm{display:inline-block;font-size:.74rem;font-weight:700;padding:2px 9px;border-radius:99px;background:var(--paper);border:1px solid var(--line);white-space:nowrap}
+.pm-cash{background:#E8F5E9;color:#2E7D32;border-color:transparent}.pm-wave{background:#E3F2FD;color:#1565C0;border-color:transparent}
+.pm-afrimoney{background:#FFF3E0;color:#C25E00;border-color:transparent}.pm-qmoney{background:#F3E5F5;color:#7B1FA2;border-color:transparent}
+.pm-card{background:var(--ink);color:#fff;border-color:transparent}.pm-insurance{background:var(--indigo-wash);color:var(--indigo);border-color:transparent}
+.tag.inv-draft{background:var(--amber-wash);color:#8A520B;border-color:transparent}.tag.inv-issued{background:var(--red-wash);color:var(--red);border-color:transparent}
+.tag.inv-partial{background:#FFF3E0;color:#C25E00;border-color:transparent}.tag.inv-paid{background:var(--teal-wash);color:var(--teal-2);border-color:transparent}
+.tag.inv-void{text-decoration:line-through}
+.mini-table.bill .cat-row td{background:var(--paper);font-weight:700;font-size:.82rem;color:var(--ink)}
+.mini-table.bill tfoot td{border-top:1px solid var(--line);padding-top:8px;padding-bottom:8px}
+.mini-table.bill tfoot .grand td{font-family:var(--display);font-size:1.15rem;font-weight:700;color:var(--ink);border-top:2px solid var(--ink)}
+.add-line{display:flex;gap:6px;flex-wrap:wrap;padding:12px 22px;border-top:1px dashed var(--line);background:#FAFCFB}
+.add-line select{flex:1.4;min-width:200px}.add-line input[name=description]{flex:1;min-width:160px}
+.balance-card{background:var(--ink);color:#fff;border-color:var(--ink)}
+.balance-card .label-sm{color:#9FBFCF}.balance-card .bal{font-family:var(--display);font-size:2.4rem;font-weight:700;line-height:1.1}
+.balance-card .muted{color:#9FBFCF!important}.balance-card .meter{background:#23506B}
+.balance-card.paid{background:var(--teal);border-color:var(--teal)}
+.pay-methods{display:flex;flex-wrap:wrap;gap:6px}
+.pay-methods label{cursor:pointer}.pay-methods input{position:absolute;opacity:0}
+.pay-methods .pm{padding:6px 12px;font-size:.82rem;transition:transform .12s;border:2px solid transparent}
+.pay-methods input:checked+.pm{border-color:currentColor;transform:scale(1.05);box-shadow:0 0 0 3px rgba(15,44,63,.08)}
+.pay-methods input:focus-visible+.pm{outline:3px solid #7CC7B5}
+tr.voided td{text-decoration:line-through;opacity:.55}
+.receipt{max-width:560px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px 28px;position:relative}
+.receipt header{display:flex;justify-content:space-between;border-bottom:2px dashed var(--line);padding-bottom:12px}
+.receipt-amount{font-family:var(--display);font-size:2.6rem;font-weight:700;text-align:center;color:var(--teal-2);padding:14px;border:2px solid var(--teal-wash);border-radius:12px;margin:10px 0}
+.receipt.voided::after{content:"VOID";position:absolute;inset:0;display:grid;place-items:center;font-size:6rem;font-weight:800;color:rgba(200,50,63,.18);transform:rotate(-18deg);pointer-events:none}
+@media print{.print-area{border:0}}
+.pm-card{background:#ECEFF4;color:#33415C;border-color:transparent}
+.balance-card .split{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.balance-card .split div{background:rgba(255,255,255,.08);border-radius:10px;padding:6px 10px}
+.balance-card .split span{display:block;font-size:.72rem;color:#9FBFCF}.balance-card .split b{font-family:var(--display);font-size:1.1rem}
+
+/* ============================================================= decision support */
+.ds-allergy{display:flex;gap:10px;align-items:flex-start;background:var(--red-wash);color:#8E1F2A;border-radius:12px;padding:10px 12px;margin-bottom:10px;animation:pop .3s var(--ease)}
+.ds-allergy i{font-size:1.2rem}.ds-allergy .tag{background:#fff;color:var(--red);border-color:transparent;margin-top:3px}
+.ds-allergy.none{background:var(--amber-wash);color:#6E420A}
+.ds-h{font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 6px}
+.ds-f{display:flex;gap:10px;align-items:flex-start;border-radius:10px;padding:8px 10px;margin-bottom:6px;font-size:.9rem;animation:pop .3s var(--ease)}
+.ds-f i{margin-top:2px}
+.ds-f.danger{background:var(--red-wash);color:#8E1F2A}.ds-f.warn{background:var(--amber-wash);color:#6E420A}.ds-f.info{background:var(--indigo-wash);color:#2C3C8C}
+.ds-f a{color:inherit;margin-right:8px}
+.ds-s{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px;background:#fff}
+.ds-ai{margin-top:10px;color:var(--muted)}
+.ds-empty{color:var(--muted);font-size:.9rem}
+.ds-inline{border:1px solid var(--line);border-radius:14px;padding:12px;background:#fff}
+.json-view{max-height:70vh;overflow:auto;font-size:.82rem;background:#0F2C3F;color:#CFE2EA;border-radius:12px;padding:16px;margin:0}
+
+.trend[data-param],.prow[data-param]{cursor:pointer;transition:box-shadow .2s,transform .15s}
+.trend[data-param]:hover,.prow[data-param]:hover{box-shadow:0 8px 22px rgba(15,44,63,.1);transform:translateY(-1px)}
+.kb-top{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.kb-val{font-family:var(--display);font-size:2.2rem;font-weight:700;color:var(--ink)}
+.kb-top.abn .kb-val,.kb-top.crit .kb-val{color:var(--red)}
+.kb-chart{background:#FAFCFB;border:1px solid var(--line);border-radius:12px;padding:8px;margin-top:12px}
+.kb-steps{padding-left:1.2rem;margin:0}.kb-steps li{margin-bottom:4px}
+.modal-card{width:min(760px,100%)}
+
+/* ============================================================= health story player */
+.story{display:grid;grid-template-columns:minmax(220px,300px) minmax(0,1fr);gap:18px;margin-bottom:18px}
+@media (max-width:900px){.story{grid-template-columns:1fr}}
+.story-stage{position:relative;text-align:center;background:radial-gradient(ellipse at 50% 40%,#fff,#EEF3F1)}
+.story-body{width:100%;max-height:58vh}
+.story-date{font-family:var(--display);font-size:1.15rem;font-weight:700;color:var(--ink);min-height:1.6em}
+.sp .halo{fill:var(--teal);opacity:0}.sp .core{fill:#C9D5CF;stroke:#fff;stroke-width:2}
+.sp.on.ok .core{fill:var(--teal)}.sp.on.bad .core{fill:var(--red)}
+.sp.pulse .halo{animation:spPulse 1.2s ease-out}.sp.bad .halo{fill:var(--red)}
+@keyframes spPulse{0%{opacity:.6;transform:scale(.6)}100%{opacity:0;transform:scale(2.4)}}
+.sp .halo{transform-box:fill-box;transform-origin:center}
+.story-main{display:flex;flex-direction:column;gap:14px;min-width:0}
+.story-card{min-height:230px}
+.story-ev h2{font-size:1.45rem;margin:8px 0}
+.story-ev.enter{animation:storyIn .55s var(--ease)}
+@keyframes storyIn{from{opacity:0;transform:translateX(30px) scale(.98)}to{opacity:1;transform:none}}
+.ev-ic{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--k) 15%,white);color:var(--k)}
+.story-img{max-height:220px;max-width:100%;border-radius:10px;background:#05090D;animation:fade .6s}
+.story-charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.story-chart{padding:12px 14px}
+.player{position:sticky;bottom:12px;z-index:5;box-shadow:0 10px 30px rgba(15,44,63,.12)}
+.scrub{position:relative;height:28px;margin:12px 0 4px;background:var(--paper);border-radius:99px;cursor:pointer;overflow:hidden}
+.scrub-fill{position:absolute;inset:0 auto 0 0;background:var(--teal-wash);transition:width .4s var(--ease)}
+.scrub .tick{position:absolute;top:5px;width:8px;height:18px;border-radius:3px;margin-left:-4px;opacity:.35;transition:opacity .2s,transform .2s}
+.scrub .tick.past{opacity:1}
+.scrub .tick:hover{transform:scaleY(1.4)}
+
+/* near-realistic organ art */
+.oa.real .groove{fill:none;stroke:#F2D58A;stroke-width:3;opacity:.55}
+.oa.real .coronary{fill:none;stroke:#E8676C;stroke-width:3.2;stroke-linecap:round;filter:drop-shadow(0 0 1px #5E0C14)}
+.oa.real.injury .injury-zone{animation:injury 1.4s infinite}
+.oa.real .injury-zone{opacity:0}
+.p-red{fill:#FFB3B6}.p-blue{fill:#C9D3FF}
+.oa.real .beat-box{transform-box:fill-box;transform-origin:50% 60%}
+.oa-blood.real .tumble{animation:tumble 4s linear infinite;transform-box:fill-box;transform-origin:center}
+@keyframes tumble{0%{transform:rotate(0) scaleY(1)}50%{transform:rotate(180deg) scaleY(.55)}100%{transform:rotate(360deg) scaleY(1)}}
+.oa-blood.real .oa-flow.far{opacity:.75}
+.oa-lungs.real .bronchi path{stroke:#E8B9A8;fill:none;stroke-linecap:round}
+.oa-lungs.real .fissure{fill:none;stroke:#B9606A;stroke-width:1.4;opacity:.7}
+.oa-lungs.real .alv-s{fill:#F6C1C1;stroke:#D07C7C;animation:alv 3.6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.o2r{fill:#1E88E5}.oa-lungs.real.lowo2 .o2r{fill:#7E57C2;opacity:.5}
+.oa-kidney.real .ureter2{fill:none;stroke:#F0D38A;stroke-width:6;stroke-linecap:round}
+.k-drop2{fill:#E8B730}.oa-kidney.real.slow .k-drop2{fill:#C9873A}
+.oa-lbl{font:600 9px var(--body);fill:var(--muted)}
+.oa-liver.real.jaundice .liver-shape{filter:url(#oa-grain) sepia(.6)}

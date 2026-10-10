@@ -1,0 +1,14 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ pay.receipt_number }}{% endblock %}
+{% block heading %}Receipt {{ pay.receipt_number }}{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'invoice_detail' inv.pk %}"><i class="bi bi-arrow-left"></i>Bill</a><button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i>Print</button>{% endblock %}
+{% block content %}
+<article class="receipt print-area {% if pay.voided %}voided{% endif %}">
+  <header><div><b class="display">MedFlow Hospital</b><div class="small muted">Official receipt</div></div><div class="text-end"><b>{{ pay.receipt_number }}</b><div class="small muted">{{ pay.received_at|date:'j F Y, H:i' }}</div></div></header>
+  {% if pay.voided %}<div class="alert-mf danger my-2"><i class="bi bi-x-octagon"></i><div>VOIDED: {{ pay.void_reason }}</div></div>{% endif %}
+  <dl class="kv my-3"><dt>Received from</dt><dd>{{ p.full_name }} · {{ p.mrn }}</dd><dt>For bill</dt><dd>{{ inv.number }}</dd><dt>Method</dt><dd>{{ pay.get_method_display }}{% if pay.reference %} · {{ pay.reference }}{% endif %}</dd><dt>Received by</dt><dd>{{ pay.received_by|display_name }}</dd></dl>
+  <div class="receipt-amount">{{ pay.amount|money }}</div>
+  <div class="d-flex small"><span>Bill total {{ inv.total|money }}</span><span class="ms-auto">Balance remaining {{ inv.balance|money }}</span></div>
+  <footer class="small muted mt-3">Thank you. Keep this receipt for your records.</footer>
+</article>
+{% endblock %}

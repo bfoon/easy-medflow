@@ -81,3 +81,36 @@ def stars(value):
     icons = ['bi-star-fill'] * int(v) + (['bi-star-half'] if v % 1 else []) 
     icons += ['bi-star'] * (5 - len(icons))
     return format_html_join('', '<i class="bi {}"></i>', ((i,) for i in icons))
+
+
+_ASSET_CACHE = {}
+
+
+@register.simple_tag
+def asset(path):
+    """Static URL with a content fingerprint (?v=…), so browsers fetch new CSS/JS after every update
+    instead of reusing a stale cached copy."""
+    import hashlib
+    import os
+    from django.contrib.staticfiles import finders
+    from django.templatetags.static import static
+    url = static(path)
+    found = finders.find(path)
+    if not found:
+        return url
+    mtime = os.path.getmtime(found)
+    key = (path, mtime)
+    if key not in _ASSET_CACHE:
+        with open(found, 'rb') as fh:
+            _ASSET_CACHE[key] = hashlib.md5(fh.read(), usedforsecurity=False).hexdigest()[:10]
+    return f'{url}{"&" if "?" in url else "?"}v={_ASSET_CACHE[key]}'
+
+
+@register.filter
+def money(value):
+    """Gambian dalasi with thousands separators, e.g. D1,250.00"""
+    from decimal import Decimal
+    try:
+        return f'D{Decimal(value or 0):,.2f}'
+    except Exception:
+        return value

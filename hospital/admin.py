@@ -98,3 +98,31 @@ class NetworkFacilityAdmin(admin.ModelAdmin):
 class ReferralTaskAdmin(admin.ModelAdmin):
     list_display = ('title', 'referral', 'assigned_to_side', 'kind', 'status', 'due')
     list_filter = ('status', 'assigned_to_side', 'kind')
+
+
+@admin.register(models.Tariff)
+class TariffAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'category', 'amount', 'active')
+    list_editable = ('amount', 'active')
+    list_filter = ('category', 'active')
+
+
+class InvoiceLineInline(admin.TabularInline):
+    model = models.InvoiceLine
+    extra = 0
+
+
+class PaymentInline(admin.TabularInline):
+    model = models.Payment
+    extra = 0
+    readonly_fields = ('amount', 'method', 'reference', 'received_by', 'received_at', 'voided', 'void_reason')
+    can_delete = False
+    def has_add_permission(self, request, obj=None): return False
+
+
+@admin.register(models.Invoice)
+class InvoiceAdmin(admin.ModelAdmin):
+    list_display = ('__str__', 'status', 'created_at')
+    list_filter = ('status',)
+    search_fields = ('patient__first_name', 'patient__last_name', 'patient__mrn')
+    inlines = [InvoiceLineInline, PaymentInline]

@@ -1,0 +1,13 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Price list{% endblock %}
+{% block heading %}Price list{% endblock %}
+{% block subheading %}<p class="sub">Prices used when charges are captured. Edit them under Configuration.</p>{% endblock %}
+{% block actions %}{% if request.user.is_staff %}<a class="btn btn-ghost" href="{% url 'admin:hospital_tariff_changelist' %}"><i class="bi bi-pencil"></i>Edit services</a>{% endif %}{% endblock %}
+{% block content %}
+<input class="form-control mb-3" style="max-width:320px" placeholder="Filter prices…" data-filter=".price-row" aria-label="Filter prices">
+<div class="grid g-3">
+  <section class="panel flush"><div class="panel-head"><h2>Services</h2></div><div class="scroll-y tall"><table class="mini-table">{% for t in tariffs %}<tr class="price-row"><td>{{ t.name }}<div class="small muted">{{ t.get_category_display }}</div></td><td class="text-end">{{ t.amount|money }}</td></tr>{% endfor %}</table></div></section>
+  <section class="panel flush"><div class="panel-head"><h2>Laboratory</h2></div><div class="scroll-y tall"><table class="mini-table">{% for t in tests %}<tr class="price-row"><td>{{ t.name }}<div class="small muted">{{ t.category }}</div></td><td class="text-end">{{ t.price|money }}</td></tr>{% endfor %}</table></div></section>
+  <section class="panel flush"><div class="panel-head"><h2>Medicines</h2><span class="hint">per unit</span></div><div class="scroll-y tall"><table class="mini-table">{% for m in meds %}<tr class="price-row"><td>{{ m }}<div class="small muted">{{ m.form }}</div></td><td class="text-end">{{ m.unit_price|money }}</td></tr>{% endfor %}</table></div></section>
+</div>
+{% endblock %}

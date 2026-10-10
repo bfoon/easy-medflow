@@ -1,0 +1,7 @@
+{% extends 'hospital/base.html' %}
+{% block title %}AI context{% endblock %}
+{% block heading %}What an AI service would see{% endblock %}
+{% block subheading %}<p class="sub">De-identified context for <a href="{% url 'encounter_detail' e.pk %}">this visit</a>. No name, record number, phone, address, date of birth or real dates; free-text notes are left out. {% if enabled %}<span class="tag teal">AI connected</span>{% else %}<span class="tag">AI not connected: nothing is being sent</span>{% endif %}</p>{% endblock %}
+{% block content %}
+<section class="panel"><pre class="json-view">{{ json }}</pre></section>
+{% endblock %}

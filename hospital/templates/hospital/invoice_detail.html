@@ -1,0 +1,90 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ inv.number }}{% endblock %}
+{% block heading %}Bill {{ inv.number }}{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }}{% if inv.encounter %} · <a href="{% url 'encounter_detail' inv.encounter_id %}">{{ inv.encounter.reason|truncatechars:40 }}</a>{% endif %} · <span class="tag inv-{{ inv.status }}">{{ inv.get_status_display }}</span>{% if inv.issued_at %} · issued {{ inv.issued_at|date:'j M Y' }}{% endif %}</p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="{% url 'invoices' %}"><i class="bi bi-arrow-left"></i>Bills</a>
+  {% if inv.encounter and inv.status != 'void' and inv.status != 'paid' %}<form method="post" action="{% url 'invoice_capture' inv.pk %}">{% csrf_token %}<button class="btn btn-ghost"><i class="bi bi-arrow-repeat"></i>Capture new charges</button></form>{% endif %}
+  {% if inv.status == 'draft' %}<form method="post" action="{% url 'invoice_issue' inv.pk %}" data-confirm="Issue this bill for {{ inv.total|money }}? Lines can no longer be changed.">{% csrf_token %}<button class="btn btn-primary"><i class="bi bi-send-check"></i>Issue bill</button></form>{% endif %}
+{% endblock %}
+{% block content %}
+{% if inv.status == 'void' %}<div class="alert-mf danger mb-3"><i class="bi bi-x-octagon"></i><div>Voided: {{ inv.void_reason }}</div></div>{% endif %}
+{% if other_open %}<div class="alert-mf warn mb-3"><i class="bi bi-exclamation-triangle"></i><div>This patient has other unpaid bills: {% for o in other_open %}<a href="{% url 'invoice_detail' o.pk %}">{{ o.number }} ({{ o.balance|money }})</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div></div>{% endif %}
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel flush">
+      <div class="panel-head"><h2>Charges</h2><span class="hint">{% if editable %}Draft: you can still add or remove lines{% else %}Locked once issued{% endif %}</span></div>
+      <table class="mini-table bill"><thead><tr><th>Item</th><th class="text-end">Qty</th><th class="text-end">Price</th><th class="text-end">Amount</th>{% if editable %}<th></th>{% endif %}</tr></thead><tbody>
+      {% for cat, lines, sub in groups %}
+        <tr class="cat-row"><td colspan="{% if editable %}5{% else %}4{% endif %}">{{ cat }} <span class="muted">· {{ sub|money }}</span></td></tr>
+        {% for l in lines %}<tr><td>{{ l.description }}</td><td class="text-end">{{ l.quantity|floatformat:"-2" }}</td><td class="text-end">{{ l.unit_price|money }}</td><td class="text-end">{{ l.total|money }}</td>
+          {% if editable %}<td class="text-end"><form method="post" action="{% url 'invoice_remove_line' inv.pk l.pk %}">{% csrf_token %}<button class="icon-btn" aria-label="Remove {{ l.description }}"><i class="bi bi-x-lg"></i></button></form></td>{% endif %}</tr>{% endfor %}
+      {% empty %}<tr><td colspan="5" class="empty">No charges yet.{% if inv.encounter %} Use “Capture new charges”.{% endif %}</td></tr>{% endfor %}
+      </tbody>
+      <tfoot>
+        <tr><td colspan="3">Subtotal</td><td class="text-end">{{ inv.subtotal|money }}</td>{% if editable %}<td></td>{% endif %}</tr>
+        {% if inv.discount %}<tr><td colspan="3">Discount <span class="small muted">({{ inv.discount_reason }})</span></td><td class="text-end">−{{ inv.discount|money }}</td>{% if editable %}<td></td>{% endif %}</tr>{% endif %}
+        {% if inv.insurance_cover %}<tr><td colspan="3">Insurance · {{ inv.insurer|default:'insurer' }} {{ inv.insurance_cover }}%{% if inv.policy_number %} <span class="small muted">({{ inv.policy_number }})</span>{% endif %}</td><td class="text-end">{{ inv.insurance_share|money }}</td>{% if editable %}<td></td>{% endif %}</tr>
+        <tr><td colspan="3">Patient pays</td><td class="text-end">{{ inv.patient_share|money }}</td>{% if editable %}<td></td>{% endif %}</tr>{% endif %}
+        <tr class="grand"><td colspan="3">Total</td><td class="text-end">{{ inv.total|money }}</td>{% if editable %}<td></td>{% endif %}</tr>
+      </tfoot></table>
+      {% if editable %}
+      <form method="post" action="{% url 'invoice_add_line' inv.pk %}" class="add-line">{% csrf_token %}
+        <select class="form-select form-select-sm" name="tariff" aria-label="Price-list item"><option value="">Price-list item…</option>{% for t in tariffs %}<option value="{{ t.pk }}">{{ t.name }} · {{ t.amount|money }}</option>{% endfor %}</select>
+        <input class="form-control form-control-sm" name="description" placeholder="or describe a charge" aria-label="Description">
+        <input class="form-control form-control-sm" name="unit_price" placeholder="Price" inputmode="decimal" style="max-width:100px" aria-label="Price">
+        <input class="form-control form-control-sm" name="quantity" value="1" style="max-width:70px" aria-label="Quantity">
+        <button class="btn btn-sm btn-ink"><i class="bi bi-plus"></i>Add</button>
+      </form>{% endif %}
+    </section>
+    <section class="panel flush">
+      <div class="panel-head"><h2>Payments</h2></div>
+      <table class="mini-table"><thead><tr><th>Receipt</th><th>Method</th><th>Reference</th><th>Received</th><th class="text-end">Amount</th><th></th></tr></thead><tbody>
+      {% for pay in payments %}<tr class="{% if pay.voided %}voided{% endif %}"><td><a href="{% url 'payment_receipt' pay.pk %}">{{ pay.receipt_number }}</a></td><td><span class="pm pm-{{ pay.method }}">{{ pay.get_method_display }}</span></td><td class="small">{{ pay.reference|default:'—' }}</td><td class="small muted">{{ pay.received_at|date:'j M H:i' }} · {{ pay.received_by|display_name }}</td><td class="text-end fw-semibold">{{ pay.amount|money }}</td>
+        <td class="text-end">{% if pay.voided %}<span class="tag red" title="{{ pay.void_reason }}">Voided</span>{% elif can_admin %}<details class="inform d-inline-block"><summary class="icon-btn" aria-label="Void payment"><i class="bi bi-three-dots"></i></summary><form method="post" action="{% url 'payment_void' pay.pk %}" class="pop-card" style="position:absolute;right:20px">{% csrf_token %}<input class="form-control form-control-sm mb-2" name="reason" placeholder="Reason to void" required><button class="btn btn-sm btn-danger-soft w-100">Void payment</button></form></details>{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="6" class="empty">No payments yet.</td></tr>{% endfor %}</tbody></table>
+    </section>
+  </div>
+  <aside class="stack align-self-start" style="position:sticky;top:20px">
+    <section class="panel balance-card {% if inv.status == 'paid' %}paid{% endif %}">
+      <div class="label-sm">{% if inv.status == 'paid' %}Paid in full{% else %}Balance due{% endif %}</div>
+      <div class="bal">{{ inv.balance|money }}</div>
+      <div class="meter mt-2"><i style="--w:{% if inv.total %}{% widthratio inv.paid inv.total 100 %}{% else %}0{% endif %}%"></i></div>
+      <div class="d-flex small muted mt-1"><span>Paid {{ inv.paid|money }}</span><span class="ms-auto">of {{ inv.total|money }}</span></div>
+      {% if inv.insurance_cover and inv.status != 'void' %}<div class="split mt-2"><div><span>Patient owes</span><b>{{ inv.patient_balance|money }}</b></div><div><span>{{ inv.insurer|default:'Insurer' }} owes</span><b>{{ inv.insurer_balance|money }}</b></div></div>{% endif %}
+      {% if inv.due_date and inv.balance and inv.status != 'void' %}<div class="small mt-1">Due {{ inv.due_date|date:'j M Y' }}</div>{% endif %}
+    </section>
+    {% if inv.status == 'issued' or inv.status == 'partial' %}
+    <section class="panel">
+      <div class="panel-head"><h2>Take payment</h2></div>
+      <form method="post" action="{% url 'payment_new' inv.pk %}" id="pay-form">{% csrf_token %}
+        <div class="pay-methods">{% for v, l in methods %}<label><input type="radio" name="method" value="{{ v }}" {% if forloop.first %}checked{% endif %}><span class="pm pm-{{ v }}">{{ l }}</span></label>{% endfor %}</div>
+        <label class="form-label mt-2" for="amount">Amount (D)</label>
+        <div class="d-flex gap-2"><input class="form-control" id="amount" name="amount" value="{% if inv.insurance_cover %}{{ inv.patient_balance|floatformat:2 }}{% else %}{{ inv.balance|floatformat:2 }}{% endif %}" inputmode="decimal" required>
+          {% if inv.insurance_cover %}<button type="button" class="btn btn-sm btn-ghost text-nowrap" data-fill="{{ inv.insurer_balance|floatformat:2 }}" data-method="insurance">Insurer share</button>{% endif %}</div>
+        <input class="form-control mt-2" name="reference" id="ref" placeholder="Transaction reference" hidden>
+        <button class="btn btn-primary w-100 mt-3 py-2"><i class="bi bi-cash-coin"></i>Record payment</button>
+      </form>
+    </section>{% endif %}
+    {% if inv.status == 'draft' or inv.status == 'issued' %}
+    <section class="panel">
+      <div class="panel-head"><h2>Insurance &amp; discount</h2></div>
+      <form method="post" action="{% url 'invoice_update' inv.pk %}">{% csrf_token %}
+        <div class="d-flex gap-2 mb-2"><input class="form-control form-control-sm" name="insurer" value="{{ inv.insurer }}" placeholder="Insurer"><input class="form-control form-control-sm" name="policy_number" value="{{ inv.policy_number }}" placeholder="Policy no."></div>
+        <label class="small">Insurance covers <input class="form-control form-control-sm d-inline-block" style="width:70px" name="insurance_cover" value="{{ inv.insurance_cover }}" type="number" min="0" max="100"> %</label>
+        {% if can_admin %}<div class="d-flex gap-2 mt-2"><input class="form-control form-control-sm" style="max-width:110px" name="discount" value="{{ inv.discount|floatformat:2 }}" placeholder="Discount D"><input class="form-control form-control-sm" name="discount_reason" value="{{ inv.discount_reason }}" placeholder="Reason for discount"></div>{% else %}<input type="hidden" name="discount" value="{{ inv.discount|floatformat:2 }}"><input type="hidden" name="discount_reason" value="{{ inv.discount_reason }}">{% endif %}
+        <button class="btn btn-sm btn-ghost w-100 mt-2">Save</button>
+      </form>
+      {% if can_admin %}<details class="mt-3"><summary class="small text-danger">Void this bill</summary><form method="post" action="{% url 'invoice_void' inv.pk %}" class="mt-2">{% csrf_token %}<input class="form-control form-control-sm mb-2" name="reason" placeholder="Reason" required><button class="btn btn-sm btn-danger-soft w-100">Void bill</button></form></details>{% endif %}
+    </section>{% endif %}
+  </aside>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+(() => { const f = document.getElementById('pay-form'); if (!f) return; const ref = document.getElementById('ref');
+  const sync = () => { const m = f.querySelector('[name="method"]:checked').value; ref.hidden = m === 'cash' || m === 'insurance'; ref.required = !ref.hidden;
+    ref.placeholder = {wave: 'Wave transaction ID', afrimoney: 'Afrimoney reference', qmoney: 'QMoney reference', card: 'Card approval code', bank: 'Bank reference'}[m] || ''; };
+  f.querySelectorAll('[name="method"]').forEach(r => r.addEventListener('change', sync)); sync();
+  f.querySelector('[data-fill]')?.addEventListener('click', e => { document.getElementById('amount').value = e.target.dataset.fill;
+    const m = f.querySelector(`[name="method"][value="${e.target.dataset.method}"]`); if (m) { m.checked = true; sync(); } }); })();
+</script>{% endblock %}

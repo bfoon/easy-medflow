@@ -26,6 +26,7 @@
       <button class="btn btn-primary" data-drawer="{% url 'encounter_new' %}?patient={{ p.pk }}" data-title="Start encounter"><i class="bi bi-clipboard2-plus"></i>Start encounter</button>
     {% endif %}
     <a class="btn btn-ghost" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-activity"></i>Lab insights</a>
+    <a class="btn btn-ghost" href="{% url 'patient_story' p.pk %}"><i class="bi bi-play-circle"></i>Play history</a>
     <div class="dropdown">
       <button class="btn btn-ghost" aria-expanded="false" aria-label="More actions" onclick="this.nextElementSibling.classList.toggle('show')"><i class="bi bi-three-dots"></i></button>
       <ul class="dropdown-menu dropdown-menu-end" style="right:0;left:auto;top:110%">
@@ -149,6 +150,11 @@
   </section>
 
   <div class="stack">
+    <section class="panel billing-mini">
+      <div class="panel-head"><h2><i class="bi bi-cash-stack me-1" style="color:var(--teal)"></i>Billing</h2>{% if billing.balance %}<span class="ms-auto tag red">Owes {{ billing.balance|money }}</span>{% else %}<span class="ms-auto tag teal">Nothing owed</span>{% endif %}</div>
+      <ul class="plain ruled">{% for inv in billing.invoices %}<li><a class="d-flex gap-2 text-decoration-none" href="{% url 'invoice_detail' inv.pk %}"><span><b class="text-dark">{{ inv.number }}</b> <span class="tag inv-{{ inv.status }}">{{ inv.get_status_display }}</span><br><span class="small muted">{{ inv.created_at|date:'j M Y' }} · {{ inv.total|money }}</span></span>{% if inv.balance and inv.status != 'draft' and inv.status != 'void' %}<b class="ms-auto text-danger">{{ inv.balance|money }}</b>{% endif %}</a></li>{% empty %}<li class="muted small">No bills yet.</li>{% endfor %}</ul>
+      {% if billing.encounter %}<a class="btn btn-sm btn-ink w-100 mt-2" href="{% url 'invoice_for_encounter' billing.encounter.pk %}"><i class="bi bi-receipt"></i>{% if billing.encounter.status == 'open' %}Bill current visit{% else %}Bill last visit{% endif %}</a>{% endif %}
+    </section>
     {% include 'hospital/_similar.html' with patient_id=p.pk %}
     <section class="panel">
       <div class="panel-head"><h2>Latest vitals</h2>{% if vitals_at %}<span class="hint">{{ vitals_at|date:'j M, H:i' }}</span>{% endif %}</div>

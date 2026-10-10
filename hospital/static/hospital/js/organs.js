@@ -190,7 +190,9 @@
   }
 
   const ART = {blood, heart, kidneys, lungs, liver, pancreas, brain, thyroid, immune};
+  window.__MF_ART = ART;   // organs-real.js replaces entries with more realistic versions
   window.MedFlowOrgans = {
+    helpers: {part, rnd, scale, clamp},
     render(system, params, label) {
       const r = reader(params || []);
       const art = (ART[system] || (() => generic(r, label)))(r);

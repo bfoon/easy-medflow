@@ -94,3 +94,8 @@ X_FRAME_OPTIONS = 'SAMEORIGIN'  # pages may be framed only by MedFlow itself (th
 
 CELERY_BROKER_URL = env('REDIS_URL', default='redis://redis:6379/0')
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+
+# Clinical AI (off by default). When enabled, only de-identified context is sent, from the server, to this endpoint.
+CLINICAL_AI_ENABLED = env.bool('CLINICAL_AI_ENABLED', False)
+CLINICAL_AI_ENDPOINT = env('CLINICAL_AI_ENDPOINT', default='')
+CLINICAL_AI_TOKEN = env('CLINICAL_AI_TOKEN', default='')

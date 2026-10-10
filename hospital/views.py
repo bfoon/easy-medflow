@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from datetime import date, timedelta
 
 from django import forms
@@ -15,11 +16,11 @@ from django.views.decorators.http import require_POST
 
 from .forms import (VITAL_FIELDS, AdmissionForm, AllergyForm, ConditionForm, EncounterForm, FormDefinitionForm,
                     LabOrderForm, PatientForm, ImagingOrderForm, ReferralNetworkForm, PrescriptionForm, PrescriptionItemFormSet, ReferralForm, TicketForm, WorkflowDefinitionForm)
-from .models import (NetworkFacility, ReferralTask, Specialist, SpecialistSlot, MODALITIES, ImagingImage, ImagingOrder, StockRequest, FREQUENCIES, LabRequest, PrescriptionItem, BODY_SYSTEMS, LabCategory, LabParameter, LabResultValue, LabTest, StaffProfile,
+from .models import (Invoice, InvoiceLine, Payment, Tariff, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, MODALITIES, ImagingImage, ImagingOrder, StockRequest, FREQUENCIES, LabRequest, PrescriptionItem, BODY_SYSTEMS, LabCategory, LabParameter, LabResultValue, LabTest, StaffProfile,
                      Admission, Attendance, AuditEvent, Bed, Department, Encounter, FormDefinition, FormSubmission,
                      LabOrder, Medication, Patient, Prescription, QueueTicket, Referral, Signature, Ward,
                      WorkflowDefinition, WorkflowRun)
-from .services import (advance_workflow, anonymised_case, assign_bed, availability, case_from_token, discharge, dispense, prescription_check,
+from .services import (capture_charges, open_invoice_for, record_payment, advance_workflow, anonymised_case, assign_bed, availability, case_from_token, discharge, dispense, prescription_check,
                        prescription_warnings, receive_stock, sign_document, similar_cases)
 
 # Staff accounts are provisioned by administrators; there is no public signup.
@@ -236,7 +237,14 @@ def patient_chart(request, pk):
         'current_admission': next((a for a in admissions if not a.discharged_at), None),
         'imaging': ImagingOrder.objects.filter(encounter__patient=p).exclude(status='cancelled').prefetch_related('images').order_by('-created_at')[:30],
         **similar_context(p, encounters),
+        'billing': billing_context(p, encounters),
     })
+
+
+def billing_context(p, encounters):
+    invs = list(Invoice.objects.filter(patient=p).exclude(status='void').prefetch_related('lines', 'payments').order_by('-created_at')[:6])
+    return {'invoices': invs, 'balance': sum(i.balance for i in invs if i.status in ('issued', 'partial')),
+            'encounter': next((e for e in encounters if e.status == 'open'), None) or (encounters[0] if encounters else None)}
 
 
 def similar_context(p, encounters):
@@ -294,6 +302,7 @@ def encounter_detail(request, pk):
         'vitals': [(lbl, unit, e.vitals.get(k)) for k, lbl, unit, _ in VITAL_FIELDS if e.vitals.get(k)],
         'can_sign': role_of(request.user) in ('doctor', 'admin'),
         'imaging': e.imaging.exclude(status='cancelled').prefetch_related('images'), 'outcomes': Encounter.OUTCOMES,
+        'review': __import__('hospital.clinical', fromlist=['clinical_review']).clinical_review(e), 'ai_on': __import__('hospital.clinical', fromlist=['ai_enabled']).ai_enabled(),
         **similar_context(e.patient, [e] + list(e.patient.encounters.exclude(pk=e.pk).order_by('-created_at')[:20])),
     })
 
@@ -481,7 +490,7 @@ def lab_new(request):
             return finish(request, request.POST.get('next') or reverse('lab_request_detail', args=[lr.pk]),
                           f'Lab request {lr.number}: {len(tests)} test{"s" if len(tests) > 1 else ""} for {enc.patient.full_name}.')
     return render(request, 'hospital/lab_order_form.html', {'encounters': encounters, 'categories': categories, 'priorities': LabRequest.PRIORITY,
-                                                            'selected_enc': str(selected_enc), 'selected': request.POST.getlist('tests')})
+                                                            'selected_enc': str(selected_enc), 'selected': request.POST.getlist('tests') or request.GET.getlist('test')})
 
 
 def models_prefetch_tests():
@@ -694,7 +703,7 @@ def patient_lab_data(patient):
             prm = v.parameter
             lo, hi = prm.range_for(patient.sex)
             entry = params.setdefault(prm.pk, {
-                'id': prm.pk, 'code': prm.code, 'name': prm.name, 'unit': prm.unit, 'kind': prm.kind, 'system': prm.system, 'test': o.test.name,
+                'id': prm.pk, 'test_id': o.test_id, 'code': prm.code, 'name': prm.name, 'unit': prm.unit, 'kind': prm.kind, 'system': prm.system, 'test': o.test.name,
                 'category': cat.name if cat else 'Other', 'color': cat.color if cat else '#5A6F7D', 'range': prm.range_label(patient.sex),
                 'lo': _f(lo), 'hi': _f(hi), 'clo': _f(prm.critical_low), 'chi': _f(prm.critical_high), 'history': []})
             point = {'value_id': v.pk, 'order_id': o.pk, 'date': timezone.localtime(when).strftime('%Y-%m-%d %H:%M'), 'display': v.display,
@@ -712,7 +721,8 @@ def patient_lab_data(patient):
                 'date': timezone.localtime(o.reported_at or o.created_at).strftime('%Y-%m-%d %H:%M'),
                 'images': [{'url': reverse('imaging_file', args=[i.pk]), 'caption': i.caption} for i in o.images.all()]}
                for o in ImagingOrder.objects.filter(encounter__patient=patient, status__in=['acquired', 'reported']).prefetch_related('images').order_by('-created_at')]
-    return {'imaging': imaging, 'patient': {'name': patient.full_name, 'sex': patient.sex, 'age': patient.age, 'mrn': patient.mrn},
+    open_enc = patient.encounters.filter(status='open').order_by('-created_at').first()
+    return {'open_encounter': open_enc.pk if open_enc else None, 'lab_new_url': reverse('lab_new'), 'imaging': imaging, 'patient': {'name': patient.full_name, 'sex': patient.sex, 'age': patient.age, 'mrn': patient.mrn},
             'systems': dict(BODY_SYSTEMS), 'params': list(params.values()), 'orders': list(reversed(order_list))}
 
 
@@ -1663,3 +1673,317 @@ def bed_maintenance(request, pk):
         audit(request, 'bed_maintenance', f'bed:{b.pk}', {'reason': request.POST.get('reason', '')[:200]})
     messages.success(request, f'Bed {b.code} taken out of service.')
     return redirect('bed_detail', pk=pk)
+
+
+# ---------------------------------------------------------------- finance
+
+ROLES['billing'] = {'finance', 'reception', 'admin'}
+ROLES['finance_admin'] = {'finance', 'admin'}
+
+
+def money(v):
+    return Decimal(v or 0).quantize(Decimal('0.01'))
+
+
+def invoices_qs():
+    return Invoice.objects.select_related('patient', 'encounter').prefetch_related('lines', 'payments')
+
+
+@login_required
+def finance_dashboard(request):
+    authorize(request, 'billing')
+    today = timezone.localdate()
+    pays = list(Payment.objects.filter(voided=False, received_at__date__gte=today - timedelta(days=13)).select_related('invoice__patient', 'received_by'))
+    days = []
+    for i in range(13, -1, -1):
+        d = today - timedelta(days=i)
+        days.append({'label': d.strftime('%a %d'), 'value': sum(p.amount for p in pays if timezone.localtime(p.received_at).date() == d), 'today': d == today})
+    peak = max([d['value'] for d in days] + [Decimal(1)])
+    for d in days:
+        d['pct'] = max(3, round(d['value'] * 100 / peak))
+    today_pays = [p for p in pays if timezone.localtime(p.received_at).date() == today]
+    methods = {}
+    for p in today_pays:
+        methods[p.get_method_display()] = methods.get(p.get_method_display(), 0) + p.amount
+    open_invs = list(invoices_qs().filter(status__in=['issued', 'partial']))
+    aging = {'0–30 days': Decimal(0), '31–60 days': Decimal(0), 'Over 60 days': Decimal(0)}
+    for inv in open_invs:
+        age = (today - timezone.localtime(inv.issued_at or inv.created_at).date()).days
+        aging['0–30 days' if age <= 30 else '31–60 days' if age <= 60 else 'Over 60 days'] += inv.balance
+    by_cat = {}
+    for l in InvoiceLine.objects.filter(invoice__status__in=['issued', 'partial', 'paid'], invoice__issued_at__date__gte=today - timedelta(days=29)):
+        by_cat[l.get_category_display()] = by_cat.get(l.get_category_display(), 0) + l.total
+    cat_total = sum(by_cat.values()) or 1
+    return render(request, 'hospital/finance.html', {
+        'today_total': sum(p.amount for p in today_pays), 'today_count': len(today_pays), 'week_total': sum(d['value'] for d in days[-7:]),
+        'outstanding': sum(i.balance for i in open_invs), 'open_count': len(open_invs), 'drafts': Invoice.objects.filter(status='draft').count(),
+        'days': days, 'methods': sorted(methods.items(), key=lambda x: -x[1]), 'aging': aging.items(),
+        'by_cat': [(k, v, round(v * 100 / cat_total)) for k, v in sorted(by_cat.items(), key=lambda x: -x[1])],
+        'recent': sorted(pays, key=lambda p: p.received_at, reverse=True)[:12],
+        'biggest': sorted(open_invs, key=lambda i: -i.balance)[:8]})
+
+
+@login_required
+def invoice_list(request):
+    authorize(request, 'billing')
+    status, q = request.GET.get('status', ''), request.GET.get('q', '').strip()
+    qs = invoices_qs()
+    if status:
+        qs = qs.filter(status=status)
+    if q:
+        qs = qs.filter(Q(patient__first_name__icontains=q) | Q(patient__last_name__icontains=q) | Q(patient__mrn__icontains=q))
+    return render(request, 'hospital/invoices.html', {'rows': qs[:300], 'status': status, 'q': q, 'statuses': Invoice.STATUS})
+
+
+@login_required
+def invoice_for_encounter(request, pk):
+    """Open (or start) the bill for a visit and pull in its charges."""
+    authorize(request, 'billing')
+    e = get_object_or_404(Encounter, pk=pk)
+    inv = open_invoice_for(e, request.user)
+    n = capture_charges(inv)
+    if n:
+        messages.success(request, f'{n} charge{"s" if n > 1 else ""} added to {inv.number}.')
+    return redirect('invoice_detail', pk=inv.pk)
+
+
+@login_required
+def invoice_detail(request, pk):
+    authorize(request, 'billing')
+    inv = get_object_or_404(invoices_qs().select_related('created_by'), pk=pk)
+    lines = list(inv.lines.all())
+    groups = {}
+    for l in lines:
+        groups.setdefault(l.get_category_display(), []).append(l)
+    return render(request, 'hospital/invoice_detail.html', {
+        'inv': inv, 'p': inv.patient, 'groups': [(k, v, sum(x.total for x in v)) for k, v in groups.items()],
+        'payments': inv.payments.select_related('received_by'), 'tariffs': Tariff.objects.filter(active=True),
+        'methods': Payment.METHOD, 'can_admin': role_of(request.user) in ROLES['finance_admin'],
+        'editable': inv.status == 'draft', 'other_open': inv.patient.invoices.filter(status__in=['issued', 'partial']).exclude(pk=inv.pk)})
+
+
+def _inv_for_change(request, pk, allowed=('draft',)):
+    inv = get_object_or_404(Invoice.objects.select_for_update(), pk=pk)
+    if inv.status not in allowed:
+        raise ValidationError(f'This action is not possible on a {inv.get_status_display().lower()} bill.')
+    return inv
+
+
+def _finance_action(fn):
+    """Run a bill-changing action; show validation problems as messages and return to the bill."""
+    from functools import wraps
+
+    @wraps(fn)
+    def inner(request, pk, *a, **kw):
+        authorize(request, 'billing')
+        try:
+            with transaction.atomic():
+                msg = fn(request, pk, *a, **kw)
+            if msg:
+                messages.success(request, msg)
+        except ValidationError as e:
+            messages.error(request, '; '.join(e.messages))
+        return redirect(request.POST.get('next') or reverse('invoice_detail', args=[pk]))
+    return login_required(require_POST(inner))
+
+
+@_finance_action
+def invoice_capture(request, pk):
+    inv = _inv_for_change(request, pk, ('draft', 'issued', 'partial'))
+    n = capture_charges(inv)
+    inv.refresh_status(); inv.save()
+    return f'{n} new charge{"s" if n != 1 else ""} added.' if n else 'Everything for this visit is already billed.'
+
+
+@_finance_action
+def invoice_add_line(request, pk):
+    inv = _inv_for_change(request, pk)
+    t = Tariff.objects.filter(pk=request.POST.get('tariff') or 0, active=True).first()
+    try:
+        qty = Decimal(request.POST.get('quantity') or 1)
+        price = Decimal(request.POST.get('unit_price')) if request.POST.get('unit_price') else (t.amount if t else None)
+    except Exception:
+        raise ValidationError('Enter a valid quantity and price.')
+    desc = (request.POST.get('description') or '').strip() or (t.name if t else '')
+    if not desc or price is None or price < 0 or qty <= 0:
+        raise ValidationError('Choose a price-list item or enter a description and price.')
+    InvoiceLine.objects.create(invoice=inv, category=t.category if t and t.category in dict(InvoiceLine.CATEGORY) else (request.POST.get('category') or 'other'),
+                               description=desc[:200], quantity=qty, unit_price=price)
+    audit(request, 'invoice_line', f'invoice:{inv.pk}', {'description': desc})
+    return f'Added: {desc}.'
+
+
+@_finance_action
+def invoice_remove_line(request, pk, line_pk):
+    inv = _inv_for_change(request, pk)
+    inv.lines.filter(pk=line_pk).delete()
+    return 'Line removed.'
+
+
+@_finance_action
+def invoice_update(request, pk):
+    inv = _inv_for_change(request, pk, ('draft', 'issued'))
+    if inv.payments.filter(voided=False).exists():
+        raise ValidationError('Discount and insurance cannot change after a payment has been taken.')
+    try:
+        disc = money(request.POST.get('discount') or 0); cover = int(request.POST.get('insurance_cover') or 0)
+    except Exception:
+        raise ValidationError('Enter numbers for the discount and insurance cover.')
+    reason = request.POST.get('discount_reason', '').strip()[:200]
+    if disc > 0 and not reason:
+        raise ValidationError('Give a reason for the discount.')
+    if disc > 0 and role_of(request.user) not in ROLES['finance_admin']:
+        raise PermissionDenied('Only finance staff can give a discount.')
+    if not 0 <= cover <= 100 or disc < 0 or disc > inv.subtotal:
+        raise ValidationError('Discount must be between 0 and the bill total, and cover between 0 and 100%.')
+    inv.discount, inv.discount_reason, inv.insurance_cover = disc, reason, cover
+    inv.insurer, inv.policy_number = request.POST.get('insurer', '')[:120], request.POST.get('policy_number', '')[:60]
+    inv.save()
+    audit(request, 'invoice_update', f'invoice:{inv.pk}', {'discount': str(disc), 'cover': cover})
+    return 'Bill updated.'
+
+
+@_finance_action
+def invoice_issue(request, pk):
+    inv = _inv_for_change(request, pk)
+    if not inv.lines.exists():
+        raise ValidationError('Add at least one charge before issuing the bill.')
+    inv.status, inv.issued_at = 'issued', timezone.now()
+    inv.due_date = inv.due_date or timezone.localdate() + timedelta(days=30)
+    inv.refresh_status(); inv.save()
+    audit(request, 'invoice_issue', f'invoice:{inv.pk}', {'total': str(inv.total)})
+    return f'{inv.number} issued for D{inv.total}.'
+
+
+@_finance_action
+def invoice_void(request, pk):
+    if role_of(request.user) not in ROLES['finance_admin']:
+        raise PermissionDenied('Only finance staff can void a bill.')
+    inv = _inv_for_change(request, pk, ('draft', 'issued'))
+    reason = request.POST.get('reason', '').strip()[:200]
+    if not reason:
+        raise ValidationError('Give a reason for voiding the bill.')
+    if inv.payments.filter(voided=False).exists():
+        raise ValidationError('Void the payments first.')
+    inv.status, inv.void_reason = 'void', reason; inv.save()
+    audit(request, 'invoice_void', f'invoice:{inv.pk}', {'reason': reason})
+    return f'{inv.number} voided. Its charges can be billed again on a new bill.'
+
+
+@_finance_action
+def payment_new(request, pk):
+    inv = get_object_or_404(Invoice, pk=pk)
+    method = request.POST.get('method') if request.POST.get('method') in dict(Payment.METHOD) else None
+    if not method:
+        raise ValidationError('Choose how the patient paid.')
+    try:
+        amount = money(request.POST.get('amount'))
+    except Exception:
+        raise ValidationError('Enter the amount received.')
+    pay = record_payment(inv, amount, method, request.POST.get('reference', ''), request.user)
+    inv.refresh_from_db()
+    return f'Received D{pay.amount} by {pay.get_method_display()} · receipt {pay.receipt_number}.' + (' Bill fully paid.' if inv.status == 'paid' else f' Balance D{inv.balance}.')
+
+
+@login_required
+@require_POST
+def payment_void(request, pk):
+    authorize(request, 'finance_admin')
+    with transaction.atomic():
+        pay = get_object_or_404(Payment.objects.select_for_update().select_related('invoice'), pk=pk)
+        reason = request.POST.get('reason', '').strip()[:200]
+        if pay.voided or not reason:
+            messages.error(request, 'Give a reason to void this payment.')
+            return redirect('invoice_detail', pk=pay.invoice_id)
+        pay.voided, pay.void_reason = True, reason; pay.save()
+        inv = pay.invoice; inv.refresh_status(); inv.save()
+        audit(request, 'payment_void', f'payment:{pay.pk}', {'reason': reason, 'amount': str(pay.amount)})
+    messages.success(request, f'Payment {pay.receipt_number} voided.')
+    return redirect('invoice_detail', pk=pay.invoice_id)
+
+
+@login_required
+def payment_receipt(request, pk):
+    authorize(request, 'billing')
+    pay = get_object_or_404(Payment.objects.select_related('invoice__patient', 'received_by'), pk=pk)
+    return render(request, 'hospital/receipt.html', {'pay': pay, 'inv': pay.invoice, 'p': pay.invoice.patient})
+
+
+@login_required
+def tariff_list(request):
+    authorize(request, 'billing')
+    return render(request, 'hospital/tariffs.html', {
+        'tariffs': Tariff.objects.all(), 'tests': LabTest.objects.filter(active=True).select_related('category').order_by('category__sort_order', 'name'),
+        'meds': Medication.objects.filter(active=True).order_by('name')})
+
+
+# ---------------------------------------------------------------- decision support
+
+@login_required
+def api_clinical(request):
+    """Live decision support for the prescribing and test-ordering forms."""
+    authorize(request, 'clinical')
+    from .clinical import clinical_review, treatment_suggestions, ai_enabled
+    e = Encounter.objects.select_related('patient').filter(pk=request.GET.get('encounter') or 0).first()
+    if not e:
+        return JsonResponse({'ready': False})
+    ids = lambda key: [int(x) for x in request.GET.get(key, '').split(',') if x.isdigit()][:40]
+    meds = list(Medication.objects.filter(pk__in=ids('meds')))
+    tests = list(LabTest.objects.filter(pk__in=ids('tests')))
+    p = e.patient
+    return JsonResponse({'ready': True, 'patient': p.full_name, 'diagnosis': e.diagnosis or e.reason,
+                         'allergies': list(p.allergies.filter(status='active').values('substance', 'reaction', 'severity')),
+                         'findings': clinical_review(e, meds, tests), 'suggestions': treatment_suggestions(e), 'ai': ai_enabled()})
+
+
+@login_required
+def ai_context_preview(request, pk):
+    """Exactly what an AI service would receive for this visit: de-identified, for transparency and audit."""
+    authorize(request, 'clinical')
+    from .clinical import deidentified_context, ai_enabled
+    e = get_object_or_404(Encounter.objects.select_related('patient'), pk=pk)
+    ctx = deidentified_context(e)
+    audit(request, 'ai_context_preview', f'encounter:{e.pk}')
+    return render(request, 'hospital/ai_context.html', {'e': e, 'p': e.patient, 'json': json.dumps(ctx, indent=2, default=str), 'enabled': ai_enabled()})
+
+
+@login_required
+def patient_story(request, pk):
+    """Plays the whole medical record back in time order."""
+    authorize(request, 'clinical')
+    p = get_object_or_404(Patient, pk=pk)
+    audit(request, 'view_chart', f'patient_story:{p.pk}')
+    ev = []
+    ts = lambda dt: timezone.localtime(dt).isoformat()
+    for e in p.encounters.select_related('department').order_by('created_at'):
+        v = e.vitals or {}
+        ev.append({'t': ts(e.created_at), 'kind': 'visit', 'title': e.reason, 'detail': e.diagnosis, 'outcome': e.get_outcome_display() if e.outcome else '',
+                   'dept': str(e.department or ''), 'vitals': {k: v.get(k) for k in ('bp', 'heart_rate', 'temperature_c', 'spo2') if v.get(k)},
+                   'url': reverse('encounter_detail', args=[e.pk])})
+    for r in lab_requests_qs().filter(encounter__patient=p, orders__status__in=['resulted', 'verified']).distinct():
+        vals = []
+        for o in r.orders.all():
+            if o.status not in ('resulted', 'verified'):
+                continue
+            for x in o.values.all():
+                vals.append({'code': x.parameter.code, 'name': x.parameter.name, 'value': x.display, 'num': _f(x.value_number), 'unit': x.parameter.unit,
+                             'flag': x.flag, 'system': x.parameter.system, 'lo': _f(x.parameter.range_for(p.sex)[0]), 'hi': _f(x.parameter.range_for(p.sex)[1])})
+        when = max((o.resulted_at or o.created_at) for o in r.orders.all() if o.status in ('resulted', 'verified'))
+        ev.append({'t': ts(when), 'kind': 'lab', 'title': ', '.join(o.test.name for o in r.orders.all() if o.status in ('resulted', 'verified')), 'values': vals,
+                   'url': reverse('lab_request_detail', args=[r.pk])})
+    for rx in Prescription.objects.filter(encounter__patient=p).exclude(state='cancelled').prefetch_related('items__medication').order_by('created_at'):
+        ev.append({'t': ts(rx.created_at), 'kind': 'rx', 'title': ', '.join(str(i.medication) for i in rx.items.all()) or rx.number,
+                   'lines': [i.directions for i in rx.items.all()], 'url': reverse('prescription_detail', args=[rx.pk])})
+    for o in ImagingOrder.objects.filter(encounter__patient=p, status__in=['acquired', 'reported']).prefetch_related('images'):
+        img = o.images.first()
+        ev.append({'t': ts(o.reported_at or o.created_at), 'kind': 'imaging', 'title': f'{o.get_modality_display()} · {o.region}', 'detail': o.impression,
+                   'abnormal': o.abnormal, 'system': o.body_system, 'image': reverse('imaging_file', args=[img.pk]) if img else '', 'url': reverse('imaging_detail', args=[o.pk])})
+    for a in Admission.objects.filter(encounter__patient=p).select_related('bed__ward', 'encounter'):
+        ev.append({'t': ts(a.admitted_at), 'kind': 'admission', 'title': f'Admitted to {a.bed.ward} · {a.bed.code}', 'detail': a.encounter.diagnosis,
+                   'until': ts(a.discharged_at) if a.discharged_at else None, 'url': reverse('bed_detail', args=[a.bed_id])})
+    for r in Referral.objects.filter(encounter__patient=p).exclude(status='draft'):
+        ev.append({'t': ts(r.sent_at or r.created_at), 'kind': 'referral', 'title': f'Referred to {r.destination}', 'detail': r.speciality, 'url': reverse('referral_detail', args=[r.pk])})
+    for a in p.allergies.all():
+        ev.append({'t': ts(a.created_at), 'kind': 'allergy', 'title': f'Allergy recorded: {a.substance}', 'detail': f'{a.reaction} · {a.severity}'})
+    ev.sort(key=lambda x: x['t'])
+    return render(request, 'hospital/story.html', {'p': p, 'events': ev, 'systems': dict(BODY_SYSTEMS)})

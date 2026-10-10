@@ -12,7 +12,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from hospital.models import (Bed, Admission, FormDefinition, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingImage, ImagingOrder, LabRequest, PrescriptionItem, LabResultValue, Admission, Allergy, Attendance, AuditEvent, Bed, Condition, Department, Encounter,
+from hospital.models import (Invoice, InvoiceLine, Payment, Bed, Admission, FormDefinition, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingImage, ImagingOrder, LabRequest, PrescriptionItem, LabResultValue, Admission, Allergy, Attendance, AuditEvent, Bed, Condition, Department, Encounter,
                              FormDefinition, FormSubmission, LabOrder, LabTest, Medication, Patient, Prescription,
                              QueueTicket, Referral, StaffProfile, StockBatch, WorkflowDefinition, WorkflowRun)
 from hospital.services import advance_workflow, group_orphan_lab_orders, sign_document
@@ -345,6 +345,8 @@ class Command(BaseCommand):
         self.outcomes_and_imaging(now, doctor, staff, p, now_e, depts)
         self.network(now, doctor, staff, p, now_e, opts)
         self.bed_history(now, doctor, depts)
+        self.more_imaging(now, doctor, staff)
+        self.finance(now, staff)
 
     def outcomes_and_imaging(self, now, doctor, staff, featured, featured_enc, depts):
         from django.core.files.base import ContentFile
@@ -497,4 +499,90 @@ class Command(BaseCommand):
                                              status='completed', outcome=random.choice(['resolved', 'improved', 'improved']), completed_at=t + stay)
                 a = Admission.objects.create(encounter=e, bed=b)
                 Admission.objects.filter(pk=a.pk).update(admitted_at=t, discharged_at=t + stay)
+                Encounter.objects.filter(pk=e.pk).update(created_at=t)   # the visit started when the stay began
                 t += stay
+
+
+    def more_imaging(self, now, doctor, staff):
+        """Synthetic imaging for more patients, so the body map and charts show scans beyond the featured case."""
+        from django.core.files.base import ContentFile
+        from hospital import demo_images as di
+        rad = staff.get('radiology', doctor)
+        pts = list(Patient.objects.exclude(first_name='Babucarr').filter(encounters__isnull=False).distinct()[:12])
+        plan = [
+            ('xray', 'Chest PA', 'lungs', lambda: di.chest_xray(cardiomegaly=False, congestion=False, seed=11), 'Clear lungs. Normal heart size.', 'No acute cardiopulmonary abnormality.', False, [{'label': 'Cardiothoracic ratio', 'value': '0.46', 'unit': '', 'abnormal': False}]),
+            ('ultrasound', 'Abdomen', 'liver', lambda: di.ultrasound_abdomen(), 'Two echogenic foci in the gallbladder with acoustic shadowing. No wall thickening. CBD 4 mm.', 'Cholelithiasis without cholecystitis.', True, [{'label': 'Largest stone', 'value': '11', 'unit': 'mm', 'abnormal': True}]),
+            ('ct', 'Head', 'brain', lambda: di.ct_head(), 'No haemorrhage, mass or midline shift. Ventricles normal.', 'Normal non-contrast CT head.', False, []),
+            ('xray', 'Chest PA', 'lungs', lambda: di.chest_xray(cardiomegaly=False, congestion=True, seed=13), 'Patchy right lower-zone airspace opacity.', 'Right lower lobe pneumonia.', True, []),
+            ('ecg', 'Heart · 12-lead', 'heart', lambda: di.ecg_strip(st_elevation=False), 'Sinus rhythm 78/min. Normal axis and intervals.', 'Normal ECG.', False, [{'label': 'Heart rate', 'value': '78', 'unit': '/min', 'abnormal': False}]),
+            ('xray', 'Left knee', 'bone', lambda: di.knee_xray(seed=21), 'Joint-space narrowing medially with small osteophytes.', 'Mild osteoarthritis of the left knee.', True, []),
+            ('echo', 'Heart', 'heart', lambda: di.echo(ef_low=False, seed=8), 'Normal chamber sizes and wall motion.', 'Normal left ventricular function.', False, [{'label': 'Ejection fraction', 'value': '62', 'unit': '%', 'abnormal': False}]),
+            ('ultrasound', 'Abdomen', 'liver', lambda: di.ultrasound_abdomen(gallstones=False, seed=12), 'Normal liver, gallbladder and kidneys.', 'Normal abdominal ultrasound.', False, []),
+            ('xray', 'Chest PA', 'lungs', lambda: di.chest_xray(cardiomegaly=True, congestion=False, seed=17), 'Enlarged cardiac silhouette. Clear lungs.', 'Cardiomegaly.', True, [{'label': 'Cardiothoracic ratio', 'value': '0.56', 'unit': '', 'abnormal': True}]),
+        ]
+        for p, (mod, region, system, img, findings, impression, abnormal, meas) in zip(pts, plan):
+            enc = p.encounters.order_by('-created_at').first()
+            when = now - timedelta(days=random.randint(0, 20), hours=random.randint(1, 10))
+            o = ImagingOrder.objects.create(encounter=enc, modality=mod, region=region, body_system=system, status='reported', requested_by=doctor, performed_by=rad,
+                                            findings=findings, impression=impression, abnormal=abnormal, measurements=meas, reported_by=rad, reported_at=when + timedelta(hours=2))
+            ImagingOrder.objects.filter(pk=o.pk).update(created_at=when)
+            ImagingImage.objects.create(order=o, file=ContentFile(img(), name=f'demo-{mod}.png'), caption=region, uploaded_by=rad)
+
+    def finance(self, now, staff):
+        """Bills for past visits with a realistic mix of paid, part-paid and unpaid; payments spread over two weeks."""
+        from decimal import Decimal
+        from hospital.services import capture_charges, open_invoice_for
+        cashier = staff.get('reception') or staff['nurse']
+        methods = ['cash'] * 9 + ['wave'] * 5 + ['afrimoney'] * 2 + ['qmoney'] + ['card'] * 2
+        insurers = ['Kairaba Health Cover', 'Atlantic Mutual Health']   # fictional insurers
+        def add_rx_lines(inv):   # demo prescriptions were marked dispensed without stock movements, so bill them directly
+            for item in PrescriptionItem.objects.filter(prescription__encounter=inv.encounter, prescription__state='dispensed').select_related('medication'):
+                if item.medication.unit_price and not inv.lines.filter(source=f'rx_item:{item.pk}').exists():
+                    InvoiceLine.objects.create(invoice=inv, category='pharmacy', description=f'{item.medication} × {item.quantity}', quantity=item.quantity,
+                                               unit_price=item.medication.unit_price, source=f'rx_item:{item.pk}')
+        def pay(inv, amount, when, method=None):
+            method = method or random.choice(methods)
+            ref = '' if method in ('cash', 'insurance') else f'{method[:2].upper()}{random.randint(10**7, 10**8 - 1)}'
+            Payment.objects.create(invoice=inv, amount=Decimal(amount).quantize(Decimal('0.01')), method=method, reference=ref, received_by=cashier, received_at=min(when, now))
+        encs = list(Encounter.objects.filter(status='completed', created_at__gte=now - timedelta(days=30)).exclude(patient__first_name='Babucarr').select_related('patient'))
+        for i, e in enumerate(encs):
+            inv = open_invoice_for(e, cashier); capture_charges(inv); add_rx_lines(inv)
+            if not inv.lines.exists():
+                inv.delete(); continue
+            issued = e.created_at + timedelta(hours=1)
+            inv.status, inv.issued_at, inv.due_date = 'issued', issued, timezone.localtime(issued).date() + timedelta(days=30)
+            if i % 6 == 0:
+                inv.insurer, inv.policy_number, inv.insurance_cover = random.choice(insurers), f'POL-{random.randint(10000, 99999)}', random.choice([70, 80])
+            if i % 17 == 5:
+                inv.discount, inv.discount_reason = (inv.subtotal * Decimal('0.25')).quantize(Decimal('1')), 'Hardship waiver approved by finance'
+            inv.save()
+            r = random.random()
+            when = issued + timedelta(hours=random.randint(0, 30))
+            if inv.insurance_cover:
+                pay(inv, inv.patient_share, when)
+                if r < .6: pay(inv, inv.insurance_share, when + timedelta(days=random.randint(2, 9)), 'insurance')
+            elif r < .72:
+                pay(inv, inv.total, when)
+            elif r < .87:
+                pay(inv, (inv.total * Decimal(random.choice(['0.3', '0.5', '0.6']))).quantize(Decimal('1')), when)
+            inv.refresh_status(); inv.save(update_fields=['status'])
+            Invoice.objects.filter(pk=inv.pk).update(created_at=e.created_at)
+        # today's patients: some already paid at the cash desk, one draft waiting to be issued
+        for j, e in enumerate(Encounter.objects.filter(status='completed', created_at__date=timezone.localdate()).exclude(invoices__isnull=False)[:4]):
+            inv = open_invoice_for(e, cashier); capture_charges(inv)
+            if not inv.lines.exists():
+                inv.delete(); continue
+            if j < 3:
+                inv.status, inv.issued_at = 'issued', now - timedelta(hours=2); inv.save()
+                pay(inv, inv.total, now - timedelta(minutes=random.randint(10, 100))); inv.refresh_status(); inv.save()
+        # two of today's open visits have draft bills waiting to be issued
+        for e in Encounter.objects.filter(status='open', created_at__date=timezone.localdate()).exclude(patient__first_name='Babucarr').exclude(invoices__isnull=False)[:2]:
+            inv = open_invoice_for(e, cashier); capture_charges(inv)
+            if not inv.lines.exists(): inv.delete()
+        # featured patient: insured bill for the emergency visit, patient share part-paid by Wave
+        feat = Encounter.objects.filter(patient__first_name='Babucarr', status='open').first()
+        if feat:
+            inv = open_invoice_for(feat, cashier); capture_charges(inv)
+            inv.status, inv.issued_at, inv.insurer, inv.policy_number, inv.insurance_cover = 'issued', now - timedelta(hours=1), insurers[0], 'POL-55021', 80
+            inv.save(); pay(inv, (inv.patient_share / 2).quantize(Decimal('1')), now - timedelta(minutes=30), 'wave')
+            inv.refresh_status(); inv.save()

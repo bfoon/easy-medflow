@@ -1,3 +1,4 @@
+from decimal import Decimal
 import uuid
 from django.db import models
 from django.conf import settings
@@ -274,6 +275,7 @@ class Medication(Tracked):
     form=models.CharField(max_length=100,blank=True)
     strength=models.CharField(max_length=100,blank=True)
     reorder_level=models.PositiveIntegerField(default=50)
+    unit_price=models.DecimalField(max_digits=10,decimal_places=2,default=0,help_text='Price per tablet, capsule, sachet or unit')
     active=models.BooleanField(default=True)
     def __str__(self):return f'{self.name} {self.strength}'
 
@@ -582,3 +584,88 @@ class AuditEvent(models.Model):
     ip_address=models.GenericIPAddressField(null=True,blank=True)
     class Meta: ordering=['-occurred_at']
     def __str__(self):return f'{self.occurred_at} {self.actor} {self.action} {self.target}'
+
+
+# ============================================================== finance
+class Tariff(Tracked):
+    """Price list for services that are not lab tests or medicines (those carry their own price)."""
+    CATEGORY=[('consultation','Consultation'),('imaging','Imaging'),('bed','Bed / ward'),('procedure','Procedure'),('other','Other')]
+    code=models.SlugField(max_length=40,unique=True)
+    name=models.CharField(max_length=160)
+    category=models.CharField(max_length=14,choices=CATEGORY)
+    amount=models.DecimalField(max_digits=10,decimal_places=2)
+    active=models.BooleanField(default=True)
+    class Meta: ordering=['category','name']
+    def __str__(self):return f'{self.name} · D{self.amount}'
+
+class Invoice(Tracked):
+    STATUS=[('draft','Draft'),('issued','Issued'),('partial','Part paid'),('paid','Paid'),('void','Void')]
+    patient=models.ForeignKey(Patient,on_delete=models.PROTECT,related_name='invoices')
+    encounter=models.ForeignKey(Encounter,on_delete=models.PROTECT,null=True,blank=True,related_name='invoices')
+    status=models.CharField(max_length=8,choices=STATUS,default='draft')
+    issued_at=models.DateTimeField(null=True,blank=True)
+    due_date=models.DateField(null=True,blank=True)
+    discount=models.DecimalField(max_digits=10,decimal_places=2,default=0)
+    discount_reason=models.CharField(max_length=200,blank=True)
+    insurer=models.CharField(max_length=120,blank=True)
+    policy_number=models.CharField(max_length=60,blank=True)
+    insurance_cover=models.PositiveSmallIntegerField(default=0,validators=[MinValueValidator(0)],help_text='Percent of the bill the insurer pays')
+    notes=models.CharField(max_length=300,blank=True)
+    void_reason=models.CharField(max_length=200,blank=True)
+    created_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name='+')
+    class Meta: ordering=['-created_at']
+    @property
+    def number(self):return f'INV-{self.pk:06d}'
+    @property
+    def subtotal(self):return sum((l.total for l in self.lines.all()),Decimal('0'))
+    @property
+    def after_discount(self):return max(Decimal('0'),self.subtotal-self.discount)
+    @property
+    def insurance_share(self):return (self.after_discount*self.insurance_cover/100).quantize(Decimal('0.01'))
+    @property
+    def patient_share(self):return self.after_discount-self.insurance_share
+    @property
+    def total(self):return self.after_discount
+    @property
+    def paid(self):return sum((p.amount for p in self.payments.all() if not p.voided),Decimal('0'))
+    @property
+    def balance(self):return max(Decimal('0'),self.total-self.paid)
+    @property
+    def insurer_paid(self):return sum((p.amount for p in self.payments.all() if not p.voided and p.method=='insurance'),Decimal('0'))
+    @property
+    def patient_paid(self):return self.paid-self.insurer_paid
+    @property
+    def patient_balance(self):return max(Decimal('0'),self.patient_share-self.patient_paid)
+    @property
+    def insurer_balance(self):return max(Decimal('0'),self.insurance_share-self.insurer_paid)
+    def refresh_status(self):
+        if self.status in ('draft','void'):return
+        paid=self.paid
+        self.status='paid' if paid>=self.total and self.total>0 else 'partial' if paid>0 else 'issued'
+    def __str__(self):return f'{self.number} · {self.patient}'
+
+class InvoiceLine(Tracked):
+    CATEGORY=[('consultation','Consultation'),('lab','Laboratory'),('imaging','Imaging'),('pharmacy','Pharmacy'),('bed','Bed / ward'),('procedure','Procedure'),('other','Other')]
+    invoice=models.ForeignKey(Invoice,on_delete=models.CASCADE,related_name='lines')
+    category=models.CharField(max_length=14,choices=CATEGORY)
+    description=models.CharField(max_length=200)
+    quantity=models.DecimalField(max_digits=8,decimal_places=2,default=1)
+    unit_price=models.DecimalField(max_digits=10,decimal_places=2)
+    source=models.CharField(max_length=60,blank=True,help_text='What was billed, e.g. lab_order:12. Prevents billing the same item twice.')
+    class Meta: ordering=['category','id']
+    @property
+    def total(self):return (self.quantity*self.unit_price).quantize(Decimal('0.01'))
+
+class Payment(Tracked):
+    METHOD=[('cash','Cash'),('wave','Wave'),('afrimoney','Afrimoney'),('qmoney','QMoney'),('card','Card'),('bank','Bank transfer'),('insurance','Insurance')]
+    invoice=models.ForeignKey(Invoice,on_delete=models.PROTECT,related_name='payments')
+    amount=models.DecimalField(max_digits=10,decimal_places=2,validators=[MinValueValidator(Decimal('0.01'))])
+    method=models.CharField(max_length=10,choices=METHOD)
+    reference=models.CharField(max_length=80,blank=True,help_text='Mobile money or card transaction reference')
+    received_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='+')
+    received_at=models.DateTimeField(default=timezone.now)
+    voided=models.BooleanField(default=False)
+    void_reason=models.CharField(max_length=200,blank=True)
+    class Meta: ordering=['-received_at']
+    @property
+    def receipt_number(self):return f'RCP-{self.pk:06d}'

@@ -7,6 +7,7 @@
   <button class="btn btn-ghost" data-drawer="{% url 'lab_new' %}?encounter={{ e.pk }}" data-title="New lab request"><i class="bi bi-droplet-half"></i>Lab tests</button>
   <button class="btn btn-ghost" data-drawer="{% url 'prescription_new' %}?encounter={{ e.pk }}" data-title="New prescription"><i class="bi bi-capsule"></i>Prescribe</button>
   <button class="btn btn-ghost" data-drawer="{% url 'imaging_new' %}?encounter={{ e.pk }}" data-title="Imaging request"><i class="bi bi-radioactive"></i>Imaging</button>
+  <a class="btn btn-ghost" href="{% url 'invoice_for_encounter' e.pk %}"><i class="bi bi-receipt"></i>Bill</a>
   <a class="btn btn-ghost" href="{% url 'network_specialists' %}?encounter={{ e.pk }}"><i class="bi bi-person-badge"></i>Specialist</a>
   <button class="btn btn-ghost" data-drawer="{% url 'referral_new' %}?encounter={{ e.pk }}" data-title="Referral"><i class="bi bi-signpost-split"></i>Refer</button>
   <button class="btn btn-ghost" data-drawer="{% url 'admission_new' %}?encounter={{ e.pk }}" data-title="Admit patient"><i class="bi bi-hospital"></i>Admit</button>
@@ -51,6 +52,12 @@
     </section>
   </div>
   <div class="stack">
+    <section class="panel review-panel">
+      <div class="panel-head"><h2><i class="bi bi-shield-plus me-1" style="color:var(--teal)"></i>Clinical safety review</h2><a class="more" href="{% url 'ai_context_preview' e.pk %}">What AI would see</a></div>
+      {% for f in review %}<div class="ds-f {{ f.level }}"><i class="bi {% if f.level == 'danger' %}bi-exclamation-octagon-fill{% elif f.level == 'warn' %}bi-exclamation-triangle-fill{% else %}bi-info-circle-fill{% endif %}"></i><div><b>{{ f.title }}</b><div class="small">{{ f.detail }}</div>{% for a in f.actions %}<a class="small fw-semibold" {% if 'lab' in a.url and 'new' in a.url %}data-drawer="{{ a.url }}" data-title="New lab request" href="#"{% else %}href="{{ a.url }}"{% endif %}>{{ a.label }} →</a> {% endfor %}</div></div>
+      {% empty %}<p class="small muted mb-0"><i class="bi bi-shield-check"></i> No issues found by the rule-based checks.</p>{% endfor %}
+      <p class="form-text mt-2 mb-0"><i class="bi bi-stars"></i> {% if ai_on %}AI review connected.{% else %}AI review not connected; these are rule-based checks.{% endif %} Advisory only.</p>
+    </section>
     <section class="panel">
       <div class="panel-head"><h2>Vitals</h2></div>
       {% if vitals %}<div class="vitals">{% for label, unit, val in vitals %}<div class="vital"><span>{{ label }}</span><b>{{ val }}</b><small>{{ unit }}</small></div>{% endfor %}</div>{% else %}<div class="empty">No vitals recorded.</div>{% endif %}

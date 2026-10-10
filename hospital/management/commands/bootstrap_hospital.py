@@ -24,6 +24,7 @@ class Command(BaseCommand):
                 ('Ceftriaxone', 'ceftriaxone', 'Injection', '1 g'), ('Zinc sulfate', 'zinc', 'Tablet', '20 mg')]
         for name, generic, form, strength in meds:
             Medication.objects.get_or_create(name=name, defaults={'generic_name': generic, 'form': form, 'strength': strength})
+        self.load_prices()   # after medicines and tests exist, so their prices are filled in
         if kwargs.get('verbosity', 1):
             self.stdout.write(self.style.SUCCESS('Seeded departments, standard lab catalogue, 4 wards / 26 beds, and a medication catalog.'))
 
@@ -44,3 +45,28 @@ class Command(BaseCommand):
                         if k in d: d[k] = dec(d[k])
                     d['sort_order'] = j
                     LabParameter.objects.get_or_create(test=test, code=pcode, defaults=d)
+
+    def load_prices(self):
+        """Illustrative prices in dalasi. Only fills in missing prices; never overwrites yours."""
+        from decimal import Decimal
+        from hospital.models import Tariff
+        T = [('consultation', 'Outpatient consultation', 'consultation', 300), ('consultation-emergency', 'Emergency consultation', 'consultation', 600),
+             ('consultation-specialist', 'Specialist consultation', 'consultation', 900),
+             ('imaging-xray', 'X-ray', 'imaging', 750), ('imaging-ct', 'CT scan', 'imaging', 6500), ('imaging-mri', 'MRI scan', 'imaging', 12000),
+             ('imaging-ultrasound', 'Ultrasound', 'imaging', 1200), ('imaging-ecg', 'ECG', 'imaging', 400), ('imaging-echo', 'Echocardiogram', 'imaging', 2500),
+             ('imaging-mammogram', 'Mammogram', 'imaging', 3000), ('imaging-fluoro', 'Fluoroscopy', 'imaging', 3500),
+             ('bed-general', 'General ward bed', 'bed', 800), ('bed-maternity', 'Maternity bed', 'bed', 900), ('bed-pediatric', 'Paediatric bed', 'bed', 700),
+             ('bed-icu', 'ICU bed', 'bed', 4500), ('bed-isolation', 'Isolation bed', 'bed', 1500),
+             ('dressing', 'Wound dressing', 'procedure', 250), ('suturing', 'Suturing', 'procedure', 600), ('iv-cannula', 'IV cannulation', 'procedure', 200),
+             ('medical-report', 'Medical report', 'other', 500)]
+        for code, name, cat, amt in T:
+            Tariff.objects.get_or_create(code=code, defaults={'name': name, 'category': cat, 'amount': Decimal(amt)})
+        lab = {'CBC': 450, 'HB': 150, 'ESR': 150, 'MAL': 200, 'MPS': 250, 'BGRP': 200, 'GLU': 150, 'HBA1C': 900, 'LFT': 900, 'RFT': 850, 'PANC': 1000,
+               'CRP': 600, 'BONE': 900, 'TROP': 1500, 'CARD': 2200, 'LIPID': 900, 'TFT': 1500, 'HCG': 250, 'PSA': 1100, 'UA': 200, 'STL': 250,
+               'AFB': 300, 'XPERT': 0, 'CSF': 1200, 'HIV': 0, 'HBSAG': 350, 'ABG': 1400}   # TB GeneXpert and HIV tests are free under national programmes
+        for code, price in lab.items():
+            LabTest.objects.filter(code=code, price=0).update(price=Decimal(price))
+        meds = {'Paracetamol': '2.00', 'Amoxicillin': '6.00', 'Artemether/Lumefantrine': '9.00', 'ORS': '15.00', 'Metformin': '3.00', 'Amlodipine': '4.00',
+                'Ibuprofen': '3.00', 'Ferrous sulfate': '1.50', 'Ceftriaxone': '120.00', 'Zinc sulfate': '2.50'}
+        for name, price in meds.items():
+            Medication.objects.filter(name=name, unit_price=0).update(unit_price=Decimal(price))

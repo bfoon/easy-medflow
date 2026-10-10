@@ -82,3 +82,33 @@ def knee_xray(seed=5):
     d.ellipse([210, 220, 290, 290], fill=200)                                                          # patella
     img = Image.blend(img.filter(ImageFilter.GaussianBlur(2.5)), Image.effect_noise((w, h), 10).convert('L'), .06).convert('RGB')
     d = ImageDraw.Draw(img); d.text((14, 14), 'L  AP', fill=(230, 230, 230)); _stamp(d, w, h); return _png(img)
+
+
+def ct_head(seed=7):
+    random.seed(seed); w, h = 560, 560
+    img = Image.new('L', (w, h), 0); d = ImageDraw.Draw(img)
+    d.ellipse([70, 50, 490, 510], fill=235)                     # skull
+    d.ellipse([88, 68, 472, 492], fill=95)                      # brain
+    for x0, x1 in ((150, 260), (300, 410)):                     # sulci
+        for i in range(7):
+            y = 120 + i * 45
+            d.arc([x0, y, x1, y + 50], 0, 180, fill=70, width=3)
+    d.ellipse([235, 210, 268, 300], fill=25); d.ellipse([292, 210, 325, 300], fill=25)   # ventricles
+    d.line([280, 80, 280, 480], fill=80, width=2)               # midline
+    img = Image.blend(img.filter(ImageFilter.GaussianBlur(1.6)), Image.effect_noise((w, h), 20).convert('L'), .07).convert('RGB')
+    d = ImageDraw.Draw(img); d.text((14, 14), 'Axial · no contrast', fill=(220, 220, 220)); _stamp(d, w, h); return _png(img)
+
+
+def ultrasound_abdomen(gallstones=True, seed=9):
+    random.seed(seed); w, h = 640, 520
+    img = Image.new('L', (w, h), 0)
+    sector = Image.new('L', (w, h), 0); ImageDraw.Draw(sector).pieslice([-140, -300, 780, 620], 55, 125, fill=255)
+    tissue = Image.blend(Image.new('L', (w, h), 70), Image.effect_noise((w, h), 70).convert('L'), .45)
+    img = Image.composite(tissue, img, sector); d = ImageDraw.Draw(img)
+    d.ellipse([230, 190, 420, 300], fill=12)                    # fluid-filled gallbladder (dark)
+    if gallstones:
+        for cx, cy in ((300, 282), (335, 288)):
+            d.ellipse([cx - 13, cy - 13, cx + 13, cy + 13], fill=245)            # bright stones
+            d.rectangle([cx - 11, cy + 13, cx + 11, h], fill=8)                  # acoustic shadow
+    img = Image.composite(img.filter(ImageFilter.GaussianBlur(1.2)), Image.new('L', (w, h), 0), sector).convert('RGB')
+    d = ImageDraw.Draw(img); d.text((14, 14), 'RUQ · gallbladder', fill=(200, 200, 200)); _stamp(d, w, h); return _png(img)

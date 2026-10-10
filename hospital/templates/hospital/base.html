@@ -6,10 +6,10 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>{% block title %}MedFlow{% endblock %} · MedFlow HMS</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230F2C3F'/><path d='M4 17h6l2-5 4 10 3-8 2 3h7' fill='none' stroke='%233FE0B0' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>">
-  <link href="{% static 'hospital/vendor/fonts/fonts.css' %}" rel="stylesheet">
-  <link href="{% static 'hospital/vendor/bootstrap.min.css' %}" rel="stylesheet">
-  <link href="{% static 'hospital/vendor/bootstrap-icons/bootstrap-icons.min.css' %}" rel="stylesheet">
-  <link href="{% static 'hospital/css/medflow.css' %}" rel="stylesheet">
+  <link href="{% asset 'hospital/vendor/fonts/fonts.css' %}" rel="stylesheet">
+  <link href="{% asset 'hospital/vendor/bootstrap.min.css' %}" rel="stylesheet">
+  <link href="{% asset 'hospital/vendor/bootstrap-icons/bootstrap-icons.min.css' %}" rel="stylesheet">
+  <link href="{% asset 'hospital/css/medflow.css' %}" rel="stylesheet">
   {% block head %}{% endblock %}
 </head>
 <body {% block body_attrs %}{% endblock %} {% if embed %}class="embed"{% endif %}>
@@ -42,6 +42,7 @@
       </div>
       <div class="nav-group"><span>Organisation</span>
         <a class="nav-link {% nav_active '/studio/' %}" href="{% url 'studio' %}"><i class="bi bi-ui-checks-grid"></i>Forms &amp; approvals{% if nav_counts.studio %}<span class="badge-count">{{ nav_counts.studio }}</span>{% endif %}</a>
+        <a class="nav-link {% nav_active '/finance/' %}" href="{% url 'finance' %}"><i class="bi bi-cash-stack"></i>Finance{% if nav_counts.bills %}<span class="badge-count">{{ nav_counts.bills }}</span>{% endif %}</a>
         <a class="nav-link {% nav_active '/attendance/' %}" href="{% url 'attendance' %}"><i class="bi bi-clock-history"></i>Attendance</a>
         {% if request.user.is_staff %}<a class="nav-link" href="{% url 'admin:index' %}"><i class="bi bi-sliders"></i>Configuration</a>{% endif %}
       </div>
@@ -85,7 +86,7 @@
 
 <!-- slide-out panel: forms open here so you never leave the page you are on -->
 <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
-<aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+<aside class="drawer" id="drawer" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
   <header><h2 id="drawer-title">…</h2><button class="btn btn-ghost btn-sm ms-auto" data-drawer-close aria-label="Close panel"><i class="bi bi-x-lg"></i></button></header>
   <div class="drawer-loading" id="drawer-loading"><span class="spin"></span>Loading…</div>
   <iframe id="drawer-frame" title="Form"></iframe>
@@ -109,7 +110,7 @@
     rxNew: "{% url 'prescription_new' %}", display: "{% url 'queue_display' %}"
   };
 </script>
-<script src="{% static 'hospital/js/medflow.js' %}"></script>
+<script src="{% asset 'hospital/js/medflow.js' %}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

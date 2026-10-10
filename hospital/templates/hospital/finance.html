@@ -1,0 +1,37 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Finance{% endblock %}
+{% block heading %}Finance{% endblock %}
+{% block subheading %}<p class="sub">Payments, outstanding bills and revenue. Amounts in Gambian dalasi.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'tariffs' %}"><i class="bi bi-tags"></i>Price list</a><a class="btn btn-primary" href="{% url 'invoices' %}"><i class="bi bi-receipt"></i>All bills</a>{% endblock %}
+{% block content %}
+<div class="kpis fin-kpis">
+  <div class="kpi good"><b>{{ today_total|money }}</b><span>collected today · {{ today_count }} payment{{ today_count|pluralize }}</span></div>
+  <div class="kpi"><b>{{ week_total|money }}</b><span>collected in the last 7 days</span></div>
+  <a class="kpi abn" href="{% url 'invoices' %}?status=issued"><b>{{ outstanding|money }}</b><span>outstanding on {{ open_count }} bill{{ open_count|pluralize }}</span></a>
+  <a class="kpi" href="{% url 'invoices' %}?status=draft"><b>{{ drafts }}</b><span>draft bills to issue</span></a>
+</div>
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Collections</h2><span class="hint">Last 14 days</span></div>
+      <div class="bars fin-bars">{% for d in days %}<div class="bar {% if d.today %}today{% endif %}" style="--h:{{ d.pct }}%;--i:{{ forloop.counter0 }}" title="{{ d.label }}: {{ d.value|money }}"><b>{% if d.value %}{{ d.value|floatformat:0 }}{% endif %}</b><i></i><span>{{ d.label }}</span></div>{% endfor %}</div>
+    </section>
+    <section class="panel flush">
+      <div class="panel-head"><h2>Recent payments</h2></div>
+      <div class="scroll-y"><table class="mini-table"><thead><tr><th>Receipt</th><th>Patient</th><th>Method</th><th class="text-end">Amount</th><th>When</th></tr></thead><tbody>
+      {% for pay in recent %}<tr><td><a href="{% url 'payment_receipt' pay.pk %}">{{ pay.receipt_number }}</a></td><td><a href="{% url 'invoice_detail' pay.invoice_id %}">{{ pay.invoice.patient.full_name }}</a></td><td><span class="pm pm-{{ pay.method }}">{{ pay.get_method_display }}</span></td><td class="text-end fw-semibold">{{ pay.amount|money }}</td><td class="small muted">{{ pay.received_at|date:'D j M H:i' }}</td></tr>
+      {% empty %}<tr><td colspan="5" class="empty">No payments yet.</td></tr>{% endfor %}</tbody></table></div>
+    </section>
+  </div>
+  <div class="stack">
+    <section class="panel"><div class="panel-head"><h2>Today by method</h2></div>
+      {% for m, v in methods %}<div class="d-flex mb-1"><span>{{ m }}</span><b class="ms-auto">{{ v|money }}</b></div>{% empty %}<p class="muted small mb-0">No payments today yet.</p>{% endfor %}</section>
+    <section class="panel"><div class="panel-head"><h2>Unpaid by age</h2></div>
+      {% for label, v in aging %}<div class="d-flex mb-1"><span>{{ label }}</span><b class="ms-auto {% if forloop.last and v %}text-danger{% endif %}">{{ v|money }}</b></div>{% endfor %}</section>
+    <section class="panel"><div class="panel-head"><h2>Revenue mix</h2><span class="hint">Billed, last 30 days</span></div>
+      {% for k, v, pct in by_cat %}<div class="mb-2"><div class="d-flex small"><span>{{ k }}</span><span class="ms-auto">{{ v|money }}</span></div><div class="meter"><i style="--w:{{ pct }}%"></i></div></div>{% empty %}<p class="muted small mb-0">Nothing billed yet.</p>{% endfor %}</section>
+    <section class="panel"><div class="panel-head"><h2>Largest balances</h2></div>
+      <ul class="plain ruled">{% for inv in biggest %}<li><a class="d-flex gap-2 text-decoration-none" href="{% url 'invoice_detail' inv.pk %}"><span><b class="text-dark">{{ inv.patient.full_name }}</b><br><span class="small muted">{{ inv.number }} · {{ inv.get_status_display }}</span></span><b class="ms-auto text-danger">{{ inv.balance|money }}</b></a></li>{% empty %}<li class="muted small">Nothing outstanding.</li>{% endfor %}</ul></section>
+  </div>
+</div>
+{% endblock %}

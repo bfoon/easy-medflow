@@ -24,7 +24,7 @@
 {% block subheading %}<p class="sub">Prescriptions flow from draft to signed to dispensed. Stock is drawn from the earliest-expiring batch.</p>{% endblock %}
 {% block actions %}<a class="btn btn-primary" href="{% url 'prescription_new' %}"><i class="bi bi-capsule"></i>Write prescription</a>{% endblock %}
 {% block content %}
-<div class="alert-mf warn mb-4"><i class="bi bi-exclamation-triangle-fill"></i><div>Allergy checks match names only. Drug interactions, dosing, pregnancy and renal safety are <b>not</b> checked. A pharmacist must review every prescription.</div></div>
+<div class="alert-mf warn mb-4"><i class="bi bi-exclamation-triangle-fill"></i><div>Allergy checks cover medicine names and common drug classes, and the safety review flags some kidney, blood-pressure and pregnancy risks. Interactions and doses are <b>not</b> fully checked. A pharmacist must review every prescription.</div></div>
 <div class="grid g-main">
   <div class="board" style="grid-template-columns:repeat(3,minmax(240px,1fr))">
     {% for key, label, items in lanes %}

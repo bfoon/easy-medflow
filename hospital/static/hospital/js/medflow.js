@@ -329,13 +329,14 @@
     $('#drawer-title').textContent = title || '';
     $('#drawer-loading').hidden = false; frame.style.visibility = 'hidden';
     frame.src = url + (url.includes('?') ? '&' : '?') + 'embed=1';
+    drawer.hidden = false; void drawer.offsetWidth;   // un-hide first so the slide-in transition can run
     drawer.classList.add('open'); drawer.setAttribute('aria-hidden', 'false'); backdrop.hidden = false;
     document.body.classList.add('drawer-open');
   }
   function closeDrawer() {
     if (!drawer) return;
     drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true'); backdrop.hidden = true;
-    document.body.classList.remove('drawer-open'); setTimeout(() => { frame.src = 'about:blank'; }, 300);
+    document.body.classList.remove('drawer-open'); setTimeout(() => { frame.src = 'about:blank'; if (!drawer.classList.contains('open')) drawer.hidden = true; }, 350);
   }
   if (drawer) {
     frame.addEventListener('load', () => { $('#drawer-loading').hidden = true; frame.style.visibility = 'visible'; });

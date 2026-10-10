@@ -1,10 +1,11 @@
-{% extends 'hospital/base.html' %}
+{% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}{{ title }}{% endblock %}
 {% block heading %}{{ title }}{% endblock %}
 {% block subheading %}<p class="sub">{{ subtitle }}</p>{% endblock %}
 {% block content %}
 <form method="post" class="panel form-shell" novalidate>{% csrf_token %}
   {% for e in form.non_field_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ e }}</div></div>{% endfor %}
+  <div id="ds" class="ds-inline mb-3"></div>
   <div class="mod-picker" role="radiogroup" aria-label="Type of study">
     {% for v, l in form.fields.modality.choices %}{% if v %}<label class="mod-opt"><input type="radio" name="modality" value="{{ v }}" {% if form.modality.value == v %}checked{% endif %}><span class="mod mod-{{ v }}">{{ l }}</span></label>{% endif %}{% endfor %}
   </div>
@@ -20,13 +21,16 @@
   <div class="form-actions"><button class="btn btn-primary"><i class="bi bi-send"></i>Send request</button><a href="javascript:history.back()" class="btn btn-ghost">Cancel</a></div>
 </form>
 {% endblock %}
-{% block scripts %}<script>
+{% block scripts %}<script src="{% asset 'hospital/js/decision.js' %}"></script><script>
 (() => {
   const regions = ['Chest PA','Chest AP','Abdomen','Head','Cervical spine','Lumbar spine','Pelvis','Left knee','Right knee','Left hip','Right hip','Left hand','Right wrist','Heart','Kidneys','Liver','Obstetric','Thyroid'];
   document.getElementById('region-options').innerHTML = regions.map(r => `<option value="${r}">`).join('');
   const MAP = {chest:'lungs',lung:'lungs',heart:'heart',cardiac:'heart',head:'brain',brain:'brain',abdomen:'stomach',liver:'liver',kidney:'kidneys',renal:'kidneys',pelvis:'bladder',knee:'bone',hip:'bone',spine:'bone',hand:'bone',wrist:'bone',thyroid:'thyroid',obstetric:'reproductive'};
   const region = document.querySelector('[name="region"]'), sys = document.querySelector('[name="body_system"]');
   document.querySelectorAll('[name="modality"]').forEach(r => r.addEventListener('change', () => { if (['ecg','echo'].includes(r.value)) { sys.value = 'heart'; if (!region.value) region.value = 'Heart'; } }));
+  const encSel = document.querySelector('[name="encounter"]');
+  const ds = MFDecision.mount({box: document.getElementById('ds'), url: "{% url 'api_clinical' %}", mode: 'imaging', encounter: () => encSel.value});
+  encSel.addEventListener('change', () => ds.refresh());
   region.addEventListener('input', () => { const k = Object.keys(MAP).find(k => region.value.toLowerCase().includes(k)); if (k) sys.value = MAP[k]; });
 })();
 </script>{% endblock %}

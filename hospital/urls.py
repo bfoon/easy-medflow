@@ -7,6 +7,8 @@ urlpatterns = [
     path('api/search/', v.api_search, name='api_search'),
     path('api/queue/', v.api_queue, name='api_queue'),
     path('api/rx-check/', v.api_rx_check, name='api_rx_check'),
+    path('api/clinical/', v.api_clinical, name='api_clinical'),
+    path('encounters/<int:pk>/ai-context/', v.ai_context_preview, name='ai_context_preview'),
 
     path('patients/', v.patients, name='patients'),
     path('patients/new/', v.patient_new, name='patient_new'),
@@ -51,6 +53,7 @@ urlpatterns = [
     path('labs/requests/<int:pk>/<str:step>/', v.lab_request_action, name='lab_request_action'),
     path('labs/tests/<int:pk>/cancel/', v.lab_order_cancel, name='lab_order_cancel'),
     path('patients/<int:pk>/labs/', v.patient_labs, name='patient_labs'),
+    path('patients/<int:pk>/story/', v.patient_story, name='patient_story'),
 
     path('pharmacy/', v.pharmacy, name='pharmacy'),
     path('prescriptions/new/', v.prescription_new, name='prescription_new'),
@@ -75,6 +78,20 @@ urlpatterns = [
     path('admissions/new/', v.admission_new, name='admission_new'),
     path('admissions/<int:pk>/discharge/', v.admission_discharge, name='admission_discharge'),
 
+    path('finance/', v.finance_dashboard, name='finance'),
+    path('finance/bills/', v.invoice_list, name='invoices'),
+    path('finance/prices/', v.tariff_list, name='tariffs'),
+    path('finance/visit/<int:pk>/', v.invoice_for_encounter, name='invoice_for_encounter'),
+    path('finance/bills/<int:pk>/', v.invoice_detail, name='invoice_detail'),
+    path('finance/bills/<int:pk>/capture/', v.invoice_capture, name='invoice_capture'),
+    path('finance/bills/<int:pk>/lines/', v.invoice_add_line, name='invoice_add_line'),
+    path('finance/bills/<int:pk>/lines/<int:line_pk>/remove/', v.invoice_remove_line, name='invoice_remove_line'),
+    path('finance/bills/<int:pk>/update/', v.invoice_update, name='invoice_update'),
+    path('finance/bills/<int:pk>/issue/', v.invoice_issue, name='invoice_issue'),
+    path('finance/bills/<int:pk>/void/', v.invoice_void, name='invoice_void'),
+    path('finance/bills/<int:pk>/pay/', v.payment_new, name='payment_new'),
+    path('finance/payments/<int:pk>/void/', v.payment_void, name='payment_void'),
+    path('finance/payments/<int:pk>/receipt/', v.payment_receipt, name='payment_receipt'),
     path('attendance/', v.attendance, name='attendance'),
 
     path('studio/', v.studio, name='studio'),

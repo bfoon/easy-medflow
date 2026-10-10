@@ -1,3 +1,5 @@
+from django.utils import timezone
+from decimal import Decimal
 import json
 from datetime import date, timedelta
 
@@ -5,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
 
-from .models import (Admission, Bed, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingOrder, StockRequest, LabRequest, PrescriptionItem, LabParameter, LabResultValue, Admission, Allergy, Bed, Department, Encounter, FormDefinition, FormSubmission, LabOrder, LabTest,
+from .models import (Allergy, Invoice, Payment, Admission, Bed, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingOrder, StockRequest, LabRequest, PrescriptionItem, LabParameter, LabResultValue, Admission, Allergy, Bed, Department, Encounter, FormDefinition, FormSubmission, LabOrder, LabTest,
                      Medication, Patient, Prescription, QueueTicket, Referral, Signature, StaffProfile, StockBatch,
                      WorkflowDefinition, WorkflowRun)
 from .services import availability, prescription_warnings
@@ -479,3 +481,145 @@ class BedDetailTests(Base):
         c.post(f'/beds/{bed.pk}/ready/')
         c.post(f'/beds/{bed.pk}/maintenance/', {'reason': 'Broken rail'})
         bed.refresh_from_db(); self.assertEqual(bed.state, 'maintenance')
+
+
+class FinanceTests(Base):
+    def setUp(self):
+        U = get_user_model()
+        self.fin = U.objects.create_user('fin', password=PW); StaffProfile.objects.create(user=self.fin, role='finance')
+        self.e = self.encounter()
+
+    def billable_visit(self):
+        lr = LabRequest.objects.create(encounter=self.e)
+        LabOrder.objects.create(encounter=self.e, request=lr, test=LabTest.objects.get(code='CBC'))                 # D450
+        ImagingOrder.objects.create(encounter=self.e, modality='xray', region='Chest', body_system='lungs')       # D750
+        rx = Prescription.objects.create(encounter=self.e, allergy_reviewed=True, state='signed')
+        PrescriptionItem.objects.create(prescription=rx, medication=self.med, frequency='TDS', duration_days=2, quantity=6)
+        self.as_('pharmacy').post(f'/prescriptions/{rx.pk}/dispense/'); self.client.logout()                    # 6 × D6
+        bed = Bed.objects.filter(kind='general').first()
+        a = Admission.objects.create(encounter=self.e, bed=bed)
+        Admission.objects.filter(pk=a.pk).update(admitted_at=timezone.now() - timedelta(hours=30))               # 2 bed-days × D800
+
+    def test_capture_every_charge_once(self):
+        self.billable_visit()
+        c = self.as_('reception')
+        r = c.get(f'/finance/visit/{self.e.pk}/'); inv = Invoice.objects.get()
+        self.assertRedirects(r, f'/finance/bills/{inv.pk}/')
+        cats = sorted(inv.lines.values_list('category', flat=True))
+        self.assertEqual(cats, ['bed', 'bed', 'consultation', 'imaging', 'lab', 'pharmacy'])
+        self.assertEqual(inv.total, Decimal('300') + 450 + 750 + 36 + 1600)
+        c.post(f'/finance/bills/{inv.pk}/capture/')
+        self.assertEqual(inv.lines.count(), 6)                               # nothing billed twice
+
+    def test_issue_pay_partially_then_fully(self):
+        self.billable_visit()
+        c = self.as_('reception'); c.get(f'/finance/visit/{self.e.pk}/'); inv = Invoice.objects.get()
+        c.post(f'/finance/bills/{inv.pk}/pay/', {'amount': '100', 'method': 'cash'})
+        self.assertFalse(Payment.objects.exists())                           # cannot pay a draft
+        c.post(f'/finance/bills/{inv.pk}/issue/')
+        c.post(f'/finance/bills/{inv.pk}/pay/', {'amount': '1000', 'method': 'wave'})
+        self.assertFalse(Payment.objects.exists())                           # mobile money needs a reference
+        c.post(f'/finance/bills/{inv.pk}/pay/', {'amount': '1000', 'method': 'wave', 'reference': 'WV123'})
+        inv.refresh_from_db(); self.assertEqual((inv.status, inv.balance), ('partial', Decimal('2136.00')))
+        c.post(f'/finance/bills/{inv.pk}/pay/', {'amount': '99999', 'method': 'cash'})
+        self.assertEqual(Payment.objects.count(), 1)                         # overpayment refused
+        c.post(f'/finance/bills/{inv.pk}/pay/', {'amount': '2136', 'method': 'cash'})
+        inv.refresh_from_db(); self.assertEqual((inv.status, inv.balance), ('paid', Decimal('0')))
+        self.assertContains(c.get(f'/finance/payments/{Payment.objects.first().pk}/receipt/'), 'Official receipt')
+
+    def test_insurance_split_and_discount_rules(self):
+        self.billable_visit()
+        c = self.as_('reception'); c.get(f'/finance/visit/{self.e.pk}/'); inv = Invoice.objects.get()
+        c.post(f'/finance/bills/{inv.pk}/update/', {'insurer': 'X', 'insurance_cover': 80, 'discount': '0'})
+        inv.refresh_from_db(); self.assertEqual((inv.insurance_share, inv.patient_share), (Decimal('2508.80'), Decimal('627.20')))
+        r = c.post(f'/finance/bills/{inv.pk}/update/', {'insurance_cover': 80, 'discount': '100', 'discount_reason': 'kind'})
+        self.assertEqual(r.status_code, 403)                                  # reception cannot discount
+        self.client.logout(); c = self.as_('fin')
+        c.post(f'/finance/bills/{inv.pk}/update/', {'insurance_cover': 0, 'discount': '136'})
+        inv.refresh_from_db(); self.assertEqual(inv.discount, 0)              # a discount needs a reason
+        c.post(f'/finance/bills/{inv.pk}/update/', {'insurance_cover': 0, 'discount': '136', 'discount_reason': 'Hardship'})
+        inv.refresh_from_db(); self.assertEqual(inv.total, Decimal('3000.00'))
+
+    def test_voided_payment_and_bill(self):
+        self.billable_visit()
+        c = self.as_('fin'); c.get(f'/finance/visit/{self.e.pk}/'); inv = Invoice.objects.get()
+        c.post(f'/finance/bills/{inv.pk}/issue/'); c.post(f'/finance/bills/{inv.pk}/pay/', {'amount': '500', 'method': 'cash'})
+        pay = Payment.objects.get()
+        c.post(f'/finance/payments/{pay.pk}/void/', {'reason': 'Entered twice'})
+        inv.refresh_from_db(); pay.refresh_from_db(); self.assertTrue(pay.voided); self.assertEqual(inv.status, 'issued')
+        c.post(f'/finance/bills/{inv.pk}/void/', {'reason': 'Wrong patient'})
+        inv.refresh_from_db(); self.assertEqual(inv.status, 'void')
+        c.get(f'/finance/visit/{self.e.pk}/')
+        self.assertEqual(Invoice.objects.exclude(pk=inv.pk).get().lines.count(), 6)   # charges from a voided bill can be billed again
+
+    def test_access(self):
+        self.assertEqual(self.as_('doctor').get('/finance/').status_code, 403)
+        self.client.logout()
+        for path in ['/finance/', '/finance/bills/', '/finance/prices/']:
+            self.assertEqual(self.as_('reception').get(path).status_code, 200, path)
+
+
+class DecisionSupportTests(Base):
+    def test_allergy_by_drug_class_and_cross_reaction(self):
+        from hospital.clinical import allergy_matches
+        amox, cef, ibu = (Medication.objects.get(name=n) for n in ('Amoxicillin', 'Ceftriaxone', 'Ibuprofen'))
+        self.assertEqual(allergy_matches([{'substance': 'Penicillin'}], amox)[0][0]['match'], 'class')
+        self.assertEqual(len(allergy_matches([{'substance': 'Penicillin'}], cef)[1]), 1)       # caution, not a block
+        self.assertEqual(allergy_matches([{'substance': 'Aspirin'}], ibu)[0][0]['match'], 'class')
+        self.assertEqual(allergy_matches([{'substance': 'Peanuts'}], amox), ([], []))
+
+    def test_penicillin_allergy_blocks_amoxicillin_without_override(self):
+        Allergy.objects.create(patient=self.patient, substance='Penicillin', reaction='rash', severity='moderate')
+        e = self.encounter()
+        data = {'encounter': e.pk, 'allergy_reviewed': 'on', 'items-TOTAL_FORMS': 1, 'items-INITIAL_FORMS': 0, 'items-MIN_NUM_FORMS': 1, 'items-MAX_NUM_FORMS': 30,
+                'items-0-medication': self.med.pk, 'items-0-units_per_dose': 1, 'items-0-route': 'oral', 'items-0-frequency': 'TDS', 'items-0-duration_days': 5}
+        r = self.as_('doctor').post('/prescriptions/new/', data)
+        self.assertContains(r, 'Possible allergy match'); self.assertFalse(Prescription.objects.exists())
+
+    def test_review_flags_risks_missing_work_up_and_mismatch(self):
+        from hospital.clinical import clinical_review
+        e = self.encounter(); e.diagnosis = 'Malaria'; e.save()
+        titles = [f['title'] for f in clinical_review(e)]
+        self.assertIn('Malaria not confirmed by a test', titles)
+        lr = LabRequest.objects.create(encounter=e)
+        o = LabOrder.objects.create(encounter=e, request=lr, test=LabTest.objects.get(code='MAL'), status='verified', resulted_at=timezone.now())
+        LabResultValue.objects.create(order=o, parameter=o.test.parameters.get(code='RDT'), value_text='Negative', flag='N')
+        o2 = LabOrder.objects.create(encounter=e, request=lr, test=LabTest.objects.get(code='RFT'), status='verified', resulted_at=timezone.now())
+        LabResultValue.objects.create(order=o2, parameter=o2.test.parameters.get(code='CREA'), value_number=180, flag='H')
+        f = {x['title']: x for x in clinical_review(e, [Medication.objects.get(name='Metformin')])}
+        self.assertEqual(f['Malaria test negative']['level'], 'danger')                      # possible misdiagnosis
+        self.assertIn('Metformin with raised creatinine', f)
+        self.assertNotIn('Malaria not confirmed by a test', f)
+
+    def test_suggestions_need_enough_cases(self):
+        from hospital.clinical import treatment_suggestions
+        e = self.encounter(); e.diagnosis = 'Malaria'; e.save()
+        self.assertEqual(treatment_suggestions(e)['meds'], [])
+        al = Medication.objects.get(name='Artemether/Lumefantrine')
+        for i in range(3):
+            p = Patient.objects.create(first_name='S', last_name=str(i), dob=date(1990, 1, 1), sex='M')
+            pe = Encounter.objects.create(patient=p, reason='x', diagnosis='Malaria', status='completed', outcome='resolved')
+            rx = Prescription.objects.create(encounter=pe, allergy_reviewed=True, state='dispensed')
+            PrescriptionItem.objects.create(prescription=rx, medication=al, units_per_dose=4, frequency='BD', duration_days=3, quantity=24)
+        s = treatment_suggestions(e)
+        self.assertEqual((s['meds'][0]['name'].split()[0], s['meds'][0]['frequency'], s['meds'][0]['success']), ('Artemether/Lumefantrine', 'BD', 100))
+        d = self.as_('doctor').get(f'/api/clinical/?encounter={e.pk}&meds={al.pk}').json()
+        self.assertTrue(d['ready']); self.assertEqual(d['suggestions']['n'], 3); self.assertFalse(d['ai'])
+
+    def test_ai_context_has_no_identifiers(self):
+        from hospital.clinical import deidentified_context, ai_review
+        self.patient.phone = '+220 7000000'; self.patient.address = '12 Secret Street'; self.patient.save()
+        e = self.encounter(); e.diagnosis = 'Pneumonia'; e.symptoms = 'Told by Awa Jallow'; e.save()
+        blob = json.dumps(deidentified_context(e), default=str)
+        for secret in ('Awa', 'Jallow', self.patient.mrn, '7000000', 'Secret Street', '1990-01-01'):
+            self.assertNotIn(secret, blob)
+        self.assertIn('Pneumonia', blob)
+        self.assertIsNone(ai_review(e))                                      # off until configured
+        self.assertContains(self.as_('doctor').get(f'/encounters/{e.pk}/ai-context/'), 'AI not connected')
+
+    def test_story_and_review_pages(self):
+        e = self.encounter(); e.diagnosis = 'Malaria'; e.save()
+        c = self.as_('doctor')
+        self.assertContains(c.get(f'/patients/{self.patient.pk}/story/'), 'story-data')
+        self.assertContains(c.get(f'/encounters/{e.pk}/'), 'Clinical safety review')
+        self.assertEqual(self.client.get(f'/patients/{self.patient.pk}/story/').status_code, 200)
