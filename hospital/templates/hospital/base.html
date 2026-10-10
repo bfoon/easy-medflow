@@ -12,8 +12,9 @@
   <link href="{% static 'hospital/css/medflow.css' %}" rel="stylesheet">
   {% block head %}{% endblock %}
 </head>
-<body {% block body_attrs %}{% endblock %}>
+<body {% block body_attrs %}{% endblock %} {% if embed %}class="embed"{% endif %}>
 {% block shell %}
+{% if not embed %}
 <div class="shell">
   <aside class="rail" aria-label="Main navigation">
     <a class="brand" href="{% url 'dashboard' %}">
@@ -21,6 +22,11 @@
       <span><b>MedFlow</b><small>Hospital management</small></span>
     </a>
     <nav>
+      {% if nav_role == 'partner' %}
+      <div class="nav-group"><span>Referral network</span>
+        <a class="nav-link {% nav_active '/network/inbox/' '/referrals/' %}" href="{% url 'network_inbox' %}"><i class="bi bi-inbox"></i>Referral inbox</a>
+      </div>
+      {% else %}
       <div class="nav-group">
         <a class="nav-link {% nav_active '/' %}" href="{% url 'dashboard' %}"><i class="bi bi-activity"></i>Overview</a>
         <a class="nav-link {% nav_active '/patients/' '/encounters/' %}" href="{% url 'patients' %}"><i class="bi bi-person-vcard"></i>Patients</a>
@@ -30,6 +36,8 @@
         <a class="nav-link {% nav_active '/labs/' %}" href="{% url 'labs' %}"><i class="bi bi-droplet-half"></i>Laboratory{% if nav_counts.labs %}<span class="badge-count">{{ nav_counts.labs }}</span>{% endif %}</a>
         <a class="nav-link {% nav_active '/pharmacy/' '/prescriptions/' %}" href="{% url 'pharmacy' %}"><i class="bi bi-capsule"></i>Pharmacy{% if nav_counts.pharmacy %}<span class="badge-count">{{ nav_counts.pharmacy }}</span>{% endif %}</a>
         <a class="nav-link {% nav_active '/beds/' '/admissions/' %}" href="{% url 'beds' %}"><i class="bi bi-hospital"></i>Beds &amp; wards</a>
+        <a class="nav-link {% nav_active '/imaging/' %}" href="{% url 'imaging' %}"><i class="bi bi-radioactive"></i>Imaging{% if nav_counts.imaging %}<span class="badge-count">{{ nav_counts.imaging }}</span>{% endif %}</a>
+        <a class="nav-link {% nav_active '/network/' %}" href="{% url 'network_specialists' %}"><i class="bi bi-person-badge"></i>Specialist network</a>
         <a class="nav-link {% nav_active '/referrals/' %}" href="{% url 'referrals' %}"><i class="bi bi-signpost-split"></i>Referrals{% if nav_counts.referrals %}<span class="badge-count">{{ nav_counts.referrals }}</span>{% endif %}</a>
       </div>
       <div class="nav-group"><span>Organisation</span>
@@ -37,11 +45,12 @@
         <a class="nav-link {% nav_active '/attendance/' %}" href="{% url 'attendance' %}"><i class="bi bi-clock-history"></i>Attendance</a>
         {% if request.user.is_staff %}<a class="nav-link" href="{% url 'admin:index' %}"><i class="bi bi-sliders"></i>Configuration</a>{% endif %}
       </div>
+      {% endif %}
     </nav>
     <div class="rail-foot">
-      <a class="rail-pulse" href="{% url 'dashboard' %}" title="Hospital pulse: rises as the waiting room fills">
+      {% if nav_role != 'partner' %}<a class="rail-pulse" href="{% url 'dashboard' %}" title="Hospital pulse: rises as the waiting room fills">
         <i class="bi bi-heart-pulse-fill heart"></i><span><b data-pulse-bpm>–</b> bpm · <span data-pulse-mood>…</span></span>
-      </a>
+      </a>{% endif %}
       <div class="who">
         <span class="avatar">{{ request.user|user_initials }}</span>
         <div><div class="name">{{ request.user|display_name }}</div><div class="role">{{ nav_role }}</div></div>
@@ -50,12 +59,12 @@
     </div>
   </aside>
 
-  <main class="main">
+  <main class="main">{% endif %}{% if embed %}<main class="embed-main">{% else %}
     <div class="utility">
       <button class="btn btn-ghost menu-btn" aria-label="Open menu"><i class="bi bi-list"></i></button>
-      <button class="search-trigger" data-palette type="button"><i class="bi bi-search"></i><span>Find a patient or jump to…</span><kbd>Ctrl K</kbd></button>
+      {% if nav_role != 'partner' %}<button class="search-trigger" data-palette type="button"><i class="bi bi-search"></i><span>Find a patient or jump to…</span><kbd>Ctrl K</kbd></button>{% endif %}
       <span class="clock"><i class="bi bi-clock me-1"></i><span data-clock="short"></span></span>
-    </div>
+    </div>{% endif %}
     {% block topbar %}
     <header class="topbar">
       <div><h1>{% block heading %}{% endblock %}</h1>{% block subheading %}{% endblock %}</div>
@@ -64,7 +73,7 @@
     {% endblock %}
     <div class="page-enter">{% block content %}{% endblock %}</div>
   </main>
-</div>
+{% if not embed %}</div>
 
 <div class="palette-backdrop" role="dialog" aria-modal="true" aria-label="Search">
   <div class="palette">
@@ -73,6 +82,20 @@
     <div class="foot"><span>↑↓ to move</span><span>Enter to open</span><span>Esc to close</span></div>
   </div>
 </div>
+
+<!-- slide-out panel: forms open here so you never leave the page you are on -->
+<div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
+<aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+  <header><h2 id="drawer-title">…</h2><button class="btn btn-ghost btn-sm ms-auto" data-drawer-close aria-label="Close panel"><i class="bi bi-x-lg"></i></button></header>
+  <div class="drawer-loading" id="drawer-loading"><span class="spin"></span>Loading…</div>
+  <iframe id="drawer-frame" title="Form"></iframe>
+</aside>
+
+<!-- general pop-up for case histories and images -->
+<div class="modal-mf" id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal-card"><header><h2 id="modal-title"></h2><button class="btn btn-ghost btn-sm ms-auto" data-modal-close aria-label="Close"><i class="bi bi-x-lg"></i></button></header><div id="modal-body"></div></div>
+</div>
+{% endif %}
 {% endblock %}
 
 <div class="toasts" aria-live="polite">

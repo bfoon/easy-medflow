@@ -2,7 +2,7 @@
 {% block title %}Referrals{% endblock %}
 {% block heading %}Referrals{% endblock %}
 {% block subheading %}<p class="sub">Track each transfer of care from draft to completion.</p>{% endblock %}
-{% block actions %}<a class="btn btn-primary" href="{% url 'referral_new' %}"><i class="bi bi-signpost-split"></i>Create referral</a>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'network_specialists' %}"><i class="bi bi-person-badge"></i>Find a specialist</a><button class="btn btn-primary" data-drawer="{% url 'referral_new' %}" data-title="Create referral"><i class="bi bi-signpost-split"></i>Create referral</button>{% endblock %}
 {% block content %}
 <div class="urg-sum mb-4">
   {% for u, n in counts.items %}<div class="urgency-{{ u }}"><b data-count="{{ n }}">{{ n }}</b><span>{{ u }} · open</span></div>{% endfor %}
@@ -12,7 +12,7 @@
   {% for r in rows %}
   <article class="ref-card urgency-{{ r.urgency }}">
     <div class="d-flex flex-wrap gap-2 align-items-center">
-      <span class="dest">{{ r.destination }}</span>{% if r.speciality %}<span class="muted">· {{ r.speciality }}</span>{% endif %}
+      <a class="dest" href="{% url 'referral_detail' r.pk %}">{{ r.destination }}</a>{% if r.specialist %}<span class="small">· {{ r.specialist.display_name }}</span>{% endif %}{% if r.slot %}<span class="tag teal"><i class="bi bi-calendar-check"></i>{{ r.slot.start|date:'D j M H:i' }}</span>{% endif %}{% if r.kind == 'operation' %}<span class="tag ink">Operation</span>{% endif %}{% if r.speciality %}<span class="muted">· {{ r.speciality }}</span>{% endif %}
       <span class="tag {{ r.urgency|tone }}">{{ r.get_urgency_display }}</span>
       {% if r.status in 'declined cancelled' %}<span class="tag {{ r.status|tone }}">{{ r.get_status_display }}</span>{% endif %}
       <span class="ms-auto small muted">{{ r.created_at|date:'j M Y' }}</span>
@@ -22,11 +22,7 @@
     <div class="track">{% for s in r.track %}<span class="st {{ s.state }}"><i></i>{{ s.name }}</span>{% endfor %}</div>
     {% endif %}
     {% if r.contact or r.accepted_by %}<div class="small muted">{% if r.contact %}<i class="bi bi-telephone"></i> {{ r.contact }}{% endif %}{% if r.accepted_by %} · Accepted by {{ r.accepted_by }}{% endif %}</div>{% endif %}
-    {% if r.next_states %}
-    <div class="acts">
-      {% for s in r.next_states %}<form method="post" action="{% url 'referral_transition' r.pk s %}" {% if s == 'cancelled' or s == 'declined' %}data-confirm="Mark this referral {{ s }}?"{% endif %}>{% csrf_token %}<button class="btn btn-sm {% if s == 'cancelled' or s == 'declined' %}btn-danger-soft{% elif forloop.first %}btn-ink{% else %}btn-ghost{% endif %}">{% if s == 'sent' %}Mark sent{% elif s == 'accepted' %}Accepted{% elif s == 'declined' %}Declined{% elif s == 'transferred' %}Patient transferred{% elif s == 'completed' %}Complete{% else %}Cancel{% endif %}</button></form>{% endfor %}
-    </div>
-    {% endif %}
+    <div class="acts"><a class="btn btn-sm btn-ink" href="{% url 'referral_detail' r.pk %}">Open referral{% if r.open_tasks %} · {{ r.open_tasks }} open request{{ r.open_tasks|pluralize }}{% endif %}</a></div>
   </article>
   {% empty %}<div class="empty"><i class="bi bi-signpost-split"></i>No referrals yet. Create one from a patient's open visit.</div>{% endfor %}
 </section>

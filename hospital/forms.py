@@ -1,5 +1,6 @@
 from django import forms
-from .models import (PrescriptionItem, Medication, Patient, Encounter, QueueTicket, Referral, LabOrder, Prescription,
+from django.utils import timezone
+from .models import (NetworkFacility, Specialist, SpecialistSlot, ImagingOrder, PrescriptionItem, Medication, Patient, Encounter, QueueTicket, Referral, LabOrder, Prescription,
                      FormDefinition, WorkflowDefinition, Admission, Allergy, Condition, Bed)
 
 
@@ -189,3 +190,60 @@ class AdmissionForm(StyledModelForm):
         super().__init__(*a, **kw)
         self.fields['encounter'].queryset = Encounter.objects.filter(status='open').select_related('patient')
         self.fields['bed'].queryset = Bed.objects.filter(state='available').select_related('ward')
+
+
+REGION_SYSTEM = {'chest': 'lungs', 'lung': 'lungs', 'heart': 'heart', 'cardiac': 'heart', 'head': 'brain', 'brain': 'brain', 'skull': 'brain',
+                 'abdomen': 'stomach', 'liver': 'liver', 'kidney': 'kidneys', 'renal': 'kidneys', 'pelvis': 'bladder', 'bladder': 'bladder',
+                 'knee': 'bone', 'hip': 'bone', 'spine': 'bone', 'hand': 'bone', 'foot': 'bone', 'thyroid': 'thyroid', 'neck': 'thyroid',
+                 'breast': 'reproductive', 'uterus': 'reproductive', 'obstetric': 'reproductive', 'pancreas': 'pancreas'}
+
+
+class ImagingOrderForm(StyledModelForm):
+    class Meta:
+        model = ImagingOrder
+        fields = ['encounter', 'modality', 'region', 'body_system', 'priority', 'clinical_question']
+        labels = {'encounter': 'Visit', 'region': 'Body region / view', 'body_system': 'Show on body map as', 'clinical_question': 'Clinical question'}
+        widgets = {'clinical_question': forms.Textarea(attrs={'rows': 2, 'placeholder': 'e.g. Breathless, query cardiomegaly or effusion'})}
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.fields['encounter'].queryset = Encounter.objects.filter(status='open').select_related('patient')
+        self.fields['region'].widget.attrs.update({'list': 'region-options', 'placeholder': 'e.g. Chest PA'})
+
+
+class ReferralNetworkForm(StyledModelForm):
+    slot_id = forms.ModelChoiceField(queryset=SpecialistSlot.objects.none(), required=False, widget=forms.HiddenInput)
+    send_now = forms.BooleanField(required=False, initial=True, label='Send now')
+
+    class Meta:
+        model = Referral
+        fields = ['encounter', 'kind', 'facility', 'specialist', 'speciality', 'destination', 'urgency', 'planned_date', 'reason', 'consent_to_share']
+        labels = {'encounter': 'Visit', 'kind': 'Type of referral', 'facility': 'Network facility', 'destination': 'Outside the network (name)',
+                  'consent_to_share': 'The patient agrees that their records may be shared with the receiving facility'}
+        widgets = {'planned_date': forms.DateInput(attrs={'type': 'date'}), 'reason': forms.Textarea(attrs={'rows': 3})}
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.fields['encounter'].queryset = Encounter.objects.filter(status='open').select_related('patient')
+        self.fields['facility'].queryset = NetworkFacility.objects.filter(accepts_referrals=True)
+        self.fields['specialist'].queryset = Specialist.objects.filter(active=True).select_related('facility')
+        self.fields['specialist'].required = False
+        self.fields['destination'].required = False
+        self.fields['slot_id'].queryset = SpecialistSlot.objects.filter(start__gte=timezone.now(), referral__isnull=True)
+
+    def clean(self):
+        d = super().clean()
+        fac, spec, slot = d.get('facility'), d.get('specialist'), d.get('slot_id')
+        if not fac and not d.get('destination'):
+            raise forms.ValidationError('Choose a network facility, or name a destination outside the network.')
+        if spec and fac and spec.facility_id != fac.pk:
+            self.add_error('specialist', 'This specialist works at a different facility.')
+        if spec and not fac:
+            d['facility'] = fac = spec.facility; self.instance.facility = fac
+        if slot and (not spec or slot.specialist_id != spec.pk):
+            raise forms.ValidationError('The chosen slot does not belong to the chosen specialist.')
+        if fac and d.get('send_now') and not d.get('consent_to_share'):
+            self.add_error('consent_to_share', 'Record the patient\'s consent before sending their records to another facility, or save as a draft.')
+        if d.get('kind') == 'operation' and not d.get('planned_date'):
+            self.add_error('planned_date', 'Give the planned operation date so preparation can be timed.')
+        return d

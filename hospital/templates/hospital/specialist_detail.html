@@ -1,0 +1,42 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ s.display_name }}{% endblock %}
+{% block topbar %}{% endblock %}
+{% block content %}
+<section class="sp-hero">
+  <span class="sp-avatar xl">{{ s.initials }}</span>
+  <div class="flex-fill">
+    <h1>{{ s.display_name }}</h1>
+    <div class="facts"><span><b>{{ s.speciality }}</b></span><span><i class="bi bi-hospital"></i> {{ s.facility }}{% if s.facility.location %}, {{ s.facility.location }}{% endif %}</span>{% if s.languages %}<span><i class="bi bi-translate"></i> {{ s.languages }}</span>{% endif %}{% if s.consult_fee %}<span>Fee {{ s.consult_fee }}</span>{% endif %}</div>
+    <div class="stars big">{{ s.rating|stars }} <b>{{ s.rating }}</b> <span class="muted">· {{ s.reviews }} reviews from referring clinicians</span></div>
+    {% if s.bio %}<p class="mt-2 mb-0">{{ s.bio }}</p>{% endif %}
+  </div>
+  <div class="actions"><a class="btn btn-ghost" href="{% url 'network_specialists' %}{% if encounter %}?encounter={{ encounter }}{% endif %}"><i class="bi bi-arrow-left"></i>All specialists</a>
+    <button class="btn btn-primary" data-drawer="{% url 'referral_new' %}?facility={{ s.facility_id }}&specialist={{ s.pk }}{% if encounter %}&encounter={{ encounter }}{% endif %}" data-title="Refer to {{ s.display_name }}"><i class="bi bi-send"></i>Refer without a slot</button></div>
+</section>
+<div class="grid g-main">
+  <section class="panel">
+    <div class="panel-head"><h2>Availability</h2><span class="hint">{{ free_total }} free slot{{ free_total|pluralize }} in the next 14 days · click one to book it into a referral</span></div>
+    <div class="cal">
+      {% for d in days %}
+      <div class="cal-day {% if not d.slots %}none{% endif %}">
+        <div class="cal-date"><b>{{ d.date|date:'D' }}</b><span>{{ d.date|date:'j M' }}</span>{% if d.free %}<em>{{ d.free }}</em>{% endif %}</div>
+        <div class="cal-slots">
+          {% for sl in d.slots %}
+            {% if sl.is_booked %}<span class="slot booked" title="Booked">{{ sl.start|date:'H:i' }}</span>
+            {% else %}<button class="slot" data-drawer="{% url 'referral_new' %}?facility={{ s.facility_id }}&specialist={{ s.pk }}&slot_id={{ sl.pk }}{% if encounter %}&encounter={{ encounter }}{% endif %}" data-title="Book {{ sl.start|date:'D j M H:i' }} with {{ s.display_name }}">{{ sl.start|date:'H:i' }}{% if sl.mode == 'video' %} <i class="bi bi-camera-video"></i>{% endif %}</button>{% endif %}
+          {% empty %}<span class="small muted">—</span>{% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="legend mt-3"><span><i style="background:var(--teal-wash);border-color:var(--teal)"></i>Free</span><span><i style="background:repeating-linear-gradient(135deg,#eee 0 3px,#fff 3px 6px)"></i>Booked</span><span><i class="bi bi-camera-video" style="border:0"></i> Video call</span></div>
+  </section>
+  <aside class="stack align-self-start">
+    <section class="panel"><div class="panel-head"><h2>{{ s.facility }}</h2></div>
+      <dl class="kv"><dt>Type</dt><dd>{{ s.facility.get_kind_display }}</dd><dt>Phone</dt><dd>{{ s.facility.phone|default:'—' }}</dd></dl>
+      <div class="mt-2">{% for c in s.facility.capability_list %}<span class="tag me-1 mb-1">{{ c }}</span>{% endfor %}</div></section>
+    {% if colleagues %}<section class="panel"><div class="panel-head"><h2>Also at this facility</h2></div>
+      <ul class="plain ruled">{% for c in colleagues %}<li><a class="d-flex gap-2 align-items-center text-decoration-none" href="{% url 'specialist_detail' c.pk %}{% if encounter %}?encounter={{ encounter }}{% endif %}"><span class="sp-avatar sm">{{ c.initials }}</span><span><b class="text-dark">{{ c.display_name }}</b><br><span class="small muted">{{ c.speciality }}</span></span><span class="ms-auto small">{{ c.rating }} <i class="bi bi-star-fill" style="color:var(--amber)"></i></span></a></li>{% endfor %}</ul></section>{% endif %}
+  </aside>
+</div>
+{% endblock %}

@@ -71,3 +71,13 @@ def tone(status):
 @register.filter
 def range_for_sex(parameter, sex):
     return parameter.range_label(sex)
+
+
+@register.filter
+def stars(value):
+    """Rating out of 5 as star icons (full, half, empty), for display only."""
+    from django.utils.html import format_html_join
+    v = round(float(value or 0) * 2) / 2
+    icons = ['bi-star-fill'] * int(v) + (['bi-star-half'] if v % 1 else []) 
+    icons += ['bi-star'] * (5 - len(icons))
+    return format_html_join('', '<i class="bi {}"></i>', ((i,) for i in icons))

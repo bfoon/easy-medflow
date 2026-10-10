@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 # Migrations are committed to the repository; never generate them at boot.
+python manage.py wait_for_db
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput
 python manage.py bootstrap_hospital

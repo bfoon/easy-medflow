@@ -1,0 +1,16 @@
+{% if similar and similar.groups %}
+<section class="panel similar" data-patient="{{ patient_id }}" data-case-url="{% url 'case_detail' 'TOKEN' %}">
+  <div class="panel-head"><h2><i class="bi bi-diagram-2 me-1" style="color:var(--teal)"></i>What worked for similar cases</h2></div>
+  <p class="small muted mb-3">Completed visits diagnosed with “{{ similar.term }}” ({{ similar.total }} cases). Other patients are anonymous: no names, numbers or dates. Groups under 3 patients are hidden.</p>
+  {% for g in similar.groups %}
+  <div class="regimen {% if g.small %}small-group{% endif %}">
+    <div class="d-flex align-items-baseline gap-2"><b>{{ g.regimen }}</b><span class="ms-auto rate {% if g.rate >= 80 %}good{% elif g.rate >= 50 %}mid{% else %}low{% endif %}">{{ g.rate }}%</span></div>
+    <div class="meter {% if g.rate < 50 %}red{% elif g.rate < 80 %}amber{% endif %}"><i style="--w:{{ g.rate }}%"></i></div>
+    <div class="small muted mt-1">{{ g.ok }} of {{ g.n }} resolved or improved</div>
+    <div class="cases">{% for c in g.shown %}<button class="case {% if c.success %}ok{% else %}no{% endif %} {% if c.own %}own{% endif %}" data-token="{{ c.token }}" title="{% if c.own %}This patient{% else %}Anonymous{% endif %} · {{ c.outcome_label }}">{% if c.own %}<i class="bi bi-person-fill"></i> This patient{% else %}{{ c.sex|first }} · {{ c.age }}{% endif %}</button>{% endfor %}</div>
+    {% if g.small %}<div class="small muted">Too few other patients to show individual cases.</div>{% endif %}
+  </div>
+  {% endfor %}
+  <p class="form-text mb-0">Observational hospital data, not clinical evidence. Use it to prompt questions, not to decide treatment.</p>
+</section>
+{% endif %}

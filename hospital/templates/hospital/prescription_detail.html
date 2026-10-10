@@ -1,0 +1,76 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ p.number }}{% endblock %}
+{% block heading %}Prescription {{ p.number }}{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'patient_chart' patient.pk %}">{{ patient.full_name }}</a> · {{ patient.mrn }} · written {{ p.created_at|date:'j M Y H:i' }} · <span class="tag {{ p.state|tone }}">{{ p.get_state_display }}</span></p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="{% url 'patient_chart' patient.pk %}#meds"><i class="bi bi-arrow-left"></i>Patient</a>
+  {% if can_edit %}<a class="btn btn-ghost" href="{% url 'prescription_edit' p.pk %}"><i class="bi bi-pencil"></i>Edit medicines</a>{% endif %}
+  {% if p.state == 'draft' and can_sign %}<form method="post" action="{% url 'prescription_sign' p.pk %}" data-confirm="Sign {{ p.number }}?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="btn btn-ink"><i class="bi bi-pen"></i>Sign</button></form>{% endif %}
+  {% if p.state == 'signed' or p.state == 'partial' %}{% if can_dispense %}<form method="post" action="{% url 'prescription_dispense' p.pk %}" data-confirm="Dispense every medicine that is in stock?">{% csrf_token %}<button class="btn btn-primary"><i class="bi bi-bag-check"></i>{% if p.state == 'partial' %}Dispense remaining{% else %}Dispense{% endif %}</button></form>{% endif %}{% endif %}
+  {% if unavailable %}<button class="btn btn-ghost" onclick="window.print()"><i class="bi bi-printer"></i>Print patient note</button>{% endif %}
+{% endblock %}
+{% block content %}
+{% if check.any_allergy %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div><b>Possible allergy match.</b> Override: {{ p.override_reason|default:'none documented' }}</div></div>{% endif %}
+<div class="grid g-main">
+  <section class="panel flush">
+    {% for l in lines %}{% with i=l.item %}
+    <div class="rx-row {% if l.possible_allergy_matches %}danger{% endif %} av-{{ i.availability|default:'normal' }}">
+      <div class="rx-row-main">
+        <span class="rx-n">{{ forloop.counter }}</span>
+        <div class="flex-fill">
+          <div class="med">{{ i.medication }}</div>
+          <div class="dir">{{ i.directions }}</div>
+          <div class="meta">
+            <span>Qty <b>{{ i.quantity }}</b></span>
+            {% if i.dispensed_quantity %}<span class="tag teal"><i class="bi bi-bag-check"></i>{{ i.dispensed_quantity }} dispensed</span>{% endif %}
+            {% if not i.is_dispensed and i.availability != 'unavailable' %}<span class="tag {% if l.insufficient_stock %}amber{% endif %}">{{ l.inventory_available }} in stock</span>{% endif %}
+            {% if i.availability == 'ordered' %}<span class="tag indigo"><i class="bi bi-truck"></i>Ordered from supplier{% if l.open_request %} · {{ l.open_request.get_status_display|lower }}{% endif %}</span>{% endif %}
+            {% if i.availability == 'unavailable' %}<span class="tag red"><i class="bi bi-person-exclamation"></i>Not available · patient informed {{ i.patient_informed_at|date:'j M H:i' }}</span>{% endif %}
+            {% for a in l.possible_allergy_matches %}<span class="tag red">Possible allergy: {{ a.substance }}</span>{% endfor %}
+          </div>
+          {% if i.availability == 'unavailable' %}<div class="small mt-1"><i class="bi bi-chat-quote"></i> {{ i.availability_note }} <span class="muted">— {{ i.patient_informed_by|display_name }}</span></div>{% endif %}
+        </div>
+      </div>
+      {% if can_manage and not i.is_dispensed and p.state != 'cancelled' %}
+      <div class="rx-row-acts">
+        {% if i.availability == '' %}
+          {% if l.insufficient_stock %}<div class="small text-warning-emphasis fw-semibold w-100 mb-1"><i class="bi bi-exclamation-triangle"></i> Not enough stock for this line.</div>{% endif %}
+          <form method="post" action="{% url 'rx_item_availability' i.pk 'order' %}" data-confirm="Raise a supplier order for {{ i.medication }}?">{% csrf_token %}<button class="btn btn-sm btn-ghost"><i class="bi bi-truck"></i>Order from supplier</button></form>
+          <details class="inform"><summary class="btn btn-sm btn-ghost"><i class="bi bi-person-exclamation"></i>Not available · inform patient</summary>
+            <form method="post" action="{% url 'rx_item_availability' i.pk 'unavailable' %}" class="mt-2">{% csrf_token %}
+              <textarea class="form-control form-control-sm mb-2" name="note" rows="2">{{ i.medication }} is not available at our pharmacy. Please buy it from a community pharmacy and take it as written: {{ i.directions }}</textarea>
+              <button class="btn btn-sm btn-ink">Record that the patient was told</button></form></details>
+        {% else %}
+          <form method="post" action="{% url 'rx_item_availability' i.pk 'clear' %}">{% csrf_token %}<button class="btn btn-sm btn-ghost"><i class="bi bi-arrow-counterclockwise"></i>Back to normal</button></form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endwith %}{% endfor %}
+  </section>
+  <aside class="stack align-self-start">
+    <section class="panel">
+      <div class="panel-head"><h2>Details</h2></div>
+      <dl class="kv">
+        <dt>Allergy review</dt><dd>{% if p.allergy_reviewed %}<span class="tag teal">Done</span>{% else %}<span class="tag amber">Not done</span>{% endif %}</dd>
+        <dt>Signed</dt><dd>{% if p.signed_at %}<span class="stamp"><i class="bi bi-patch-check-fill"></i>{{ p.signed_by|display_name }} · {{ p.signed_at|date:'j M H:i' }}</span>{% else %}—{% endif %}</dd>
+        <dt>Notes</dt><dd>{{ p.notes|default:'—' }}</dd>
+      </dl>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>When a medicine is out of stock</h2></div>
+      <p class="small mb-1"><b>Order from supplier</b> raises a supplier order; the line is dispensed when the stock is received.</p>
+      <p class="small mb-0"><b>Not available · inform patient</b> records what the patient was told and skips the line when dispensing. Print the note for the patient.</p>
+    </section>
+  </aside>
+</div>
+{% if unavailable %}
+<section class="print-slip">
+  <h2>Medicines to obtain elsewhere</h2>
+  <p>{{ patient.full_name }} · {{ patient.mrn }} · {{ p.number }} · {% now "j F Y" %}</p>
+  <ol>{% for l in unavailable %}<li><b>{{ l.item.medication }}</b> — {{ l.item.directions }} (quantity {{ l.item.quantity }})</li>{% endfor %}</ol>
+  <p>These medicines were prescribed but are not available at our pharmacy. Please obtain them from a licensed pharmacy.</p>
+  <p class="sig">Prescriber: {{ p.signed_by|display_name }}</p>
+</section>
+{% endif %}
+{% endblock %}

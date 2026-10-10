@@ -4,6 +4,9 @@
 #   migrate → seed_demo → createsuperuser → runserver
 set -eu
 
+echo "→ Waiting for the database"
+python manage.py wait_for_db
+
 echo "→ Applying migrations"
 python manage.py migrate --noinput
 

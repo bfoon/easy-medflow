@@ -15,12 +15,14 @@ class Department(Tracked):
     def __str__(self): return self.name
 
 class StaffProfile(Tracked):
-    ROLE=[(x,x.replace('_',' ').title()) for x in ['admin','doctor','nurse','reception','lab','pharmacy','finance','management']]
+    ROLE=[(x,x.replace('_',' ').title()) for x in ['admin','doctor','nurse','reception','lab','radiology','pharmacy','finance','management','partner']]
     user=models.OneToOneField(settings.AUTH_USER_MODEL,on_delete=models.CASCADE,related_name='hospital_staff')
     role=models.CharField(max_length=20,choices=ROLE)
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     license_number=models.CharField(max_length=100,blank=True)
     active=models.BooleanField(default=True)
+    facility=models.ForeignKey('NetworkFacility',null=True,blank=True,on_delete=models.SET_NULL,related_name='staff',
+                               help_text='Partner role only: the network facility this account belongs to')
     lab_view=models.CharField(max_length=10,choices=[('body','Body map'),('clean','Charts & lists')],default='body',help_text='Preferred way to review lab results')
     def __str__(self):return f'{self.user} - {self.role}'
 
@@ -81,6 +83,9 @@ class Encounter(Tracked):
     vitals=models.JSONField(default=dict,blank=True,help_text='Measurements with units (e.g. bp, heart_rate, temperature_c)')
     status=models.CharField(max_length=20,choices=STATUS,default='open')
     completed_at=models.DateTimeField(null=True,blank=True)
+    OUTCOMES=[('resolved','Resolved'),('improved','Improved'),('no_change','No change'),('worsened','Worsened'),('referred','Referred on')]
+    outcome=models.CharField(max_length=12,choices=OUTCOMES,blank=True,help_text='How the patient was at the end of this visit or course')
+    outcome_notes=models.CharField(max_length=300,blank=True)
     def __str__(self):return f'{self.patient.first_name} {self.patient.last_name} · {self.patient.mrn} · {self.reason[:40]} · {self.created_at:%d %b}'
 
 class QueueTicket(Tracked):
@@ -291,7 +296,7 @@ ROUTES=[('oral','By mouth'),('iv','Intravenous (IV)'),('im','Intramuscular (IM)'
 
 class Prescription(Tracked):
     """One prescription for a visit. Holds one or more medicine lines (PrescriptionItem)."""
-    STATES=[(x,x.title()) for x in ['draft','signed','dispensed','cancelled']]
+    STATES=[('draft','Draft'),('signed','Signed'),('partial','Partly dispensed'),('dispensed','Dispensed'),('cancelled','Cancelled')]
     encounter=models.ForeignKey(Encounter,on_delete=models.PROTECT,related_name='prescriptions')
     notes=models.TextField(blank=True,help_text='Notes for the pharmacist')
     state=models.CharField(max_length=20,choices=STATES,default='draft')
@@ -315,6 +320,15 @@ class PrescriptionItem(Tracked):
     quantity=models.PositiveIntegerField(validators=[MinValueValidator(1)],help_text='Total units to dispense')
     instructions=models.CharField(max_length=300,blank=True,help_text='e.g. after food, avoid alcohol')
     sort_order=models.PositiveSmallIntegerField(default=0)
+    AVAILABILITY=[('','Normal'),('ordered','Ordered from supplier'),('unavailable','Not available · patient informed')]
+    availability=models.CharField(max_length=12,choices=AVAILABILITY,blank=True)
+    availability_note=models.CharField(max_length=300,blank=True,help_text='What the patient was told, e.g. buy at a community pharmacy')
+    patient_informed_at=models.DateTimeField(null=True,blank=True)
+    patient_informed_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='+')
+    @property
+    def dispensed_quantity(self):return sum(d.quantity for d in self.dispenses.all())
+    @property
+    def is_dispensed(self):return self.dispensed_quantity>=self.quantity
     class Meta: ordering=['sort_order','id']
     @staticmethod
     def calculate_quantity(units_per_dose,frequency,duration_days):
@@ -338,12 +352,63 @@ class PrescriptionItem(Tracked):
         return text[0].upper()+text[1:]+(f'. {self.instructions}' if self.instructions else '')
     def __str__(self):return f'{self.medication} · {self.directions}'
 
+class StockRequest(Tracked):
+    """A request to buy medicine the pharmacy does not have, often raised from a prescription line."""
+    STATUS=[('requested','Requested'),('ordered','Ordered'),('received','Received'),('cancelled','Cancelled')]
+    medication=models.ForeignKey(Medication,on_delete=models.PROTECT,related_name='stock_requests')
+    quantity=models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    reason=models.CharField(max_length=300,blank=True)
+    prescription_item=models.ForeignKey('PrescriptionItem',on_delete=models.SET_NULL,null=True,blank=True,related_name='stock_requests')
+    status=models.CharField(max_length=12,choices=STATUS,default='requested')
+    requested_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name='+')
+    received_batch=models.ForeignKey(StockBatch,on_delete=models.SET_NULL,null=True,blank=True,related_name='+')
+    class Meta: ordering=['-created_at']
+    def __str__(self):return f'{self.medication} × {self.quantity} ({self.get_status_display()})'
+
 class Dispense(Tracked):
     prescription=models.ForeignKey(Prescription,on_delete=models.PROTECT,related_name='dispenses')
     item=models.ForeignKey(PrescriptionItem,on_delete=models.PROTECT,null=True,blank=True,related_name='dispenses')
     batch=models.ForeignKey(StockBatch,on_delete=models.PROTECT)
     quantity=models.PositiveIntegerField(validators=[MinValueValidator(1)])
     dispensed_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
+
+MODALITIES=[('xray','X-ray'),('ct','CT scan'),('mri','MRI'),('ultrasound','Ultrasound'),('ecg','ECG'),('echo','Echocardiogram'),
+            ('mammogram','Mammogram'),('fluoro','Fluoroscopy')]
+
+class ImagingOrder(Tracked):
+    """An imaging study (X-ray, CT, MRI, ultrasound, ECG…) with its images and the radiologist's report."""
+    STATUS=[('requested','Requested'),('acquired','Images taken'),('reported','Reported'),('cancelled','Cancelled')]
+    encounter=models.ForeignKey(Encounter,on_delete=models.PROTECT,related_name='imaging')
+    modality=models.CharField(max_length=12,choices=MODALITIES)
+    region=models.CharField(max_length=80,help_text='e.g. Chest PA, Abdomen, Left knee')
+    body_system=models.CharField(max_length=20,choices=BODY_SYSTEMS,default='lungs',help_text='Where it appears on the body map')
+    clinical_question=models.TextField(blank=True)
+    priority=models.CharField(max_length=10,choices=[('routine','Routine'),('urgent','Urgent'),('stat','STAT · immediately')],default='routine')
+    status=models.CharField(max_length=12,choices=STATUS,default='requested')
+    requested_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name='imaging_requested')
+    performed_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='imaging_performed')
+    findings=models.TextField(blank=True)
+    impression=models.TextField(blank=True)
+    measurements=models.JSONField(default=list,blank=True,help_text='[{"label":"Ejection fraction","value":"35","unit":"%","abnormal":true}]')
+    abnormal=models.BooleanField(default=False)
+    reported_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='imaging_reported')
+    reported_at=models.DateTimeField(null=True,blank=True)
+    class Meta: ordering=['-created_at']
+    @property
+    def number(self):return f'IM-{self.pk:06d}'
+    def __str__(self):return f'{self.number} · {self.get_modality_display()} {self.region}'
+
+def imaging_upload_path(instance,filename):
+    import os
+    ext=os.path.splitext(filename)[1].lower()[:6]
+    return f'imaging/{instance.order.encounter.patient_id}/{instance.order_id}/{uuid.uuid4().hex}{ext}'
+
+class ImagingImage(Tracked):
+    order=models.ForeignKey(ImagingOrder,on_delete=models.CASCADE,related_name='images')
+    file=models.FileField(upload_to=imaging_upload_path)
+    caption=models.CharField(max_length=120,blank=True)
+    uploaded_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name='+')
+    class Meta: ordering=['id']
 
 class Ward(Tracked):
     name=models.CharField(max_length=120,unique=True)
@@ -364,6 +429,50 @@ class Admission(Tracked):
     discharge_notes=models.TextField(blank=True)
     def __str__(self):return f'{self.encounter.patient.mrn} / {self.bed}'
 
+class NetworkFacility(Tracked):
+    """A hospital, clinic or diagnostic centre in the referral network."""
+    KIND=[('hospital','Hospital'),('clinic','Specialist clinic'),('diagnostic','Diagnostic centre'),('maternity','Maternity centre'),('rehab','Rehabilitation')]
+    name=models.CharField(max_length=200,unique=True)
+    kind=models.CharField(max_length=12,choices=KIND,default='hospital')
+    location=models.CharField(max_length=160,blank=True)
+    phone=models.CharField(max_length=40,blank=True)
+    email=models.EmailField(blank=True)
+    capabilities=models.CharField(max_length=400,blank=True,help_text='Comma-separated, e.g. Cath lab, ICU, MRI')
+    accepts_referrals=models.BooleanField(default=True)
+    class Meta: ordering=['name']
+    @property
+    def capability_list(self):return [c.strip() for c in self.capabilities.split(',') if c.strip()]
+    def __str__(self):return self.name
+
+class Specialist(Tracked):
+    facility=models.ForeignKey(NetworkFacility,on_delete=models.CASCADE,related_name='specialists')
+    name=models.CharField(max_length=160)
+    title=models.CharField(max_length=60,default='Dr')
+    speciality=models.CharField(max_length=120)
+    bio=models.TextField(blank=True)
+    languages=models.CharField(max_length=160,blank=True)
+    rating=models.DecimalField(max_digits=3,decimal_places=2,default=0)
+    reviews=models.PositiveIntegerField(default=0)
+    consult_fee=models.PositiveIntegerField(default=0,help_text='In local currency, 0 if not applicable')
+    telehealth=models.BooleanField(default=False)
+    active=models.BooleanField(default=True)
+    class Meta: ordering=['-rating','name']
+    @property
+    def display_name(self):return f'{self.title} {self.name}'.strip()
+    @property
+    def initials(self):return ''.join(w[0] for w in self.name.split()[:2]).upper()
+    def __str__(self):return f'{self.display_name} · {self.speciality}'
+
+class SpecialistSlot(Tracked):
+    specialist=models.ForeignKey(Specialist,on_delete=models.CASCADE,related_name='slots')
+    start=models.DateTimeField()
+    minutes=models.PositiveSmallIntegerField(default=30)
+    mode=models.CharField(max_length=10,choices=[('in_person','In person'),('video','Video call')],default='in_person')
+    class Meta: ordering=['start']; unique_together=[('specialist','start')]
+    @property
+    def is_booked(self):return hasattr(self,'referral') and self.referral is not None
+    def __str__(self):return f'{self.specialist} · {self.start:%a %d %b %H:%M}'
+
 class Referral(Tracked):
     STATUS=[(x,x.replace('_',' ').title()) for x in ['draft','sent','accepted','declined','transferred','completed','cancelled']]
     encounter=models.ForeignKey(Encounter,on_delete=models.PROTECT,related_name='referrals')
@@ -377,7 +486,42 @@ class Referral(Tracked):
     accepted_by=models.CharField(max_length=180,blank=True)
     sent_at=models.DateTimeField(null=True,blank=True)
     completed_at=models.DateTimeField(null=True,blank=True)
+    KIND=[('consultation','Specialist consultation'),('operation','Operation / procedure'),('admission','Admission / transfer'),('diagnostics','Diagnostics')]
+    kind=models.CharField(max_length=14,choices=KIND,default='consultation')
+    facility=models.ForeignKey(NetworkFacility,on_delete=models.PROTECT,null=True,blank=True,related_name='referrals')
+    specialist=models.ForeignKey(Specialist,on_delete=models.SET_NULL,null=True,blank=True,related_name='referrals')
+    slot=models.OneToOneField(SpecialistSlot,on_delete=models.SET_NULL,null=True,blank=True,related_name='referral')
+    consent_to_share=models.BooleanField(default=False,help_text='Patient agreed that their records may be shared with the receiving facility')
+    planned_date=models.DateField(null=True,blank=True,help_text='Planned operation or admission date')
+    @property
+    def number(self):return f'RF-{self.pk:06d}'
+    @property
+    def shared(self):
+        """The receiving facility may see the patient's records only with consent, once the referral has been sent."""
+        return bool(self.facility_id and self.consent_to_share and self.status in ('sent','accepted','transferred','completed'))
     def __str__(self):return f'{self.encounter.patient.mrn} -> {self.destination}'
+
+class ReferralTask(Tracked):
+    """A preparation item between the two facilities, e.g. 'Send latest ECG' or 'Book theatre'."""
+    SIDES=[('sender','Referring hospital'),('receiver','Receiving facility')]
+    KIND=[('test','Test'),('form','Form to complete'),('document','Document / result'),('preparation','Preparation'),('other','Other')]
+    referral=models.ForeignKey(Referral,on_delete=models.CASCADE,related_name='tasks')
+    requested_by_side=models.CharField(max_length=10,choices=SIDES)
+    assigned_to_side=models.CharField(max_length=10,choices=SIDES)
+    kind=models.CharField(max_length=12,choices=KIND,default='preparation')
+    title=models.CharField(max_length=200)
+    details=models.TextField(blank=True)
+    lab_test=models.ForeignKey('LabTest',on_delete=models.SET_NULL,null=True,blank=True)
+    form=models.ForeignKey('FormDefinition',on_delete=models.SET_NULL,null=True,blank=True)
+    due=models.DateField(null=True,blank=True)
+    status=models.CharField(max_length=10,choices=[('open','Open'),('done','Done'),('cancelled','Cancelled')],default='open')
+    response=models.TextField(blank=True)
+    created_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name='+')
+    completed_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='+')
+    completed_at=models.DateTimeField(null=True,blank=True)
+    class Meta: ordering=['status','due','id']
+    @property
+    def overdue(self):return self.status=='open' and self.due and self.due<timezone.localdate()
 
 class FormDefinition(Tracked):
     name=models.CharField(max_length=200)

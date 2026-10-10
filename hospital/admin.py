@@ -72,3 +72,29 @@ class LabRequestAdmin(admin.ModelAdmin):
     list_display = ('__str__', 'priority', 'specimen_id', 'requested_by', 'created_at')
     list_filter = ('priority',)
     inlines = [LabOrderInline]
+
+
+class SlotInline(admin.TabularInline):
+    model = models.SpecialistSlot
+    extra = 3
+    fields = ('start', 'minutes', 'mode')
+
+
+@admin.register(models.Specialist)
+class SpecialistAdmin(admin.ModelAdmin):
+    list_display = ('display_name', 'speciality', 'facility', 'rating', 'reviews', 'active')
+    list_filter = ('facility', 'speciality', 'active')
+    search_fields = ('name', 'speciality')
+    inlines = [SlotInline]
+
+
+@admin.register(models.NetworkFacility)
+class NetworkFacilityAdmin(admin.ModelAdmin):
+    list_display = ('name', 'kind', 'location', 'phone', 'accepts_referrals')
+    list_filter = ('kind', 'accepts_referrals')
+
+
+@admin.register(models.ReferralTask)
+class ReferralTaskAdmin(admin.ModelAdmin):
+    list_display = ('title', 'referral', 'assigned_to_side', 'kind', 'status', 'due')
+    list_filter = ('status', 'assigned_to_side', 'kind')

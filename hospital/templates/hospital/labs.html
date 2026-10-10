@@ -16,7 +16,7 @@
     <article class="req-card prio-{{ r.priority }}">
       <div class="req-top">
         <span class="avatar {{ r.encounter.patient.sex }}">{{ r.encounter.patient.initials }}</span>
-        <div class="flex-fill min-w-0"><a class="req-name" href="{% url 'patient_chart' r.encounter.patient_id %}">{{ r.encounter.patient.full_name }}</a>
+        <div class="flex-fill min-w-0"><a class="req-name" href="{% url 'lab_request_detail' r.pk %}">{{ r.encounter.patient.full_name }}</a>
           <div class="small muted">{{ r.number }} · {{ r.created_at|ago }} ago{% if r.specimen_id %} · {{ r.specimen_id }}{% endif %}</div>
           {% if r.priority != 'routine' %}<span class="tag {% if r.priority == 'stat' %}red{% else %}amber{% endif %} mt-1">{{ r.get_priority_display }}</span>{% endif %}</div>
         <form method="post" action="{% url 'lab_request_action' r.pk 'cancel' %}" data-confirm="Cancel the whole request {{ r.number }}?">{% csrf_token %}<button class="icon-btn" title="Cancel whole request" aria-label="Cancel whole request {{ r.number }}"><i class="bi bi-trash3"></i></button></form>
@@ -31,6 +31,7 @@
         </li>
         {% endfor %}
       </ul>
+      <a class="small d-inline-block mt-2" href="{% url 'lab_request_detail' r.pk %}">Open details <i class="bi bi-arrow-right"></i></a>
       <div class="acts">
         {% if r.stage == 'ordered' %}
           <form method="post" action="{% url 'lab_request_action' r.pk 'collect' %}" class="d-flex gap-1 w-100">{% csrf_token %}<input class="form-control form-control-sm" name="specimen_id" placeholder="Specimen ID (optional)" aria-label="Specimen ID"><button class="btn btn-sm btn-ink text-nowrap">Collected</button></form>
@@ -51,7 +52,7 @@
 <section class="panel">
   <div class="panel-head"><h2>Recently released</h2><span class="hint">Fully verified requests</span></div>
   <div class="scroll-x"><table class="mini-table"><thead><tr><th>Request</th><th>Patient</th><th>Tests</th><th></th></tr></thead><tbody>
-  {% for r in done %}<tr><td><b>{{ r.number }}</b><div class="small muted">{{ r.updated_at|date:'j M H:i' }}</div></td><td><a href="{% url 'patient_chart' r.encounter.patient_id %}">{{ r.encounter.patient.full_name }}</a></td>
+  {% for r in done %}<tr><td><a href="{% url 'lab_request_detail' r.pk %}"><b>{{ r.number }}</b></a><div class="small muted">{{ r.updated_at|date:'j M H:i' }}</div></td><td><a href="{% url 'patient_chart' r.encounter.patient_id %}">{{ r.encounter.patient.full_name }}</a></td>
   <td>{% for o in r.orders.all %}{% if o.status == 'verified' %}<span class="vchip {% with f=o.worst_flag %}{% if f == 'HH' or f == 'LL' %}crit{% elif f == 'H' or f == 'L' or f == 'A' %}abn{% else %}ok{% endif %}{% endwith %}">{{ o.test.name }}</span>{% endif %}{% endfor %}</td>
   <td><a class="btn btn-sm btn-ghost" href="{% url 'patient_labs' r.encounter.patient_id %}"><i class="bi bi-activity"></i>Insights</a></td></tr>
   {% empty %}<tr><td colspan="4" class="empty">No verified requests yet.</td></tr>{% endfor %}

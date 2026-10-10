@@ -1,0 +1,19 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Network facilities{% endblock %}
+{% block heading %}Network facilities{% endblock %}
+{% block subheading %}<p class="sub">Partner hospitals, clinics and diagnostic centres that accept referrals.</p>{% endblock %}
+{% block actions %}<a class="btn btn-primary" href="{% url 'network_specialists' %}"><i class="bi bi-person-badge"></i>Find a specialist</a>{% endblock %}
+{% block content %}
+<div class="fac-grid">
+  {% for f in facilities %}
+  <article class="panel fac-card">
+    <div class="d-flex gap-2 align-items-start"><span class="fac-icon k-{{ f.kind }}"><i class="bi {% if f.kind == 'diagnostic' %}bi-radioactive{% elif f.kind == 'clinic' %}bi-heart-pulse{% elif f.kind == 'maternity' %}bi-balloon-heart{% else %}bi-hospital{% endif %}"></i></span>
+      <div class="flex-fill"><h2 class="h5 mb-0">{{ f.name }}</h2><div class="small muted">{{ f.get_kind_display }}{% if f.location %} · {{ f.location }}{% endif %}</div></div>
+      {% if not f.accepts_referrals %}<span class="tag">Not accepting</span>{% endif %}</div>
+    <div class="my-2">{% for c in f.capability_list %}<span class="tag me-1 mb-1">{{ c }}</span>{% endfor %}</div>
+    <div class="d-flex gap-3 small muted"><span><b class="text-dark">{{ f.n_spec }}</b> specialists</span><span><b class="text-dark">{{ f.n_ref }}</b> referrals</span>{% if f.phone %}<span><i class="bi bi-telephone"></i> {{ f.phone }}</span>{% endif %}</div>
+    <a class="btn btn-sm btn-ghost mt-3" href="{% url 'network_specialists' %}?facility={{ f.pk }}">See specialists <i class="bi bi-arrow-right"></i></a>
+  </article>
+  {% empty %}<div class="panel empty">No facilities yet. Add them under Configuration → Network facilities.</div>{% endfor %}
+</div>
+{% endblock %}

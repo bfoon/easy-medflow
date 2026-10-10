@@ -1,0 +1,62 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ r.number }}{% endblock %}
+{% block heading %}Referral {{ r.number }}{% endblock %}
+{% block subheading %}<p class="sub">{% if side == 'sender' %}<a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a>{% else %}{{ p.full_name }}{% endif %} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %} → <b>{{ r.destination }}</b>{% if r.specialist %} · {{ r.specialist.display_name }}{% endif %}
+  · <span class="tag {{ r.urgency|tone }}">{{ r.get_urgency_display }}</span> <span class="tag ink">{{ r.get_kind_display }}</span>{% if side == 'receiver' %} <span class="tag indigo">You are the receiving facility</span>{% endif %}</p>{% endblock %}
+{% block actions %}
+  {% if side == 'sender' %}<a class="btn btn-ghost" href="{% url 'referrals' %}"><i class="bi bi-arrow-left"></i>Referrals</a>{% else %}<a class="btn btn-ghost" href="{% url 'network_inbox' %}"><i class="bi bi-arrow-left"></i>Inbox</a>{% endif %}
+  {% if r.shared or side == 'sender' %}<a class="btn btn-ghost" href="{% url 'referral_summary' r.pk %}"><i class="bi bi-folder2-open"></i>{% if side == 'sender' %}Shared record (preview){% else %}Patient record{% endif %}</a>{% endif %}
+  {% for s in actions %}<form method="post" action="{% url 'referral_status' r.pk s %}" {% if s == 'cancelled' or s == 'declined' %}data-confirm="Mark this referral {{ s }}?"{% endif %}>{% csrf_token %}<button class="btn {% if s == 'cancelled' or s == 'declined' %}btn-danger-soft{% elif forloop.first %}btn-primary{% else %}btn-ghost{% endif %}">{% if s == 'sent' %}Send{% elif s == 'accepted' %}Accept referral{% elif s == 'declined' %}Decline{% elif s == 'transferred' %}Patient transferred{% elif s == 'completed' %}Complete{% else %}Cancel{% endif %}</button></form>{% endfor %}
+{% endblock %}
+{% block content %}
+<div class="track big mb-3">{% for t in track %}<span class="st {{ t.state }}"><i></i>{{ t.name }}</span>{% endfor %}</div>
+{% if r.status in 'declined cancelled' %}<div class="alert-mf danger mb-3"><i class="bi bi-x-octagon"></i><div>This referral was {{ r.get_status_display|lower }}.</div></div>{% endif %}
+{% if side == 'sender' and r.facility and not r.consent_to_share %}<div class="alert-mf warn mb-3"><i class="bi bi-shield-exclamation"></i><div class="flex-fill">The patient's consent to share records has not been recorded, so the referral cannot be sent to {{ r.facility }}.</div>
+  <form method="post" action="{% url 'referral_consent' r.pk %}" data-confirm="Confirm the patient agreed to share their records with {{ r.facility }}?">{% csrf_token %}<button class="btn btn-sm btn-ink">Record consent</button></form></div>{% endif %}
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Referral letter</h2><span class="hint">{% if r.sent_at %}Sent {{ r.sent_at|date:'j M Y H:i' }}{% else %}Not sent yet{% endif %}</span></div>
+      <p class="mb-2">{{ r.reason|linebreaksbr }}</p>
+      <dl class="kv"><dt>Speciality</dt><dd>{{ r.speciality|default:'—' }}</dd>
+        {% if r.slot %}<dt>Appointment</dt><dd><span class="tag teal"><i class="bi bi-calendar-check"></i>{{ r.slot.start|date:'l j F, H:i' }} · {{ r.slot.get_mode_display }}</span></dd>{% endif %}
+        {% if r.planned_date %}<dt>Planned date</dt><dd>{{ r.planned_date|date:'l j F Y' }}</dd>{% endif %}
+        <dt>Records shared</dt><dd>{% if r.shared %}<span class="tag teal"><i class="bi bi-shield-check"></i>Yes, with consent</span>{% elif r.consent_to_share %}<span class="tag">After sending</span>{% else %}<span class="tag amber">No consent recorded</span>{% endif %}</dd>
+        {% if r.accepted_by %}<dt>Accepted by</dt><dd>{{ r.accepted_by }}</dd>{% endif %}</dl>
+    </section>
+    <div class="grid g-2">
+      <section class="panel task-col">
+        <div class="panel-head"><h2>For the referring hospital</h2><span class="hint">{{ for_sender|length }}</span></div>
+        {% include 'hospital/_ref_tasks.html' with tasks=for_sender %}
+      </section>
+      <section class="panel task-col">
+        <div class="panel-head"><h2>For {{ r.destination|truncatechars:28 }}</h2><span class="hint">{{ for_receiver|length }}</span></div>
+        {% include 'hospital/_ref_tasks.html' with tasks=for_receiver %}
+      </section>
+    </div>
+  </div>
+  <aside class="panel align-self-start">
+    <div class="panel-head"><h2>{% if side == 'sender' %}Ask the receiving facility{% else %}Ask the referring hospital{% endif %}</h2></div>
+    <p class="small muted">{% if side == 'sender' %}e.g. book theatre, reserve an ICU bed, arrange an interpreter.{% else %}e.g. order a test, complete a form, send results, start fasting.{% endif %}</p>
+    {% if r.status not in 'draft declined cancelled completed' or side == 'sender' and r.status == 'draft' %}
+    <form method="post" action="{% url 'referral_task_add' r.pk %}">{% csrf_token %}
+      <select class="form-select mb-2" name="kind" id="task-kind" aria-label="Type of request">{% for v, l in task_kinds %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select>
+      <input class="form-control mb-2" name="title" placeholder="What is needed?" required aria-label="Request title">
+      <select class="form-select mb-2" name="lab_test" data-show="test" hidden aria-label="Lab test"><option value="">Choose a lab test…</option>{% for t in lab_tests %}<option value="{{ t.pk }}">{{ t.name }}</option>{% endfor %}</select>
+      <select class="form-select mb-2" name="form" data-show="form" hidden aria-label="Form"><option value="">Choose a form…</option>{% for fd in forms %}<option value="{{ fd.pk }}">{{ fd.name }}</option>{% endfor %}</select>
+      <textarea class="form-control mb-2" name="details" rows="2" placeholder="Details (optional)"></textarea>
+      <label class="small d-block mb-2">Needed by <input type="date" name="due" class="form-control form-control-sm"></label>
+      <button class="btn btn-ink w-100"><i class="bi bi-send"></i>Send request</button>
+    </form>
+    {% else %}<p class="small muted mb-0">Requests can be added while the referral is active.</p>{% endif %}
+  </aside>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+(() => { const k = document.getElementById('task-kind'); if (!k) return;
+  const sync = () => document.querySelectorAll('[data-show]').forEach(el => el.hidden = el.dataset.show !== k.value);
+  k.addEventListener('change', () => { sync(); const t = document.querySelector('[name="title"]'); if (!t.value && k.value === 'test') t.placeholder = 'e.g. Send potassium result'; });
+  document.querySelector('[name="lab_test"]').addEventListener('change', e => { const t = document.querySelector('[name="title"]'); if (!t.value) t.value = e.target.selectedOptions[0].text; });
+  document.querySelector('[name="form"]').addEventListener('change', e => { const t = document.querySelector('[name="title"]'); if (!t.value) t.value = 'Complete: ' + e.target.selectedOptions[0].text; });
+  sync(); })();
+</script>{% endblock %}

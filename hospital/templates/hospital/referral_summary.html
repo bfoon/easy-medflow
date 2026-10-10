@@ -1,0 +1,30 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Shared record · {{ r.number }}{% endblock %}
+{% block heading %}Shared patient record{% endblock %}
+{% block subheading %}<p class="sub">Shared with <b>{{ r.destination }}</b> for referral {{ r.number }}, with the patient's consent. Every view is logged.{% if side == 'sender' %} This is exactly what the receiving facility sees.{% endif %}</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'referral_detail' r.pk %}"><i class="bi bi-arrow-left"></i>Referral</a><button class="btn btn-ghost" onclick="window.print()"><i class="bi bi-printer"></i>Print</button>{% endblock %}
+{% block content %}
+<section class="wristband {% if allergies %}alerting{% endif %}">
+  <span class="avatar xl {{ p.sex }}">{{ p.initials }}</span>
+  <div><h1>{{ p.full_name }}</h1><div class="facts"><span>{{ p.get_sex_display }}{% if p.age is not None %}, <b>{{ p.age }}</b> yrs{% endif %}</span><span>Born <b>{{ p.dob|date:'j M Y' }}</b></span>{% if p.blood_group %}<span>Blood <b>{{ p.blood_group }}</b></span>{% endif %}<span>Ref {{ r.number }}</span></div></div>
+</section>
+<div class="allergy-strip {% if not allergies %}none{% endif %}"><i class="bi bi-exclamation-triangle-fill"></i>{% if allergies %}<b>Allergies</b>{% for a in allergies %}<span class="tag">{{ a.substance }} · {{ a.severity }}</span>{% endfor %}{% else %}<b>No allergies documented.</b>{% endif %}</div>
+{% if p.medical_alerts %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div><b>Medical alert.</b> {{ p.medical_alerts }}</div></div>{% endif %}
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel"><div class="panel-head"><h2>Reason for referral</h2></div><p class="mb-2">{{ r.reason|linebreaksbr }}</p>
+      <dl class="kv"><dt>Current diagnosis</dt><dd>{{ encounter.diagnosis|default:'—' }}</dd><dt>Assessment</dt><dd>{{ encounter.assessment|default:'—' }}</dd><dt>Plan so far</dt><dd>{{ encounter.plan|default:'—' }}</dd></dl></section>
+    <section class="panel flush"><div class="panel-head"><h2>Recent results</h2></div>
+      <div class="scroll-y"><table class="mini-table"><thead><tr><th>Test</th><th>Result</th><th>Reference</th><th>Date</th></tr></thead><tbody>
+      {% for v in values %}<tr class="{% if v.is_critical %}row-crit{% elif v.is_abnormal %}row-abn{% endif %}"><td>{{ v.parameter.name }}<div class="small muted">{{ v.order.test.name }}</div></td><td><b>{{ v.display }}</b> {{ v.parameter.unit }} {% include 'hospital/_flag.html' with flag=v.flag %}</td><td class="small muted">{{ v.parameter|range_for_sex:p.sex }}</td><td class="small muted">{{ v.order.resulted_at|date:'j M' }}</td></tr>
+      {% empty %}<tr><td colspan="4" class="empty">No results.</td></tr>{% endfor %}</tbody></table></div></section>
+    <section class="panel"><div class="panel-head"><h2>Imaging reports</h2></div>
+      <ul class="plain ruled">{% for o in imaging %}<li><b>{{ o.get_modality_display }} · {{ o.region }}</b> <span class="small muted">{{ o.reported_at|date:'j M Y' }}</span>{% if o.abnormal %} <span class="tag red">Abnormal</span>{% endif %}<div>{{ o.impression }}</div>{% for m in o.measurements %}<span class="vchip {% if m.abnormal %}abn{% else %}ok{% endif %}">{{ m.label }} <b>{{ m.value }}</b> {{ m.unit }}</span>{% endfor %}</li>{% empty %}<li class="muted small">No imaging reports.</li>{% endfor %}</ul></section>
+  </div>
+  <div class="stack">
+    {% if vitals %}<section class="panel"><div class="panel-head"><h2>Vitals at referral</h2></div><div class="vitals">{% for label, unit, val in vitals %}<div class="vital"><span>{{ label }}</span><b>{{ val }}</b><small>{{ unit }}</small></div>{% endfor %}</div></section>{% endif %}
+    <section class="panel"><div class="panel-head"><h2>Conditions</h2></div><ul class="plain ruled">{% for c in conditions %}<li>{{ c.name }}{% if c.onset %} <span class="small muted">since {{ c.onset|date:'Y' }}</span>{% endif %}</li>{% empty %}<li class="muted small">None recorded.</li>{% endfor %}</ul></section>
+    <section class="panel"><div class="panel-head"><h2>Medicines</h2></div><ol class="rx-items">{% for i in meds %}<li><span class="med">{{ i.medication }}</span><span class="dir">{{ i.directions }}</span></li>{% empty %}<li class="muted">None recorded.</li>{% endfor %}</ol></section>
+  </div>
+</div>
+{% endblock %}

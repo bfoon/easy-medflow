@@ -27,32 +27,129 @@ def prescription_check(prescription):
 
 @transaction.atomic
 def dispense(prescription,actor):
-    """Dispense every line, earliest-expiring stock first. All lines or nothing."""
+    """Dispense every line that is still owed, earliest-expiring stock first.
+
+    Lines marked 'not available, patient informed' are skipped. Lines ordered from a supplier that still have no stock are
+    left for later (the prescription becomes 'partly dispensed'). Any other line without enough stock stops the whole
+    dispense, so nothing is handed out half-checked.
+    """
     p=Prescription.objects.select_for_update().select_related('encounter__patient').get(pk=prescription.pk)
-    if p.state!='signed':raise ValidationError('Prescription must be signed and not already dispensed')
+    if p.state not in ('signed','partial'):raise ValidationError('Prescription must be signed and not already fully dispensed')
     if not p.allergy_reviewed:raise ValidationError('Clinician must document allergy review')
-    items=list(p.items.select_related('medication'))
-    if not items:raise ValidationError('Prescription has no medicines')
     check=prescription_check(p)
     if check['any_allergy'] and not p.override_reason.strip():raise ValidationError('Possible allergy match requires documented clinical override')
-    plan=[]
-    for item in items:
+    owed=[i for i in p.items.select_related('medication').prefetch_related('dispenses') if i.availability!='unavailable' and not i.is_dispensed]
+    if not owed:raise ValidationError('Nothing left to dispense on this prescription')
+    plan,waiting=[],[]
+    for item in owed:
+        need=item.quantity-item.dispensed_quantity
         batches=list(StockBatch.objects.select_for_update().filter(medication=item.medication,expiry__gte=timezone.localdate(),quantity__gt=0).order_by('expiry','pk'))
-        if sum(b.quantity for b in batches)<item.quantity:
-            raise ValidationError(f'Not enough unexpired stock of {item.medication} (need {item.quantity})')
-        plan.append((item,batches))
-    for item,batches in plan:
-        remaining=item.quantity
+        have=sum(b.quantity for b in batches)
+        if have<need:
+            if item.availability=='ordered':waiting.append(item);continue
+            raise ValidationError(f'Not enough stock of {item.medication} (need {need}, have {have}). Order it from the supplier, or mark it not available and inform the patient.')
+        plan.append((item,batches,need))
+    if not plan:raise ValidationError('Still waiting for supplier stock: '+', '.join(str(i.medication) for i in waiting))
+    for item,batches,need in plan:
         for batch in batches:
-            q=min(remaining,batch.quantity)
+            q=min(need,batch.quantity)
             if q:
-                batch.quantity-=q; batch.save(update_fields=['quantity'])
+                batch.quantity-=q;batch.save(update_fields=['quantity'])
                 Dispense.objects.create(prescription=p,item=item,batch=batch,quantity=q,dispensed_by=actor)
-                remaining-=q
-            if not remaining:break
-    p.state='dispensed';p.save(update_fields=['state'])
-    AuditEvent.objects.create(actor=actor,action='dispense',target=f'prescription:{p.pk}',details={'lines':len(items),'units':sum(i.quantity for i in items)})
+                need-=q
+            if not need:break
+    p.state='partial' if waiting else 'dispensed';p.save(update_fields=['state'])
+    AuditEvent.objects.create(actor=actor,action='dispense',target=f'prescription:{p.pk}',details={'lines':len(plan),'waiting':len(waiting)})
     return p
+
+@transaction.atomic
+def receive_stock(stock_request,actor,batch_number,expiry,quantity):
+    """Book supplier stock into the pharmacy and release prescription lines that were waiting for it."""
+    sr=StockRequest.objects.select_for_update().get(pk=stock_request.pk)
+    if sr.status in ('received','cancelled'):raise ValidationError('This supplier order is already closed')
+    batch=StockBatch.objects.create(medication=sr.medication,batch_number=batch_number,expiry=expiry,quantity=quantity)
+    sr.status,sr.received_batch='received',batch;sr.save(update_fields=['status','received_batch','updated_at'])
+    PrescriptionItem.objects.filter(medication=sr.medication,availability='ordered',prescription__state__in=['draft','signed','partial']).update(availability='')
+    AuditEvent.objects.create(actor=actor,action='stock_received',target=f'stock_request:{sr.pk}',details={'batch':batch_number,'quantity':quantity})
+    return batch
+
+# ------------------------------------------------------------------ similar cases (anonymised, observational)
+SUCCESS={'resolved','improved'}
+MIN_GROUP=3  # never show a treatment group, or any case inside it, with fewer than this many patients
+
+def _diagnosis_term(dx):
+    import re
+    words=[w for w in re.findall(r'[a-z]+',(dx or '').lower()) if w not in {'suspected','acute','query','with','and','the','of','type','mild','severe','uncomplicated'} and len(w)>3]
+    return words[0] if words else ''
+
+def _age_band(patient,on_date):
+    if not patient.dob:return 'Age unknown'
+    a=on_date.year-patient.dob.year-((on_date.month,on_date.day)<(patient.dob.month,patient.dob.day))
+    if a<5:return 'Under 5'
+    if a<18:return '5–17'
+    lo=a//10*10;return f'{lo}–{lo+9}'
+
+def case_token(encounter_id):
+    from django.core import signing
+    return signing.dumps(encounter_id,salt='medflow.case',compress=True)
+
+def case_from_token(token):
+    from django.core import signing
+    try:return signing.loads(token,salt='medflow.case',max_age=60*60*12)
+    except signing.BadSignature:return None
+
+def similar_cases(patient,diagnosis):
+    """What was prescribed for other completed visits with a similar diagnosis, and how those patients did.
+
+    Returns regimens (groups of medicines) with at least MIN_GROUP cases. Other patients appear only as anonymous
+    cases: sex, age band and outcome, no names, record numbers or dates.
+    """
+    term=_diagnosis_term(diagnosis)
+    if not term:return {'term':'','groups':[],'total':0}
+    encs=(Encounter.objects.filter(status='completed',diagnosis__icontains=term).exclude(outcome='')
+          .select_related('patient').prefetch_related('prescriptions__items__medication'))
+    groups={}
+    for e in encs:
+        meds=sorted({i.medication.name for rx in e.prescriptions.all() if rx.state!='cancelled' for i in rx.items.all()})
+        key=' + '.join(meds) or 'No medicine prescribed'
+        g=groups.setdefault(key,{'regimen':key,'meds':meds,'cases':[]})
+        own=e.patient_id==patient.pk
+        g['cases'].append({'token':case_token(e.pk),'own':own,'outcome':e.outcome,'outcome_label':e.get_outcome_display(),
+                           'success':e.outcome in SUCCESS,'sex':e.patient.get_sex_display(),'age':_age_band(e.patient,e.created_at.date()),
+                           'date':e.created_at if own else None,'encounter_id':e.pk if own else None})
+    out=[]
+    for g in groups.values():
+        others=[c for c in g['cases'] if not c['own']]
+        if len(g['cases'])<MIN_GROUP and not any(c['own'] for c in g['cases']):continue
+        n=len(g['cases']);ok=sum(c['success'] for c in g['cases'])
+        g.update(n=n,ok=ok,rate=round(ok*100/n),
+                 shown=g['cases'] if len(others)>=MIN_GROUP else [c for c in g['cases'] if c['own']],  # hide others in tiny groups
+                 small=len(others)<MIN_GROUP)
+        g['shown']=sorted(g['shown'],key=lambda c:(not c['own'],not c['success']))[:12]
+        out.append(g)
+    out.sort(key=lambda g:(g['small'],-g['rate'],-g['n']))
+    return {'term':term,'groups':out[:5],'total':sum(g['n'] for g in out)}
+
+def anonymised_case(encounter_id,viewer_patient):
+    """Details of one case. Another patient's case is stripped of identity and real dates, and only released when it
+    belongs to a treatment group of at least MIN_GROUP patients."""
+    e=(Encounter.objects.select_related('patient').prefetch_related('prescriptions__items__medication','labs__test','labs__values__parameter')
+       .filter(pk=encounter_id,status='completed').first())
+    if not e:return None
+    own=e.patient_id==viewer_patient.pk
+    if not own:
+        sim=similar_cases(viewer_patient,e.diagnosis)
+        token_ok=any(c.get('encounter_id') is None and case_from_token(c['token'])==e.pk for g in sim['groups'] if not g['small'] for c in g['shown'])
+        if not token_ok:return None
+    start=e.created_at
+    rel=lambda dt:f'Day {(dt-start).days}' if dt and dt>=start else 'Day 0'
+    meds=[{'medicine':str(i.medication),'directions':i.directions,'quantity':i.quantity} for rx in e.prescriptions.all() if rx.state!='cancelled' for i in rx.items.all()]
+    labs=[{'test':o.test.name,'when':rel(o.resulted_at or o.created_at),'values':[{'name':v.parameter.name,'value':v.display,'unit':v.parameter.unit,'flag':v.flag} for v in o.values.all()]}
+          for o in e.labs.all() if o.status in ('resulted','verified')]
+    return {'own':own,'title':('This patient · '+timezone.localtime(e.created_at).strftime('%d %b %Y')) if own else 'Anonymous case',
+            'sex':e.patient.get_sex_display(),'age':_age_band(e.patient,e.created_at.date()),'diagnosis':e.diagnosis,
+            'outcome':e.get_outcome_display() or '—','success':e.outcome in SUCCESS,'length':rel(e.completed_at) if e.completed_at else '',
+            'medicines':meds,'labs':labs,'encounter_id':e.pk if own else None}
 
 def group_orphan_lab_orders():
     """Put any lab orders without a request into requests (same visit, ordered within five minutes = one request)."""

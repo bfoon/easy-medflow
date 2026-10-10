@@ -321,6 +321,67 @@
     tick(); setInterval(tick, 15000);
   }
 
+
+  /* ---------------------------------------------------------------- slide-out panel (stay on the page) */
+  const drawer = $('#drawer'), frame = $('#drawer-frame'), backdrop = $('#drawer-backdrop');
+  function openDrawer(url, title) {
+    if (!drawer) { location.href = url; return; }
+    $('#drawer-title').textContent = title || '';
+    $('#drawer-loading').hidden = false; frame.style.visibility = 'hidden';
+    frame.src = url + (url.includes('?') ? '&' : '?') + 'embed=1';
+    drawer.classList.add('open'); drawer.setAttribute('aria-hidden', 'false'); backdrop.hidden = false;
+    document.body.classList.add('drawer-open');
+  }
+  function closeDrawer() {
+    if (!drawer) return;
+    drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true'); backdrop.hidden = true;
+    document.body.classList.remove('drawer-open'); setTimeout(() => { frame.src = 'about:blank'; }, 300);
+  }
+  if (drawer) {
+    frame.addEventListener('load', () => { $('#drawer-loading').hidden = true; frame.style.visibility = 'visible'; });
+    document.addEventListener('click', e => {
+      const b = e.target.closest('[data-drawer]'); if (b) { e.preventDefault(); $$('.dropdown-menu.show').forEach(m => m.classList.remove('show')); openDrawer(b.dataset.drawer, b.dataset.title || b.textContent.trim()); }
+      if (e.target.closest('[data-drawer-close]') || e.target === backdrop) closeDrawer();
+    });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && drawer.classList.contains('open')) closeDrawer(); });
+    window.addEventListener('message', e => {
+      if (e.origin !== location.origin || !e.data) return;
+      if (e.data.type === 'medflow:done') {
+        closeDrawer(); sessionStorage.setItem('mf-flash', e.data.message || 'Saved.');
+        setTimeout(() => location.reload(), 250);   // refresh in place; the open tab is kept in the URL hash
+      }
+      if (e.data.type === 'medflow:close') closeDrawer();
+    });
+    const flash = sessionStorage.getItem('mf-flash'); if (flash) { sessionStorage.removeItem('mf-flash'); mfToast(flash); }
+  }
+  // Inside the panel, "Cancel" closes the panel instead of navigating away.
+  if (document.body.classList.contains('embed')) {
+    $$('a[href="javascript:history.back()"]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); window.parent.postMessage({type: 'medflow:close'}, location.origin); }));
+  }
+
+  /* ---------------------------------------------------------------- pop-up: anonymous case histories and image previews */
+  const modal = $('#modal');
+  window.mfModal = (title, html) => { if (!modal) return; $('#modal-title').textContent = title; $('#modal-body').innerHTML = html; modal.hidden = false; modal.querySelector('[data-modal-close]').focus(); };
+  if (modal) {
+    modal.addEventListener('click', e => { if (e.target === modal || e.target.closest('[data-modal-close]')) modal.hidden = true; });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') modal.hidden = true; });
+  }
+  const sim = $('.similar');
+  if (sim) sim.addEventListener('click', async e => {
+    const b = e.target.closest('.case'); if (!b) return;
+    const res = await fetch(sim.dataset.caseUrl.replace('TOKEN', b.dataset.token) + '?patient=' + sim.dataset.patient, {credentials: 'same-origin'});
+    const d = await res.json();
+    if (!d.ok) { mfToast(d.error || 'Case not available', 'warning'); return; }
+    const FL = {HH: 'crit', LL: 'crit', H: 'abn', L: 'abn', A: 'abn', N: 'ok'};
+    mfModal(d.title, `
+      <div class="case-head ${d.success ? 'ok' : 'no'}"><span class="case-badge">${d.success ? '<i class="bi bi-check2-circle"></i>' : '<i class="bi bi-dash-circle"></i>'} ${esc(d.outcome)}</span>
+        <span>${esc(d.sex)} · ${esc(d.age)}</span>${d.length ? `<span class="muted">Course: ${esc(d.length)}</span>` : ''}</div>
+      <p class="mb-2"><b>Diagnosis:</b> ${esc(d.diagnosis)}</p>
+      <div class="label-sm mb-1">Treatment</div>
+      <ol class="rx-items">${d.medicines.map(m => `<li><span class="med">${esc(m.medicine)}</span><span class="dir">${esc(m.directions)}</span><span class="qty">× ${m.quantity}</span></li>`).join('') || '<li class="muted">No medicines recorded</li>'}</ol>
+      ${d.labs.length ? `<div class="label-sm mb-1 mt-3">Lab results</div>${d.labs.map(l => `<div class="small mb-1"><b>${esc(l.test)}</b> <span class="muted">${esc(l.when)}</span><div>${l.values.map(v => `<span class="vchip ${FL[v.flag] || ''}">${esc(v.name)} <b>${esc(v.value)}</b> ${esc(v.unit)}</span>`).join('')}</div></div>`).join('')}` : ''}
+      ${d.own ? `<a class="btn btn-sm btn-ink mt-3" href="${esc(d.url)}">Open this visit</a>` : '<p class="form-text mt-3 mb-0">Identity and real dates are withheld. Days are counted from the start of the visit.</p>'}`);
+  });
   /* ---------------------------------------------------------------- client-side list filter */
   $$('[data-filter]').forEach(input => {
     const rows = $$(input.dataset.filter);

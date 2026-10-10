@@ -12,7 +12,8 @@
       <button data-view="body" role="tab"><i class="bi bi-person-arms-up"></i>Body map</button>
       <button data-view="clean" role="tab"><i class="bi bi-bar-chart-line"></i>Charts &amp; lists</button>
     </div>
-    {% if open_encounter %}<a class="btn btn-primary" href="{% url 'lab_new' %}?encounter={{ open_encounter.pk }}&next={{ request.path|urlencode }}"><i class="bi bi-plus-lg"></i>Order tests</a>{% endif %}
+    {% if open_encounter %}<button class="btn btn-primary" data-drawer="{% url 'lab_new' %}?encounter={{ open_encounter.pk }}" data-title="New lab request"><i class="bi bi-plus-lg"></i>Order tests</button>
+    <button class="btn btn-ghost" data-drawer="{% url 'imaging_new' %}?encounter={{ open_encounter.pk }}" data-title="Imaging request"><i class="bi bi-radioactive"></i>Imaging</button>{% endif %}
   </div>
 </header>
 {% endblock %}
@@ -79,12 +80,13 @@
     <div class="grid g-main">
       <div class="stack">
         <section class="panel"><div class="panel-head"><h2>Trends</h2><span class="hint">Shaded band is the reference range</span></div><div class="trend-grid" id="trends"></div></section>
-        <section class="panel flush"><div class="panel-head"><h2>All results</h2><input class="form-control form-control-sm ms-auto" style="max-width:220px" id="res-filter" placeholder="Filter…" aria-label="Filter results"></div><div id="orders"></div></section>
+        <section class="panel" id="imaging-panel"><div class="panel-head"><h2>Imaging</h2><span class="hint">X-ray, CT, MRI, ultrasound, ECG</span></div><div class="img-grid" id="imaging-list"></div></section>
+        <section class="panel flush"><div class="panel-head"><h2>All results</h2><input class="form-control form-control-sm ms-auto" style="max-width:220px" id="res-filter" placeholder="Filter…" aria-label="Filter results"></div><div id="orders" class="scroll-y"></div></section>
       </div>
-      <section class="panel align-self-start"><div class="panel-head"><h2>Needs attention</h2></div><div id="flagged"></div></section>
+      <section class="panel align-self-start"><div class="panel-head"><h2>Needs attention</h2></div><div id="flagged" class="scroll-y tall"></div></section>
     </div>
   </section>
 </div>
 {{ data|json_script:"lab-data" }}
 {% endblock %}
-{% block scripts %}<script src="{% static 'hospital/js/insights.js' %}"></script>{% endblock %}
+{% block scripts %}<script src="{% static 'hospital/js/organs.js' %}"></script><script src="{% static 'hospital/js/insights.js' %}"></script>{% endblock %}

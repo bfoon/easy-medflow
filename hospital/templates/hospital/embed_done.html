@@ -1,0 +1,11 @@
+{% extends 'hospital/base.html' %}
+{% block shell %}
+<div class="embed-done"><i class="bi bi-check-circle-fill"></i><p>{{ message }}</p></div>
+{{ message|json_script:"done-msg" }}
+<script>
+  // Tell the page that opened this panel that we are finished, so it can close the panel and refresh in place.
+  const msg = JSON.parse(document.getElementById('done-msg').textContent);
+  if (window.parent !== window) window.parent.postMessage({type: 'medflow:done', message: msg}, window.location.origin);
+  else window.location.href = '/';
+</script>
+{% endblock %}

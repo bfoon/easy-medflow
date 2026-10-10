@@ -1,0 +1,26 @@
+{% load medflow %}<ul class="plain task-list">
+  {% for t in tasks %}
+  <li class="task st-{{ t.status }} {% if t.overdue %}overdue{% endif %}">
+    <div class="d-flex gap-2 align-items-start">
+      <span class="task-ic k-{{ t.kind }}"><i class="bi {% if t.kind == 'test' %}bi-droplet-half{% elif t.kind == 'form' %}bi-ui-checks{% elif t.kind == 'document' %}bi-file-earmark-medical{% elif t.kind == 'preparation' %}bi-clipboard2-check{% else %}bi-chat-dots{% endif %}"></i></span>
+      <div class="flex-fill"><b>{{ t.title }}</b>{% if t.status == 'done' %} <span class="tag teal">Done</span>{% elif t.status == 'cancelled' %} <span class="tag">Cancelled</span>{% elif t.overdue %} <span class="tag red">Overdue</span>{% endif %}
+        <div class="small muted">Asked by {{ t.get_requested_by_side_display|lower }}{% if t.due %} · needed by {{ t.due|date:'j M' }}{% endif %}</div>
+        {% if t.details %}<div class="small">{{ t.details }}</div>{% endif %}
+        {% if t.response %}<div class="small task-resp"><i class="bi bi-reply"></i> {{ t.response }}{% if t.completed_by %} <span class="muted">— {{ t.completed_by|display_name }}</span>{% endif %}</div>{% endif %}
+      </div>
+    </div>
+    {% if t.status == 'open' %}
+    <div class="task-acts">
+      {% if t.assigned_to_side == side %}
+        {% if side == 'sender' and t.lab_test and 'Ordered' not in t.response %}<form method="post" action="{% url 'referral_task_update' t.pk 'order_test' %}">{% csrf_token %}<button class="btn btn-sm btn-primary"><i class="bi bi-droplet-half"></i>Order {{ t.lab_test.name }}</button></form>{% endif %}
+        {% if side == 'sender' and t.form and open_encounter %}<a class="btn btn-sm btn-ghost" href="{% url 'fill_form' t.form.pk p.pk %}"><i class="bi bi-ui-checks"></i>Fill form</a>{% endif %}
+        <details class="inform"><summary class="btn btn-sm btn-ink"><i class="bi bi-check2"></i>Mark done</summary>
+          <form method="post" action="{% url 'referral_task_update' t.pk 'done' %}" class="pop-card mt-1">{% csrf_token %}<textarea class="form-control form-control-sm mb-2" name="response" rows="2" placeholder="Reply or result (optional)"></textarea><button class="btn btn-sm btn-primary w-100">Done</button></form></details>
+      {% elif t.requested_by_side == side %}
+        <form method="post" action="{% url 'referral_task_update' t.pk 'cancel' %}" data-confirm="Withdraw this request?">{% csrf_token %}<button class="btn btn-sm btn-ghost">Withdraw</button></form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </li>
+  {% empty %}<li class="empty">No requests.</li>{% endfor %}
+</ul>

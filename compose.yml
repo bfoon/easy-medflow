@@ -64,7 +64,7 @@ services:
 
   worker:
     build: .
-    command: ["celery", "-A", "config", "worker", "-l", "info"]
+    command: ["sh", "-c", "python manage.py wait_for_db && exec celery -A config worker -l info"]
     environment:
       <<: *app-env
     depends_on:

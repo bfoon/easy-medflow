@@ -22,7 +22,7 @@
   <section class="panel flush">
     <div class="scroll-x"><table class="mini-table worklist"><thead><tr><th>Request</th><th>Patient</th><th>Tests &amp; values</th><th>Updated</th></tr></thead><tbody>
     {% for r in rows %}<tr>
-      <td><b>{{ r.number }}</b>{% if r.priority != 'routine' %}<div><span class="tag {% if r.priority == 'stat' %}red{% else %}amber{% endif %}">{{ r.get_priority_display }}</span></div>{% endif %}</td>
+      <td><a href="{% url 'lab_request_detail' r.pk %}"><b>{{ r.number }}</b></a>{% if r.priority != 'routine' %}<div><span class="tag {% if r.priority == 'stat' %}red{% else %}amber{% endif %}">{{ r.get_priority_display }}</span></div>{% endif %}</td>
       <td><a href="{% url 'patient_chart' r.encounter.patient_id %}">{{ r.encounter.patient.full_name }}</a><div class="small muted">{{ r.specimen_id }}</div></td>
       <td>{% for o in r.orders.all %}<div class="mb-1"><b class="small" style="color:{{ o.test.category.color }}">{{ o.test.name }}</b> <span class="tag {{ o.status|tone }}">{{ o.get_status_display }}</span><br>{% for v in o.values.all %}<span class="vchip {% if v.is_critical %}crit{% elif v.is_abnormal %}abn{% endif %}" title="{{ v.parameter.name }}">{{ v.parameter.code }} {{ v.display }}</span>{% endfor %}</div>{% endfor %}</td>
       <td class="small muted text-nowrap">{{ r.updated_at|date:'j M H:i' }}{% if r.stage in 'collected processing resulted' %}<br><a href="{% url 'lab_results_entry' r.pk %}">Open sheet</a>{% endif %}</td>

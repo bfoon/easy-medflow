@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
 
-from .models import (LabRequest, PrescriptionItem, LabParameter, LabResultValue, Admission, Allergy, Bed, Department, Encounter, FormDefinition, FormSubmission, LabOrder, LabTest,
+from .models import (Admission, Bed, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingOrder, StockRequest, LabRequest, PrescriptionItem, LabParameter, LabResultValue, Admission, Allergy, Bed, Department, Encounter, FormDefinition, FormSubmission, LabOrder, LabTest,
                      Medication, Patient, Prescription, QueueTicket, Referral, Signature, StaffProfile, StockBatch,
                      WorkflowDefinition, WorkflowRun)
 from .services import availability, prescription_warnings
@@ -91,8 +91,8 @@ class PharmacyTests(Base):
         e = self.encounter()
         r = self.rx_post(e, [{'medication': self.med.pk, 'dose': '500 mg', 'units_per_dose': 1, 'route': 'oral', 'frequency': 'TDS', 'duration_days': 2, 'instructions': 'after food'},
                              {'medication': para.pk, 'units_per_dose': 2, 'route': 'oral', 'frequency': 'QDS', 'duration_days': 3}])
-        self.assertRedirects(r, '/pharmacy/')
         rx = Prescription.objects.get()
+        self.assertRedirects(r, f'/prescriptions/{rx.pk}/')
         items = list(rx.items.order_by('sort_order'))
         self.assertEqual([(i.medication, i.quantity) for i in items], [(self.med, 6), (para, 24)])
         self.assertIn('three times daily for 2 days', items[0].directions)
@@ -125,7 +125,8 @@ class PharmacyTests(Base):
         r = self.rx_post(self.encounter(), lines)
         self.assertContains(r, 'Possible allergy match'); self.assertFalse(Prescription.objects.exists())
         self.client.logout()
-        self.assertRedirects(self.rx_post(self.encounter(), lines, override_reason='Desensitised; benefit outweighs risk'), '/pharmacy/')
+        r = self.rx_post(self.encounter(), lines, override_reason='Desensitised; benefit outweighs risk')
+        self.assertRedirects(r, f'/prescriptions/{Prescription.objects.get().pk}/')
 
     def test_nurse_cannot_sign(self):
         rx = Prescription.objects.create(encounter=self.encounter(), allergy_reviewed=True)
@@ -255,3 +256,226 @@ class PageTests(Base):
 
     def test_reception_blocked_from_pharmacy_actions(self):
         self.assertEqual(self.as_('reception').get('/prescriptions/new/').status_code, 403)
+
+
+class StayOnPageAndDetailTests(Base):
+    def test_forms_opened_in_the_panel_close_themselves_after_saving(self):
+        e = self.encounter()
+        r = self.as_('doctor').post('/labs/new/?embed=1', {'encounter': e.pk, 'tests': [LabTest.objects.get(code='CBC').pk]})
+        self.assertContains(r, 'medflow:done')                 # tells the patient page to close the panel and refresh
+        self.assertEqual(LabRequest.objects.count(), 1)
+        page = self.client.get(f'/prescriptions/new/?encounter={e.pk}&embed=1')
+        self.assertNotContains(page, 'class="rail"')            # no navigation chrome inside the panel
+
+    def test_detail_pages_open(self):
+        e = self.encounter()
+        lr = LabRequest.objects.create(encounter=e)
+        LabOrder.objects.create(encounter=e, request=lr, test=LabTest.objects.get(code='GLU'))
+        rx = Prescription.objects.create(encounter=e, allergy_reviewed=True)
+        PrescriptionItem.objects.create(prescription=rx, medication=self.med, quantity=3)
+        c = self.as_('doctor')
+        self.assertContains(c.get(f'/labs/requests/{lr.pk}/'), 'Blood Glucose')
+        self.assertContains(c.get(f'/prescriptions/{rx.pk}/'), 'Amoxicillin')
+        self.assertEqual(c.get(f'/prescriptions/{rx.pk}/edit/').status_code, 200)
+
+    def test_completing_a_visit_records_the_outcome(self):
+        e = self.encounter()
+        self.as_('doctor').post(f'/encounters/{e.pk}/complete/', {'outcome': 'improved'})
+        e.refresh_from_db(); self.assertEqual((e.status, e.outcome), ('completed', 'improved'))
+
+
+class OutOfStockTests(Base):
+    def setUp(self):
+        self.zinc = Medication.objects.get(name='Zinc sulfate')   # no stock
+        self.rx = Prescription.objects.create(encounter=self.encounter(), allergy_reviewed=True, state='signed')
+        self.ok = PrescriptionItem.objects.create(prescription=self.rx, medication=self.med, frequency='OD', duration_days=2, quantity=2)
+        self.short = PrescriptionItem.objects.create(prescription=self.rx, medication=self.zinc, frequency='OD', duration_days=10, quantity=10)
+
+    def test_inform_patient_then_dispense_the_rest(self):
+        c = self.as_('pharmacy')
+        c.post(f'/prescriptions/items/{self.short.pk}/unavailable/', {'note': 'Buy at a community pharmacy'})
+        self.short.refresh_from_db()
+        self.assertEqual(self.short.availability, 'unavailable'); self.assertIsNotNone(self.short.patient_informed_at)
+        c.post(f'/prescriptions/{self.rx.pk}/dispense/')
+        self.rx.refresh_from_db(); self.assertEqual(self.rx.state, 'dispensed')
+        self.assertEqual(self.ok.dispensed_quantity, 2)
+        self.assertContains(c.get(f'/prescriptions/{self.rx.pk}/'), 'Medicines to obtain elsewhere')   # printable patient note
+
+    def test_order_from_supplier_partial_dispense_then_receive(self):
+        c = self.as_('pharmacy')
+        c.post(f'/prescriptions/items/{self.short.pk}/order/')
+        sr = StockRequest.objects.get(); self.assertEqual((sr.medication, sr.prescription_item), (self.zinc, self.short))
+        c.post(f'/prescriptions/{self.rx.pk}/dispense/')
+        self.rx.refresh_from_db(); self.assertEqual(self.rx.state, 'partial')          # in-stock line dispensed, ordered line waits
+        c.post(f'/pharmacy/supplier/{sr.pk}/receive/', {'batch_number': 'Z1', 'expiry': (date.today() + timedelta(days=200)).isoformat(), 'quantity': 50})
+        self.short.refresh_from_db(); self.assertEqual(self.short.availability, '')
+        c.post(f'/prescriptions/{self.rx.pk}/dispense/')
+        self.rx.refresh_from_db(); self.assertEqual(self.rx.state, 'dispensed')
+        self.assertEqual(StockBatch.objects.get(batch_number='Z1').quantity, 40)
+
+    def test_unhandled_shortage_blocks_dispensing(self):
+        self.as_('pharmacy').post(f'/prescriptions/{self.rx.pk}/dispense/')
+        self.rx.refresh_from_db(); self.assertEqual(self.rx.state, 'signed')
+        self.assertEqual(StockBatch.objects.get(batch_number='A1').quantity, 5)
+
+
+class ImagingTests(Base):
+    def setUp(self):
+        import shutil, tempfile
+        from django.test import override_settings
+        self.tmp = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.override = override_settings(MEDIA_ROOT=self.tmp); self.override.enable(); self.addCleanup(self.override.disable)
+        U = get_user_model(); u = U.objects.create_user(username='rad', password=PW); StaffProfile.objects.create(user=u, role='radiology')
+
+    def test_request_upload_report_and_show_on_body_map(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from hospital import demo_images
+        e = self.encounter()
+        self.as_('doctor').post('/imaging/new/', {'encounter': e.pk, 'modality': 'xray', 'region': 'Chest PA', 'body_system': 'lungs', 'priority': 'urgent'})
+        o = ImagingOrder.objects.get(); self.client.logout(); c = self.as_('rad')
+        c.post(f'/imaging/{o.pk}/upload/', {'images': SimpleUploadedFile('chest.png', demo_images.chest_xray(), content_type='image/png')})
+        c.post(f'/imaging/{o.pk}/upload/', {'images': SimpleUploadedFile('evil.png', b'<script>alert(1)</script>', content_type='image/png')})
+        self.assertEqual(o.images.count(), 1)                                                      # renamed non-image rejected
+        o.refresh_from_db(); self.assertEqual(o.status, 'acquired')
+        c.post(f'/imaging/{o.pk}/report/', {'findings': 'Big heart', 'impression': 'Cardiomegaly', 'action': 'final',
+                                            'measurements': json.dumps([{'label': 'CTR', 'value': '0.6', 'abnormal': True}])})
+        o.refresh_from_db(); self.assertEqual((o.status, o.abnormal), ('reported', True))
+        img = o.images.get()
+        self.assertEqual(c.get(f'/imaging/files/{img.pk}/')['Content-Type'], 'image/png')
+        self.client.logout()
+        self.assertEqual(self.client.get(f'/imaging/files/{img.pk}/').status_code, 302)              # never public
+        page = self.as_('doctor').get(f'/patients/{self.patient.pk}/labs/')
+        self.assertContains(page, 'Cardiomegaly')
+
+    def test_reception_cannot_upload(self):
+        o = ImagingOrder.objects.create(encounter=self.encounter(), modality='xray', region='Chest', body_system='lungs')
+        self.assertEqual(self.as_('reception').post(f'/imaging/{o.pk}/upload/').status_code, 403)
+
+
+class SimilarCasesTests(Base):
+    def make_case(self, sex, dx, med, outcome):
+        p = Patient.objects.create(first_name='Case', last_name=f'Person{Patient.objects.count()}', dob=date(1985, 5, 5), sex=sex)
+        e = Encounter.objects.create(patient=p, reason='x', diagnosis=dx, status='completed', outcome=outcome)
+        rx = Prescription.objects.create(encounter=e, allergy_reviewed=True, state='dispensed')
+        PrescriptionItem.objects.create(prescription=rx, medication=Medication.objects.get(name=med), quantity=6)
+        return e
+
+    def test_groups_are_anonymous_and_small_groups_hidden(self):
+        from hospital.services import similar_cases, case_token
+        for out in ['resolved', 'resolved', 'improved', 'no_change']:
+            self.make_case('F', 'Malaria, uncomplicated', 'Artemether/Lumefantrine', out)
+        lonely = self.make_case('M', 'Malaria', 'Paracetamol', 'resolved')     # group of one: must not be shown
+        r = similar_cases(self.patient, 'Suspected malaria')
+        self.assertEqual([(g['regimen'], g['n'], g['rate']) for g in r['groups']], [('Artemether/Lumefantrine', 4, 75)])
+        c = self.as_('doctor')
+        token = r['groups'][0]['shown'][0]['token']
+        d = c.get(f'/cases/{token}/?patient={self.patient.pk}').json()
+        self.assertTrue(d['ok']); self.assertEqual(d['title'], 'Anonymous case')
+        self.assertNotIn('Person', json.dumps(d))                                # no names leak
+        self.assertEqual(c.get(f'/cases/{case_token(lonely.pk)}/?patient={self.patient.pk}').status_code, 404)
+        self.assertEqual(c.get(f'/cases/forged-token/?patient={self.patient.pk}').status_code, 404)
+
+    def test_own_past_case_is_shown_as_this_patient(self):
+        from hospital.services import similar_cases
+        e = Encounter.objects.create(patient=self.patient, reason='x', diagnosis='Malaria', status='completed', outcome='resolved')
+        r = similar_cases(self.patient, 'Malaria')
+        own = [c for g in r['groups'] for c in g['shown'] if c['own']]
+        self.assertEqual(len(own), 1)
+        d = self.as_('doctor').get(f'/cases/{own[0]["token"]}/?patient={self.patient.pk}').json()
+        self.assertTrue(d['own']); self.assertIn('This patient', d['title']); self.assertIn(f'/encounters/{e.pk}/', d['url'])
+
+
+class NetworkTests(Base):
+    def setUp(self):
+        from django.utils import timezone as tz
+        self.fac = NetworkFacility.objects.create(name='Heart Centre', kind='clinic')
+        self.other_fac = NetworkFacility.objects.create(name='Other Clinic')
+        self.sp = Specialist.objects.create(facility=self.fac, name='Ada Heart', speciality='Cardiology', rating=4.8, reviews=20)
+        self.slot = SpecialistSlot.objects.create(specialist=self.sp, start=tz.now() + timedelta(days=2))
+        U = get_user_model()
+        self.partner = U.objects.create_user('partner', password=PW); StaffProfile.objects.create(user=self.partner, role='partner', facility=self.fac)
+        self.outsider = U.objects.create_user('outsider', password=PW); StaffProfile.objects.create(user=self.outsider, role='partner', facility=self.other_fac)
+        self.enc = self.encounter()
+
+    def refer(self, **extra):
+        data = {'encounter': self.enc.pk, 'kind': 'consultation', 'facility': self.fac.pk, 'specialist': self.sp.pk, 'urgency': 'urgent',
+                'reason': 'Chest pain', 'consent_to_share': 'on', 'send_now': 'on', 'slot_id': self.slot.pk, **extra}
+        return self.as_('doctor').post('/referrals/new/', data)
+
+    def test_directory_and_slots(self):
+        c = self.as_('doctor')
+        self.assertContains(c.get('/network/'), 'Ada Heart')
+        self.assertContains(c.get(f'/network/specialists/{self.sp.pk}/'), self.slot.start.astimezone().strftime('%H:%M'))
+        self.assertEqual(c.get(f'/network/specialists/{self.sp.pk}/slots/').json()['slots'][0]['id'], self.slot.pk)
+
+    def test_booking_holds_the_slot_and_prevents_double_booking(self):
+        self.refer()
+        r = Referral.objects.get()
+        self.assertEqual((r.slot, r.status, r.destination, r.shared), (self.slot, 'sent', 'Heart Centre', True))
+        self.client.logout(); self.refer()                          # same slot again
+        self.assertEqual(Referral.objects.count(), 1)
+
+    def test_records_need_consent_before_sending(self):
+        r = self.refer(consent_to_share='')
+        self.assertContains(r, 'consent'); self.assertFalse(Referral.objects.exists())
+
+    def test_operation_referral_creates_shared_checklist(self):
+        self.refer(kind='operation', planned_date=(date.today() + timedelta(days=3)).isoformat())
+        r = Referral.objects.get()
+        self.assertEqual(r.tasks.filter(assigned_to_side='sender').count(), 6)
+        self.assertEqual(r.tasks.filter(assigned_to_side='receiver').count(), 3)
+        self.assertTrue(r.tasks.filter(lab_test__code='CBC').exists())
+
+    def test_partner_sees_only_their_shared_referrals(self):
+        self.refer(); r = Referral.objects.get()
+        c = self.as_('partner')
+        self.assertRedirects(c.get('/'), '/network/inbox/')
+        self.assertContains(c.get('/network/inbox/'), self.patient.full_name)
+        self.assertEqual(c.get(f'/patients/{self.patient.pk}/').status_code, 403)        # no access to the hospital chart
+        self.assertEqual(c.get('/labs/').status_code, 403)
+        self.assertContains(c.get(f'/referrals/{r.pk}/summary/'), 'Shared patient record')
+        self.client.logout(); c = self.as_('outsider')
+        self.assertEqual(c.get(f'/referrals/{r.pk}/').status_code, 403)                  # another facility cannot see it
+        self.assertEqual(c.get(f'/referrals/{r.pk}/summary/').status_code, 403)
+
+    def test_without_consent_partner_cannot_open_the_record(self):
+        r = Referral.objects.create(encounter=self.enc, facility=self.fac, destination='Heart Centre', reason='x', status='sent', consent_to_share=False)
+        c = self.as_('partner')
+        self.assertEqual(c.get(f'/referrals/{r.pk}/').status_code, 200)
+        self.assertEqual(c.get(f'/referrals/{r.pk}/summary/').status_code, 403)
+        draft = Referral.objects.create(encounter=self.enc, facility=self.fac, destination='Heart Centre', reason='x', status='draft', consent_to_share=True)
+        self.assertEqual(c.get(f'/referrals/{draft.pk}/').status_code, 403)              # drafts are never visible
+
+    def test_two_way_requests(self):
+        self.refer(); r = Referral.objects.get()
+        c = self.as_('partner')
+        c.post(f'/referrals/{r.pk}/status/accepted/'); r.refresh_from_db(); self.assertEqual(r.status, 'accepted')
+        c.post(f'/referrals/{r.pk}/tasks/', {'kind': 'test', 'title': 'Repeat potassium', 'lab_test': LabTest.objects.get(code='RFT').pk})
+        t = ReferralTask.objects.get()
+        self.assertEqual((t.requested_by_side, t.assigned_to_side), ('receiver', 'sender'))
+        self.assertEqual(c.post(f'/referrals/tasks/{t.pk}/done/').status_code, 400)       # partner cannot tick off the hospital's task
+        self.client.logout(); c = self.as_('doctor')
+        c.post(f'/referrals/tasks/{t.pk}/order_test/')
+        self.assertTrue(LabRequest.objects.filter(encounter=self.enc, orders__test__code='RFT').exists())
+        c.post(f'/referrals/tasks/{t.pk}/done/', {'response': 'K 4.9'})
+        t.refresh_from_db(); self.assertEqual((t.status, t.response), ('done', 'K 4.9'))
+        self.assertEqual(c.post(f'/referrals/{r.pk}/status/accepted/').status_code, 400)   # only the receiver accepts
+
+    def test_declining_releases_the_slot(self):
+        self.refer(); r = Referral.objects.get()
+        self.as_('partner').post(f'/referrals/{r.pk}/status/declined/')
+        r.refresh_from_db(); self.assertIsNone(r.slot)
+
+
+class BedDetailTests(Base):
+    def test_bed_page_with_and_without_patient(self):
+        bed = Bed.objects.filter(state='available').first()
+        c = self.as_('nurse')
+        self.assertContains(c.get(f'/beds/{bed.pk}/'), 'Ready for a patient')
+        c.post('/admissions/new/', {'encounter': self.encounter().pk, 'bed': bed.pk})
+        page = c.get(f'/beds/{bed.pk}/')
+        self.assertContains(page, self.patient.full_name); self.assertContains(page, 'days in bed')
+        c.post(f'/admissions/{Admission.objects.get().pk}/discharge/')
+        c.post(f'/beds/{bed.pk}/ready/')
+        c.post(f'/beds/{bed.pk}/maintenance/', {'reason': 'Broken rail'})
+        bed.refresh_from_db(); self.assertEqual(bed.state, 'maintenance')

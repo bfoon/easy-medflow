@@ -1,0 +1,31 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Imaging{% endblock %}
+{% block heading %}Imaging{% endblock %}
+{% block subheading %}<p class="sub">X-ray, CT, MRI, ultrasound, ECG and echo. Take the images, upload them, then write and finalise the report.</p>{% endblock %}
+{% block actions %}<a class="btn btn-primary" href="{% url 'imaging_new' %}"><i class="bi bi-plus-lg"></i>Imaging request</a>{% endblock %}
+{% block content %}
+<div class="board mb-4" style="grid-template-columns:repeat(2,minmax(280px,1fr))">
+  {% for lane in board %}
+  <section class="lane">
+    <div class="lane-head">{{ lane.label }}<span class="count">{{ lane.orders|length }}</span></div>
+    {% for o in lane.orders %}
+    <a class="img-card prio-{{ o.priority }}" href="{% url 'imaging_detail' o.pk %}">
+      <span class="mod mod-{{ o.modality }}">{{ o.get_modality_display }}</span>
+      <div class="flex-fill"><b>{{ o.region }}</b><div class="small muted">{{ o.encounter.patient.full_name }} · {{ o.number }} · {{ o.created_at|ago }} ago</div>
+        {% if o.clinical_question %}<div class="small mt-1">{{ o.clinical_question|truncatechars:90 }}</div>{% endif %}</div>
+      {% if o.priority != 'routine' %}<span class="tag {% if o.priority == 'stat' %}red{% else %}amber{% endif %}">{{ o.get_priority_display }}</span>{% endif %}
+      {% if o.images.all %}<span class="small muted"><i class="bi bi-images"></i> {{ o.images.all|length }}</span>{% endif %}
+    </a>
+    {% empty %}<div class="empty">Nothing here.</div>{% endfor %}
+  </section>
+  {% endfor %}
+</div>
+<section class="panel flush">
+  <div class="panel-head"><h2>Reported</h2></div>
+  <div class="scroll-y"><table class="mini-table"><thead><tr><th>Study</th><th>Patient</th><th>Impression</th><th>Reported</th></tr></thead><tbody>
+  {% for o in reported %}<tr><td><a href="{% url 'imaging_detail' o.pk %}"><b>{{ o.get_modality_display }} · {{ o.region }}</b></a><div class="small muted">{{ o.number }}</div></td><td><a href="{% url 'patient_chart' o.encounter.patient_id %}">{{ o.encounter.patient.full_name }}</a></td>
+  <td>{% if o.abnormal %}<span class="tag red me-1">Abnormal</span>{% endif %}{{ o.impression|truncatechars:90 }}</td><td class="small muted">{{ o.reported_at|date:'j M H:i' }}</td></tr>
+  {% empty %}<tr><td colspan="4" class="empty">No reports yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

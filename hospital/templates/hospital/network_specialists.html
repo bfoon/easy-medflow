@@ -1,0 +1,42 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Specialist network{% endblock %}
+{% block heading %}Specialist network{% endblock %}
+{% block subheading %}<p class="sub">Find a specialist across partner hospitals and clinics, see their free slots and book the referral in one step.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'network_facilities' %}"><i class="bi bi-buildings"></i>Facilities</a><a class="btn btn-ghost" href="{% url 'referrals' %}"><i class="bi bi-signpost-split"></i>All referrals</a>{% endblock %}
+{% block content %}
+{% if top %}
+<div class="label-sm mb-2"><i class="bi bi-trophy-fill" style="color:var(--amber)"></i> Top rated</div>
+<div class="top-row mb-4">
+  {% for s in top %}
+  <a class="top-card" href="{% url 'specialist_detail' s.pk %}{% if encounter %}?encounter={{ encounter }}{% endif %}" style="--i:{{ forloop.counter0 }}">
+    <span class="sp-avatar lg">{{ s.initials }}</span>
+    <div><b>{{ s.display_name }}</b><div class="small muted">{{ s.speciality }} · {{ s.facility }}</div>
+      <div class="stars">{{ s.rating|stars }} <span class="small muted">{{ s.rating }} · {{ s.reviews }} reviews</span></div>
+      <div class="small mt-1 {% if s.next_slot %}text-success{% else %}muted{% endif %}"><i class="bi bi-calendar-check"></i> {% if s.next_slot %}Next: {{ s.next_slot.start|date:'D j M, H:i' }}{% else %}No free slots in 2 weeks{% endif %}</div></div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+<section class="panel flush">
+  <form class="searchbar flex-wrap" method="get">
+    {% if encounter %}<input type="hidden" name="encounter" value="{{ encounter }}">{% endif %}
+    <input class="form-control" style="flex:2;min-width:220px" name="q" value="{{ q }}" placeholder="Search name, speciality, facility…" aria-label="Search specialists">
+    <select class="form-select" style="flex:1;min-width:160px" name="speciality" aria-label="Speciality"><option value="">All specialities</option>{% for sp in specialities %}<option {% if sp == spec %}selected{% endif %}>{{ sp }}</option>{% endfor %}</select>
+    <select class="form-select" style="flex:1;min-width:160px" name="facility" aria-label="Facility"><option value="">All facilities</option>{% for f in facilities %}<option value="{{ f.pk }}" {% if fac == f.pk|stringformat:'s' %}selected{% endif %}>{{ f.name }}</option>{% endfor %}</select>
+    <select class="form-select" style="width:auto" name="sort" aria-label="Sort"><option value="rating" {% if sort == 'rating' %}selected{% endif %}>Highest rated</option><option value="soonest" {% if sort == 'soonest' %}selected{% endif %}>Soonest available</option><option value="name" {% if sort == 'name' %}selected{% endif %}>Name</option></select>
+    <button class="btn btn-ink">Apply</button>
+  </form>
+  <div class="small muted px-4 pb-2">{{ rows|length }} specialist{{ rows|length|pluralize }}</div>
+  <div class="scroll-y tall">
+    {% for s in rows %}
+    <a class="sp-row" href="{% url 'specialist_detail' s.pk %}{% if encounter %}?encounter={{ encounter }}{% endif %}">
+      <span class="sp-avatar">{{ s.initials }}</span>
+      <span class="flex-fill"><b>{{ s.display_name }}</b>{% if s.telehealth %} <span class="tag indigo"><i class="bi bi-camera-video"></i>Video</span>{% endif %}<br><span class="small muted">{{ s.speciality }} · {{ s.facility }}</span></span>
+      <span class="stars hide-sm">{{ s.rating|stars }}<br><span class="small muted">{{ s.rating }} ({{ s.reviews }})</span></span>
+      <span class="sp-next">{% if s.next_slot %}<b>{{ s.next_slot.start|date:'D j M' }}</b><br><span class="small muted">{{ s.next_slot.start|date:'H:i' }} · {{ s.free_count }} free</span>{% else %}<span class="small muted">Fully booked</span>{% endif %}</span>
+      <i class="bi bi-chevron-right chev"></i>
+    </a>
+    {% empty %}<div class="empty"><i class="bi bi-search"></i>No specialist matches. Try another speciality or facility.</div>{% endfor %}
+  </div>
+</section>
+{% endblock %}

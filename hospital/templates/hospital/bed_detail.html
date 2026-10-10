@@ -1,0 +1,62 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Bed {{ b.code }}{% endblock %}
+{% block heading %}Bed {{ b.code }}{% endblock %}
+{% block subheading %}<p class="sub">{{ b.ward }} · {{ b.get_kind_display }} · <span class="tag {{ b.state|tone }}">{{ b.get_state_display }}</span></p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="{% url 'beds' %}"><i class="bi bi-arrow-left"></i>Bed board</a>
+  {% if current %}<form method="post" action="{% url 'admission_discharge' current.pk %}" data-confirm="Discharge {{ p.full_name }} from {{ b.code }}?">{% csrf_token %}<button class="btn btn-ink"><i class="bi bi-box-arrow-right"></i>Discharge</button></form>
+  {% elif b.state == 'available' %}<button class="btn btn-primary" data-drawer="{% url 'admission_new' %}?bed={{ b.pk }}" data-title="Admit to {{ b.code }}"><i class="bi bi-person-plus"></i>Admit a patient</button>
+    <details class="complete-pop"><summary class="btn btn-ghost"><i class="bi bi-tools"></i>Out of service</summary><form method="post" action="{% url 'bed_maintenance' b.pk %}" class="pop-card">{% csrf_token %}<input class="form-control mb-2" name="reason" placeholder="Reason, e.g. broken rail"><button class="btn btn-ink w-100">Take out of service</button></form></details>
+  {% elif b.state == 'cleaning' or b.state == 'maintenance' %}<form method="post" action="{% url 'bed_ready' b.pk %}">{% csrf_token %}<button class="btn btn-primary"><i class="bi bi-stars"></i>Mark ready</button></form>{% endif %}
+{% endblock %}
+{% block content %}
+<div class="ward-mini mb-3" aria-label="Beds in {{ b.ward }}">{% for n in neighbours %}<a href="{% url 'bed_detail' n.pk %}" class="wm {{ n.state }} {% if n.pk == b.pk %}here{% endif %}" title="{{ n.code }} · {{ n.get_state_display }}">{{ n.code|slice:'-2:' }}</a>{% endfor %}</div>
+<div class="grid g-main">
+  <div class="stack">
+    {% if current %}
+    <section class="panel occupant">
+      <div class="d-flex gap-3 align-items-center flex-wrap">
+        <span class="avatar xl {{ p.sex }}">{{ p.initials }}</span>
+        <div class="flex-fill"><h2 class="mb-0"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a></h2>
+          <div class="small muted">{{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %} · admitted {{ current.admitted_at|date:'D j M, H:i' }}</div>
+          <div class="mt-1"><b>{{ e.diagnosis|default:e.reason }}</b>{% if e.clinician %} <span class="small muted">· {{ e.clinician|display_name }}</span>{% endif %}</div></div>
+        <div class="los"><b>{{ current.los_days }}</b><span>days in bed</span></div>
+      </div>
+      <div class="stay-bar mt-3" title="Day {{ current.los_days }} of a typical 7-day stay"><i style="--w:{{ stay_pct }}%"></i>{% for i in '1234567' %}<span></span>{% endfor %}</div>
+      <div class="d-flex justify-content-between small muted mt-1"><span>Admitted</span><span>Day 7</span></div>
+      {% if allergies %}<div class="allergy-strip mt-3 mb-0"><i class="bi bi-exclamation-triangle-fill"></i><b>Allergies</b>{% for a in allergies %}<span class="tag">{{ a.substance }}</span>{% endfor %}</div>{% endif %}
+      <div class="d-flex gap-2 flex-wrap mt-3">
+        <a class="btn btn-sm btn-ghost" href="{% url 'encounter_detail' e.pk %}"><i class="bi bi-clipboard2-pulse"></i>Visit notes</a>
+        {% if e.status == 'open' %}<button class="btn btn-sm btn-ghost" data-drawer="{% url 'prescription_new' %}?encounter={{ e.pk }}" data-title="New prescription"><i class="bi bi-capsule"></i>Prescribe</button>
+        <button class="btn btn-sm btn-ghost" data-drawer="{% url 'lab_new' %}?encounter={{ e.pk }}" data-title="New lab request"><i class="bi bi-droplet-half"></i>Lab tests</button>{% endif %}
+        <a class="btn btn-sm btn-ghost" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-person-arms-up"></i>Body map</a>
+      </div>
+    </section>
+    <div class="grid g-2">
+      <section class="panel"><div class="panel-head"><h2>Vitals</h2></div>{% if vitals %}<div class="vitals">{% for label, unit, val in vitals %}<div class="vital"><span>{{ label }}</span><b>{{ val }}</b><small>{{ unit }}</small></div>{% endfor %}</div>{% else %}<p class="muted small mb-0">No vitals recorded.</p>{% endif %}</section>
+      <section class="panel"><div class="panel-head"><h2>Medicines this stay</h2></div><ol class="rx-items">{% for i in meds %}<li><span class="med">{{ i.medication }}</span><span class="dir">{{ i.directions }}</span></li>{% empty %}<li class="muted">None.</li>{% endfor %}</ol>
+        {% if pending_labs %}<div class="label-sm mt-2">Waiting for</div>{% for lr in pending_labs %}<a class="tag amber me-1" href="{% url 'lab_request_detail' lr.pk %}">{{ lr.number }}</a>{% endfor %}{% endif %}</section>
+    </div>
+    {% else %}
+    <section class="panel bed-empty state-{{ b.state }}">
+      <svg viewBox="0 0 120 70" width="140" aria-hidden="true"><path d="M8 10v52M112 34v28M8 50h104M8 34h104" stroke="currentColor" stroke-width="5" stroke-linecap="round" fill="none"/><rect x="16" y="18" width="26" height="16" rx="5" fill="currentColor" opacity=".45"/></svg>
+      <div><h2>{% if b.state == 'available' %}Ready for a patient{% elif b.state == 'cleaning' %}Being cleaned{% else %}Out of service{% endif %}</h2>
+        <p class="muted mb-0">{% if b.state == 'available' %}Clean and empty. Admit a patient from the button above.{% elif b.state == 'cleaning' %}Turnover in progress after the last discharge. Mark it ready once cleaned.{% else %}Not available for patients until it is repaired and marked ready.{% endif %}</p></div>
+    </section>
+    {% endif %}
+    <section class="panel flush"><div class="panel-head"><h2>Who has used this bed</h2></div>
+      <div class="scroll-y"><table class="mini-table"><thead><tr><th>Patient</th><th>Admitted</th><th>Discharged</th><th>Stay</th></tr></thead><tbody>
+      {% for a in history %}<tr><td><a href="{% url 'patient_chart' a.encounter.patient_id %}">{{ a.encounter.patient.full_name }}</a><div class="small muted">{{ a.encounter.diagnosis|default:a.encounter.reason|truncatechars:50 }}</div></td><td class="small">{{ a.admitted_at|date:'j M Y H:i' }}</td><td class="small">{% if a.discharged_at %}{{ a.discharged_at|date:'j M Y H:i' }}{% else %}<span class="tag ink">In bed now</span>{% endif %}</td><td>{{ a.los_days }} d</td></tr>
+      {% empty %}<tr><td colspan="4" class="empty">This bed has not been used yet.</td></tr>{% endfor %}</tbody></table></div></section>
+  </div>
+  <aside class="stack align-self-start">
+    <section class="panel"><div class="panel-head"><h2>Last 30 days</h2></div>
+      <div class="occ-strip">{% for d in strip %}<i class="{% if d.occ %}on{% endif %}" title="{{ d.date|date:'j M' }}: {% if d.occ %}occupied{% else %}free{% endif %}"></i>{% endfor %}</div>
+      <div class="d-flex justify-content-between small muted mt-1"><span>30 days ago</span><span>Today</span></div>
+      <div class="bed-stats mt-3"><div><b>{{ stats.occupancy }}%</b><span>occupied</span></div><div><b>{{ stats.uses }}</b><span>admissions</span></div><div><b>{{ stats.avg_los|default:'—' }}</b><span>avg stay (days)</span></div></div>
+    </section>
+    <section class="panel"><div class="panel-head"><h2>Activity</h2></div>
+      <ul class="plain ruled activity">{% for ev in events %}<li><span class="avatar">{{ ev.actor|user_initials }}</span><span>{{ ev.actor|display_name }} · {{ ev.action|cut:'_'|title }}</span><time>{{ ev.occurred_at|ago }}</time></li>{% empty %}<li class="muted small">No recorded activity.</li>{% endfor %}</ul></section>
+  </aside>
+</div>
+{% endblock %}

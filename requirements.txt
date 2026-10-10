@@ -5,3 +5,4 @@ celery[redis]>=5.4,<6
 gunicorn>=22,<24
 whitenoise>=6.8,<7
 django-environ>=0.11,<1
+Pillow>=10.4,<12

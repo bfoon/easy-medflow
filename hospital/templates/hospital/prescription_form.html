@@ -31,7 +31,7 @@
         <div class="field" id="override-wrap" {% if not form.override_reason.value and not form.override_reason.errors %}hidden{% endif %}>
           {% with field=form.override_reason %}<label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for e in field.errors %}<div class="field-error">{{ e }}</div>{% endfor %}{% endwith %}</div>
         {% with field=form.notes %}{% include 'hospital/_field.html' %}{% endwith %}
-        <button class="btn btn-primary w-100"><i class="bi bi-check2"></i>Save prescription</button>
+        <button class="btn btn-primary w-100"><i class="bi bi-check2"></i>{% if editing %}Save changes{% else %}Save prescription{% endif %}</button>
         <p class="form-text mt-2 mb-0">Allergy checks match names only. Interactions and dosing are not checked; a pharmacist must review.</p>
       </section>
     </aside>

@@ -34,6 +34,11 @@
       if (isAbn(f) && !p.latest.ack) s.open++;
       if (SEVERITY[f] === 4) s.crit++;
     }
+    for (const im of (DATA.imaging || [])) {
+      const s = out[im.system] ||= {key: im.system, label: DATA.systems[im.system] || im.system, params: [], worst: '', open: 0, crit: 0};
+      (s.imaging ||= []).push(im);
+      if (im.reported && im.abnormal && SEVERITY.A > SEVERITY[s.worst]) s.worst = 'A';
+    }
     for (const s of Object.values(out)) s.params.sort((a, b) => SEVERITY[b.latest.flag] - SEVERITY[a.latest.flag] || a.name.localeCompare(b.name));
     return out;
   }
@@ -105,6 +110,11 @@
     } catch (err) { console.error('ack failed', err); btn.disabled = false; window.mfToast?.('Could not save the review. Try again.', 'error'); }
   }
   root.addEventListener('click', e => { const b = e.target.closest('[data-ack]'); if (b) acknowledge(+b.dataset.ack, b); });
+  root.addEventListener('click', e => {
+    const t = e.target.closest('[data-img]'); if (!t) return;
+    const im = (DATA.imaging || []).find(x => x.id === +t.dataset.im);
+    window.mfModal?.(`${im.modality} · ${im.region}`, `<div class="lightbox"><img src="${esc(t.dataset.img)}" alt="${esc(im.region)}"></div>${im.impression ? `<p class="mt-2 mb-1"><b>Impression:</b> ${esc(im.impression)}</p>` : ''}<a class="btn btn-sm btn-ink" href="${esc(im.url)}">Open study &amp; viewer</a>`);
+  });
 
   /* ------------------------------------------------------------ body map: markers, organs, blood */
   const svg = $('#body'), markers = $('#markers'), tip = $('#map-tip');
@@ -115,14 +125,15 @@
     $('#vessels').setAttribute('class', `vessels ${blood ? flagClass(blood.worst) : 'idle'}`);
     for (const [key, s] of Object.entries(SYS)) {
       const [x, y] = SPOTS[key] || [200, 400];
-      const cls = flagClass(s.worst), n = s.params.filter(p => isAbn(p.latest.flag)).length;
+      const cls = flagClass(s.worst), n = s.params.filter(p => isAbn(p.latest.flag)).length + (s.imaging || []).filter(i => i.reported && i.abnormal).length;
       const g = document.createElementNS(SVGNS, 'g');
       g.setAttribute('class', `mk ${cls}${s.open ? ' open' : ''}`); g.setAttribute('transform', `translate(${x},${y})`);
       g.setAttribute('tabindex', '0'); g.setAttribute('role', 'button'); g.dataset.sys = key;
       g.setAttribute('aria-label', `${s.label}: ${n ? n + ' out of range' : 'all within range'}`);
       g.innerHTML = `${cls !== 'ok' ? '<circle class="ring" r="13"/><circle class="ring r2" r="13"/>' : ''}<circle class="dot" r="12"/>` +
         (n ? `<text y="4.5" text-anchor="middle">${n}</text>` : `<path d="M-5,0 L-1.5,3.5 L5,-3.5" class="tick"/>`) +
-        (s.open === 0 && n ? '<circle class="seen" r="5" cx="10" cy="-10"/><path class="seen-tick" d="M7.5,-10 L9.3,-8.2 L12.5,-11.5"/>' : '');
+        (s.open === 0 && n && s.params.length ? '<circle class="seen" r="5" cx="10" cy="-10"/><path class="seen-tick" d="M7.5,-10 L9.3,-8.2 L12.5,-11.5"/>' : '') +
+        ((s.imaging || []).length ? '<g class="cam" transform="translate(-13,9)"><rect x="-6" y="-4" width="12" height="9" rx="2"/><circle r="2.4" cy=".5"/></g>' : '');
       markers.appendChild(g);
     }
   }
@@ -131,8 +142,9 @@
   svg.addEventListener('click', e => { const o = e.target.closest('.org.tested'); if (o && !e.target.closest('.mk')) focusSystem(o.dataset.sys); });
   markers.addEventListener('mouseover', e => {
     const m = e.target.closest('.mk'); if (!m) return;
-    const s = SYS[m.dataset.sys], top = s.params[0];
-    tip.innerHTML = `<b>${esc(s.label)}</b><span>${esc(top.name)}: <strong class="${flagClass(top.latest.flag)}">${esc(top.latest.display)} ${esc(top.unit)}</strong></span><small>${s.params.length} value${s.params.length > 1 ? 's' : ''} · click to zoom</small>`;
+    const s = SYS[m.dataset.sys], top = s.params[0], im = (s.imaging || [])[0];
+    tip.innerHTML = `<b>${esc(s.label)}</b>` + (top ? `<span>${esc(top.name)}: <strong class="${flagClass(top.latest.flag)}">${esc(top.latest.display)} ${esc(top.unit)}</strong></span>` : '') +
+      (im ? `<span><i class="bi bi-camera"></i> ${esc(im.modality)} · ${esc(im.region)}</span>` : '') + `<small>${s.params.length} value${s.params.length === 1 ? '' : 's'}${im ? ` · ${s.imaging.length} scan${s.imaging.length > 1 ? 's' : ''}` : ''} · click to zoom</small>`;
     const r = m.getBoundingClientRect(), pr = svg.parentElement.getBoundingClientRect();
     tip.style.left = (r.left - pr.left + r.width / 2) + 'px'; tip.style.top = (r.top - pr.top) + 'px'; tip.hidden = false;
   });
@@ -198,21 +210,34 @@
       ${ack ? `<div class="prow-ack">${ack}</div>` : ''}
     </div>`;
   }
+  function imagingCard(im) {
+    const thumbs = im.images.slice(0, 4).map((img, i) => `<button class="im-thumb" data-img="${esc(img.url)}" data-im="${im.id}" aria-label="View image ${i + 1}"><img src="${esc(img.url)}" alt="${esc(img.caption || im.region)}" loading="lazy"></button>`).join('');
+    return `<div class="im-card ${im.reported && im.abnormal ? 'abn' : ''}"><div class="d-flex gap-2 align-items-baseline"><b>${esc(im.modality)} · ${esc(im.region)}</b>${im.reported ? (im.abnormal ? '<span class="flag abn">Abnormal</span>' : '<span class="flag ok">Normal</span>') : '<span class="tag amber">Awaiting report</span>'}<a class="small ms-auto" href="${esc(im.url)}">Open</a></div>
+      ${thumbs ? `<div class="im-thumbs">${thumbs}</div>` : ''}${im.impression ? `<p class="small mb-1 mt-2">${esc(im.impression)}</p>` : ''}
+      ${(im.measurements || []).map(m => `<span class="vchip ${m.abnormal ? 'abn' : 'ok'}">${esc(m.label)} <b>${esc(m.value)}</b> ${esc(m.unit)}</span>`).join('')}<div class="small muted mt-1">${esc(im.date)}</div></div>`;
+  }
   function renderDetail(key, animate) {
-    const s = SYS[key];
+    const s = SYS[key], art = window.MedFlowOrgans ? window.MedFlowOrgans.render(key, DATA.params, s.label) : null;  // all results: e.g. potassium (a kidney test) shapes the heart rhythm
     detail.innerHTML = `<div class="${animate && !reduceMotion ? 'zoom-in' : ''}">
-      <div class="d-head ${flagClass(s.worst)}"><span class="d-icon"></span><div><h2>${esc(s.label)}</h2><span class="small muted">${s.params.length} value${s.params.length > 1 ? 's' : ''}${s.crit ? ` · <b class="text-danger">${s.crit} critical</b>` : ''}</span></div>
+      <div class="d-head ${flagClass(s.worst)}"><span class="d-icon"></span><div><h2>${esc(s.label)}</h2><span class="small muted">${s.params.length} value${s.params.length === 1 ? '' : 's'}${(s.imaging || []).length ? ` · ${s.imaging.length} scan${s.imaging.length > 1 ? 's' : ''}` : ''}${s.crit ? ` · <b class="text-danger">${s.crit} critical</b>` : ''}</span></div>
       <button class="btn btn-sm btn-ghost ms-auto" data-close aria-label="Back to all systems"><i class="bi bi-x-lg"></i></button></div>
+      ${art ? `<figure class="organ-art">${art.svg}<figcaption><div class="oa-caption" aria-live="polite">Tap a part of the illustration to learn what it does.</div>${art.notes.map(n => `<span class="oa-note">${esc(n)}</span>`).join('')}</figcaption></figure>` : ''}
+      ${(s.imaging || []).map(imagingCard).join('')}
       ${s.params.map(p => paramRow(p, true)).join('')}</div>`;
     detail.querySelector('[data-close]').addEventListener('click', zoomOut);
+    if (art) {
+      const cap = detail.querySelector('.oa-caption');
+      const show = el => { const k = el.dataset.part; cap.textContent = art.parts[k] || el.getAttribute('aria-label'); detail.querySelectorAll('.oa-part').forEach(p => p.classList.toggle('picked', p.dataset.part === k)); };
+      detail.querySelectorAll('.oa-part').forEach(el => { el.addEventListener('click', () => show(el)); el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); show(el); } }); });
+    }
     drawLines(detail);
   }
   function renderOverview() {
     const list = Object.values(SYS).sort((a, b) => SEVERITY[b.worst] - SEVERITY[a.worst]);
     const untested = Object.keys(DATA.systems).filter(k => !SYS[k]);
-    detail.innerHTML = !DATA.params.length ? `<div class="empty"><i class="bi bi-droplet"></i>No resulted lab tests for this patient yet. Results appear here once the lab submits them.</div>` :
+    detail.innerHTML = !DATA.params.length && !(DATA.imaging || []).length ? `<div class="empty"><i class="bi bi-droplet"></i>No resulted lab tests for this patient yet. Results appear here once the lab submits them.</div>` :
       `<div class="panel-head"><h2>Body systems</h2><span class="hint">Click a marker or a row</span></div>
-      <ul class="plain sys-list">${list.map(s => `<li><button class="sys ${flagClass(s.worst)}" data-sys="${s.key}"><span class="sdot"></span><span><b>${esc(s.label)}</b><small>${s.params.length} value${s.params.length > 1 ? 's' : ''}${s.open ? ` · ${s.open} to review` : ''}</small></span><span class="flag ${flagClass(s.worst)}">${isAbn(s.worst) ? (SEVERITY[s.worst] === 4 ? 'Critical' : 'Out of range') : 'In range'}</span></button></li>`).join('')}</ul>
+      <ul class="plain sys-list">${list.map(s => `<li><button class="sys ${flagClass(s.worst)}" data-sys="${s.key}"><span class="sdot"></span><span><b>${esc(s.label)}</b><small>${s.params.length} value${s.params.length === 1 ? '' : 's'}${(s.imaging || []).length ? ` · ${s.imaging.length} scan${s.imaging.length > 1 ? 's' : ''}` : ''}${s.open ? ` · ${s.open} to review` : ''}</small></span><span class="flag ${flagClass(s.worst)}">${isAbn(s.worst) ? (SEVERITY[s.worst] === 4 ? 'Critical' : 'Out of range') : 'In range'}</span></button></li>`).join('')}</ul>
       ${untested.length ? `<p class="small muted mt-3 mb-0">Not tested: ${untested.map(k => esc(DATA.systems[k])).join(', ')}</p>` : ''}`;
     $$('.sys', detail).forEach(b => b.addEventListener('click', () => focusSystem(b.dataset.sys)));
   }
@@ -240,6 +265,9 @@
     $('#trends').innerHTML = trend.length ? trend.map(p => `<div class="trend ${flagClass(p.latest.flag)}"><div class="d-flex align-items-baseline gap-2"><b>${esc(p.name)}</b><span class="small muted">${esc(p.test)}</span><span class="ms-auto tval">${esc(p.latest.display)} <small>${esc(p.unit)}</small></span></div>${lineChart(p)}</div>`).join('')
       : '<div class="empty">Trends appear once a test has been done at least twice.</div>';
     drawLines($('#trends'));
+    const ims = DATA.imaging || [];
+    $('#imaging-panel').hidden = !ims.length;
+    $('#imaging-list').innerHTML = ims.map(imagingCard).join('');
     const orders = DATA.orders.filter(o => !catFilter || o.category === catFilter);
     $('#orders').innerHTML = orders.length ? orders.map(o => `<div class="order-row" data-text="${esc((o.test + ' ' + o.values.map(v => v.name).join(' ')).toLowerCase())}">
       <div class="o-head"><span class="cat-dot" style="background:${esc(o.color)}"></span><b>${esc(o.test)}</b><span class="small muted">${esc(o.category)}</span><span class="tag ${o.status === 'Verified' ? 'teal' : 'amber'} ms-auto">${esc(o.status)}</span><span class="small muted">${esc(o.date)}</span></div>
@@ -261,5 +289,8 @@
   renderMarkers(); seedDroplets(); renderOverview(); renderReview(false);
   setView(root.dataset.initialView === 'clean' ? 'clean' : 'body', false);
   const firstCrit = Object.values(SYS).find(s => SEVERITY[s.worst] === 4 && s.open);
-  if (firstCrit && root.dataset.initialView !== 'clean') setTimeout(() => focusSystem(firstCrit.key), reduceMotion ? 0 : 900); // fly to the most urgent finding
+  if (firstCrit && root.dataset.initialView !== 'clean') {   // fly to the most urgent finding, unless the doctor has already chosen something
+    const auto = setTimeout(() => { if (!current) focusSystem(firstCrit.key); }, reduceMotion ? 0 : 900);
+    ['pointerdown', 'keydown'].forEach(ev => root.addEventListener(ev, () => clearTimeout(auto), {once: true}));
+  }
 })();

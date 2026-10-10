@@ -19,7 +19,7 @@
     {% for b in w.beds %}
     <div class="bed {{ b.state }}">
       <svg class="cot" width="30" height="20" viewBox="0 0 30 20" aria-hidden="true"><path d="M2 3v15M28 10v8M2 14h26M2 10h26" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><rect x="5" y="5" width="7" height="5" rx="2" fill="currentColor" opacity=".5"/></svg>
-      <span class="code">{{ b.code }}</span>
+      <a class="code stretched" href="{% url 'bed_detail' b.pk %}">{{ b.code }}</a>
       <span class="kind">{{ b.get_kind_display }}</span>
       {% if b.admission %}
         <div class="pt"><span class="avatar {{ b.admission.encounter.patient.sex }}">{{ b.admission.encounter.patient.initials }}</span><span><a href="{% url 'patient_chart' b.admission.encounter.patient_id %}">{{ b.admission.encounter.patient.full_name }}</a><br><span style="font-size:.74rem;opacity:.75">{{ b.admission.admitted_at|ago }} · since {{ b.admission.admitted_at|date:'j M' }}</span></span></div>

@@ -1,0 +1,48 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ lr.number }}{% endblock %}
+{% block heading %}Lab request {{ lr.number }}{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %} · requested {{ lr.created_at|date:'j M Y H:i' }}{% if lr.requested_by %} by {{ lr.requested_by|display_name }}{% endif %}
+  · <span class="tag {{ lr.stage|tone }}">{{ lr.stage|title }}</span>{% if lr.priority != 'routine' %} <span class="tag {% if lr.priority == 'stat' %}red{% else %}amber{% endif %}">{{ lr.get_priority_display }}</span>{% endif %}</p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="{% url 'patient_chart' p.pk %}#labs"><i class="bi bi-arrow-left"></i>Patient</a>
+  <a class="btn btn-ghost" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-person-arms-up"></i>Body map &amp; trends</a>
+  {% if can_lab %}
+    {% if lr.stage == 'ordered' %}<form method="post" action="{% url 'lab_request_action' lr.pk 'collect' %}" class="d-flex gap-1">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><input class="form-control" name="specimen_id" placeholder="Specimen ID" style="width:150px" aria-label="Specimen ID"><button class="btn btn-ink">Collected</button></form>
+    {% elif lr.stage == 'collected' %}<form method="post" action="{% url 'lab_request_action' lr.pk 'process' %}">{% csrf_token %}<button class="btn btn-ink"><i class="bi bi-play-fill"></i>Process &amp; enter results</button></form>
+    {% elif lr.stage == 'processing' or lr.stage == 'resulted' %}<a class="btn btn-primary" href="{% url 'lab_results_entry' lr.pk %}"><i class="bi bi-input-cursor-text"></i>{% if lr.stage == 'resulted' %}Review results{% else %}Enter results{% endif %}</a>{% endif %}
+    {% if lr.stage == 'resulted' %}<form method="post" action="{% url 'lab_request_action' lr.pk 'verify' %}" data-confirm="Verify and release all submitted results?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="btn btn-primary"><i class="bi bi-patch-check"></i>Verify all</button></form>{% endif %}
+  {% endif %}
+{% endblock %}
+{% block content %}
+{% if lr.clinical_notes %}<div class="alert-mf info mb-3"><i class="bi bi-chat-left-text"></i><div><b>Clinical notes:</b> {{ lr.clinical_notes }}</div></div>{% endif %}
+<div class="grid g-main">
+  <div class="stack">
+    {% for o in lr.orders.all %}
+    <section class="panel test-section {% if o.status == 'cancelled' %}cancelled{% endif %}" style="--cat:{{ o.test.category.color|default:'#5A6F7D' }}">
+      <div class="panel-head"><span class="cat-dot"></span><h2>{{ o.test.name }}</h2><span class="hint">{{ o.test.category }} · {{ o.test.sample_type }}</span>
+        <span class="tag {{ o.status|tone }} ms-auto">{{ o.get_status_display }}</span>
+        {% if can_lab and o.status != 'verified' and o.status != 'cancelled' %}<form method="post" action="{% url 'lab_order_cancel' o.pk %}" data-confirm="Cancel only {{ o.test.name }}?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="icon-btn" title="Cancel this test" aria-label="Cancel {{ o.test.name }}"><i class="bi bi-x-lg"></i></button></form>{% endif %}</div>
+      {% if o.values.all %}
+      <div class="scroll-x"><table class="mini-table"><thead><tr><th>Parameter</th><th>Result</th><th>Reference</th><th>Flag</th></tr></thead><tbody>
+        {% for v in o.values.all %}<tr class="{% if v.is_critical %}row-crit{% elif v.is_abnormal %}row-abn{% endif %}"><td>{{ v.parameter.name }}</td><td><b>{{ v.display }}</b> <span class="muted">{{ v.parameter.unit }}</span></td><td class="small muted">{{ v.parameter|range_for_sex:sex|default:'—' }}</td><td>{% include 'hospital/_flag.html' with flag=v.flag %}{% if v.acknowledged_at %} <span class="small muted" title="Reviewed by {{ v.acknowledged_by|display_name }}"><i class="bi bi-eye"></i></span>{% endif %}</td></tr>{% endfor %}
+      </tbody></table></div>
+      {% if o.result %}<p class="small muted mt-2 mb-0"><i class="bi bi-chat-left-text"></i> {{ o.result }}</p>{% endif %}
+      {% else %}<p class="muted small mb-0">{% if o.status == 'cancelled' %}Cancelled.{% else %}No results yet.{% endif %}</p>{% endif %}
+      <div class="small muted mt-2">{% if o.performed_by %}Performed by {{ o.performed_by|display_name }}{% endif %}{% if o.verified_at %} · verified by {{ o.verified_by|display_name }} {{ o.verified_at|date:'j M H:i' }}{% endif %}</div>
+    </section>
+    {% endfor %}
+  </div>
+  <aside class="panel align-self-start">
+    <div class="panel-head"><h2>Progress</h2></div>
+    <ol class="steps">
+      {% for st in lr.STAGES %}<li data-st="{{ st }}">{{ st|title }}</li>{% endfor %}
+    </ol>
+    <dl class="kv mt-3"><dt>Specimen</dt><dd>{{ lr.specimen_id|default:'—' }}</dd><dt>Collected</dt><dd>{{ lr.collected_at|date:'j M H:i'|default:'—' }}</dd><dt>Tests</dt><dd>{{ lr.orders.all|length }}</dd></dl>
+  </aside>
+</div>
+{{ lr.stage|json_script:"stage" }}
+{% endblock %}
+{% block scripts %}<script>
+(() => { const order = ['ordered','collected','processing','resulted','verified'], cur = order.indexOf(JSON.parse(document.getElementById('stage').textContent));
+  document.querySelectorAll('.steps li').forEach(li => { const i = order.indexOf(li.dataset.st); li.className = i < cur ? 'done' : i === cur ? 'current' : ''; }); })();
+</script>{% endblock %}

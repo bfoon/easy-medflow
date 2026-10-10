@@ -1,0 +1,87 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ o.number }}{% endblock %}
+{% block heading %}{{ o.get_modality_display }} · {{ o.region }}{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }} · {{ o.number }} · requested {{ o.created_at|date:'j M H:i' }}{% if o.requested_by %} by {{ o.requested_by|display_name }}{% endif %} · <span class="tag {% if o.status == 'reported' %}teal{% elif o.status == 'acquired' %}indigo{% else %}amber{% endif %}">{{ o.get_status_display }}</span>{% if o.abnormal %} <span class="tag red">Abnormal</span>{% endif %}</p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="{% url 'patient_chart' p.pk %}#imaging"><i class="bi bi-arrow-left"></i>Patient</a>
+  <a class="btn btn-ghost" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-person-arms-up"></i>Body map</a>
+  {% if o.status != 'reported' and o.status != 'cancelled' %}<form method="post" action="{% url 'imaging_cancel' o.pk %}" data-confirm="Cancel {{ o.number }}?">{% csrf_token %}<button class="btn btn-ghost"><i class="bi bi-x-lg"></i>Cancel</button></form>{% endif %}
+{% endblock %}
+{% block content %}
+{% if o.clinical_question %}<div class="alert-mf info mb-3"><i class="bi bi-question-circle"></i><div><b>Clinical question:</b> {{ o.clinical_question }}</div></div>{% endif %}
+<div class="grid g-main">
+  <section class="panel viewer-panel">
+    {% if o.images.all %}
+    <div class="viewer" id="viewer" tabindex="0" aria-label="Image viewer. Scroll to zoom, drag to pan.">
+      <img id="viewer-img" src="{% url 'imaging_file' o.images.all.0.pk %}" alt="{{ o.get_modality_display }} {{ o.region }}" draggable="false">
+      <div class="viewer-hud" id="viewer-hud">100%</div>
+    </div>
+    <div class="viewer-tools">
+      <label>Brightness <input type="range" min="40" max="200" value="100" data-f="brightness"></label>
+      <label>Contrast <input type="range" min="40" max="250" value="100" data-f="contrast"></label>
+      <button class="btn btn-sm btn-ghost" data-act="invert"><i class="bi bi-circle-half"></i>Invert</button>
+      <button class="btn btn-sm btn-ghost" data-act="reset"><i class="bi bi-arrow-counterclockwise"></i>Reset</button>
+    </div>
+    <div class="thumbs">{% for img in o.images.all %}<button class="thumb {% if forloop.first %}on{% endif %}" data-src="{% url 'imaging_file' img.pk %}" title="{{ img.caption }}"><img src="{% url 'imaging_file' img.pk %}" alt="{{ img.caption|default:'Image' }}" loading="lazy"><span>{{ img.caption|default:forloop.counter }}</span></button>{% endfor %}</div>
+    {% else %}<div class="empty"><i class="bi bi-image"></i>No images yet.{% if can_image %} Upload them below once the study is done.{% endif %}</div>{% endif %}
+    {% if can_image and o.status != 'cancelled' %}
+    <form method="post" action="{% url 'imaging_upload' o.pk %}" enctype="multipart/form-data" class="upload-zone mt-3" id="upload">{% csrf_token %}
+      <i class="bi bi-cloud-arrow-up"></i><div><b>Add images</b><div class="small muted">JPG, PNG or WEBP, up to 15 MB each. DICOM files must be exported to JPG/PNG first.</div></div>
+      <input type="file" name="images" accept=".jpg,.jpeg,.png,.webp" multiple required aria-label="Choose images">
+      <input class="form-control form-control-sm" name="caption" placeholder="Caption, e.g. PA view" style="max-width:180px">
+      <button class="btn btn-sm btn-ink">Upload</button>
+    </form>{% endif %}
+  </section>
+
+  <section class="panel align-self-start">
+    <div class="panel-head"><h2>Report</h2>{% if o.reported_at %}<span class="hint">{{ o.reported_by|display_name }} · {{ o.reported_at|date:'j M H:i' }}</span>{% endif %}</div>
+    {% if can_image and o.status != 'reported' and o.status != 'cancelled' %}
+    <form method="post" action="{% url 'imaging_report' o.pk %}" id="report-form">{% csrf_token %}
+      <div class="field"><label class="form-label" for="findings">Findings</label><textarea class="form-control" id="findings" name="findings" rows="5">{{ o.findings }}</textarea></div>
+      <div class="field"><label class="form-label" for="impression">Impression</label><textarea class="form-control" id="impression" name="impression" rows="2">{{ o.impression }}</textarea></div>
+      <div class="label-sm mb-1">Measurements</div>
+      <div id="meas"></div>
+      <button type="button" class="btn btn-sm btn-ghost mb-3" id="add-meas"><i class="bi bi-plus"></i>Add measurement</button>
+      <input type="hidden" name="measurements" id="meas-json">
+      <div class="field check"><input class="form-check-input" type="checkbox" name="abnormal" id="abn" {% if o.abnormal %}checked{% endif %}><label class="form-label" for="abn">Abnormal study</label></div>
+      <div class="d-flex gap-2"><button class="btn btn-primary" name="action" value="final" data-confirm-final><i class="bi bi-patch-check"></i>Finalise report</button><button class="btn btn-ghost" name="action" value="draft">Save draft</button></div>
+    </form>
+    {% elif o.status == 'reported' %}
+      <div class="label-sm">Findings</div><p>{{ o.findings|linebreaksbr|default:'—' }}</p>
+      <div class="label-sm">Impression</div><p class="fw-semibold {% if o.abnormal %}text-danger{% endif %}">{{ o.impression|linebreaksbr }}</p>
+      {% if o.measurements %}<div class="label-sm mb-1">Measurements</div><div>{% for m in o.measurements %}<span class="vchip {% if m.abnormal %}abn{% else %}ok{% endif %}">{{ m.label }} <b>{{ m.value }}</b> {{ m.unit }}</span>{% endfor %}</div>{% endif %}
+    {% else %}<p class="muted small mb-0">Waiting for the radiology report.</p>{% endif %}
+  </section>
+</div>
+{{ o.measurements|json_script:"meas-data" }}
+{% endblock %}
+{% block scripts %}<script>
+(() => {
+  // ---------- viewer: wheel zoom, drag pan, brightness / contrast / invert (display only; the stored image is untouched)
+  const vw = document.getElementById('viewer'), img = document.getElementById('viewer-img');
+  if (vw) {
+    let z = 1, x = 0, y = 0, inv = false, drag = null; const f = {brightness: 100, contrast: 100};
+    const apply = () => { img.style.transform = `translate(${x}px,${y}px) scale(${z})`; img.style.filter = `brightness(${f.brightness}%) contrast(${f.contrast}%)${inv ? ' invert(1)' : ''}`; document.getElementById('viewer-hud').textContent = Math.round(z * 100) + '%'; };
+    vw.addEventListener('wheel', e => { e.preventDefault(); z = Math.min(8, Math.max(1, z * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); if (z === 1) { x = 0; y = 0; } apply(); }, {passive: false});
+    vw.addEventListener('pointerdown', e => { drag = [e.clientX - x, e.clientY - y]; vw.setPointerCapture(e.pointerId); vw.classList.add('grab'); });
+    vw.addEventListener('pointermove', e => { if (drag && z > 1) { x = e.clientX - drag[0]; y = e.clientY - drag[1]; apply(); } });
+    vw.addEventListener('pointerup', () => { drag = null; vw.classList.remove('grab'); });
+    vw.addEventListener('dblclick', () => { z = z > 1 ? 1 : 2.5; if (z === 1) { x = 0; y = 0; } apply(); });
+    document.querySelectorAll('[data-f]').forEach(r => r.addEventListener('input', () => { f[r.dataset.f] = r.value; apply(); }));
+    document.querySelector('[data-act="invert"]').addEventListener('click', () => { inv = !inv; apply(); });
+    document.querySelector('[data-act="reset"]').addEventListener('click', () => { z = 1; x = y = 0; inv = false; f.brightness = f.contrast = 100; document.querySelectorAll('[data-f]').forEach(r => r.value = 100); apply(); });
+    document.querySelectorAll('.thumb').forEach(t => t.addEventListener('click', () => { img.src = t.dataset.src; document.querySelectorAll('.thumb').forEach(o => o.classList.toggle('on', o === t)); z = 1; x = y = 0; apply(); }));
+  }
+  // ---------- measurements editor
+  const box = document.getElementById('meas'); if (!box) return;
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let rows = JSON.parse(document.getElementById('meas-data').textContent || '[]');
+  const sync = () => { document.getElementById('meas-json').value = JSON.stringify(rows.filter(r => r.label)); };
+  const render = () => { box.innerHTML = rows.map((r, i) => `<div class="meas-row" data-i="${i}"><input class="form-control form-control-sm" data-k="label" placeholder="e.g. Cardiothoracic ratio" value="${esc(r.label)}"><input class="form-control form-control-sm" data-k="value" placeholder="0.62" value="${esc(r.value)}"><input class="form-control form-control-sm" data-k="unit" placeholder="unit" value="${esc(r.unit)}"><label class="small"><input type="checkbox" class="form-check-input" data-k="abnormal" ${r.abnormal ? 'checked' : ''}> abnormal</label><button type="button" class="icon-btn" data-del aria-label="Remove"><i class="bi bi-x"></i></button></div>`).join(''); sync(); };
+  box.addEventListener('input', e => { const i = +e.target.closest('.meas-row').dataset.i, k = e.target.dataset.k; rows[i][k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; sync(); });
+  box.addEventListener('click', e => { if (e.target.closest('[data-del]')) { rows.splice(+e.target.closest('.meas-row').dataset.i, 1); render(); } });
+  document.getElementById('add-meas').addEventListener('click', () => { rows.push({label: '', value: '', unit: '', abnormal: false}); render(); });
+  document.getElementById('report-form').addEventListener('submit', sync);
+  render();
+})();
+</script>{% endblock %}

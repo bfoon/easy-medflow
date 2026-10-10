@@ -17,20 +17,25 @@
     </div>
   </div>
   <div class="actions">
-    {% if open_encounter %}<a class="btn btn-primary" href="{% url 'encounter_detail' open_encounter.pk %}"><i class="bi bi-clipboard2-pulse"></i>Open current visit</a>
-    {% else %}<a class="btn btn-primary" href="{% url 'encounter_new' %}?patient={{ p.pk }}"><i class="bi bi-clipboard2-plus"></i>Start encounter</a>{% endif %}
+    {% if open_encounter %}
+      <button class="btn btn-primary" data-drawer="{% url 'lab_new' %}?encounter={{ open_encounter.pk }}" data-title="New lab request"><i class="bi bi-droplet-half"></i>Order lab tests</button>
+      <button class="btn btn-primary" data-drawer="{% url 'prescription_new' %}?encounter={{ open_encounter.pk }}" data-title="New prescription"><i class="bi bi-capsule"></i>Prescribe</button>
+      <button class="btn btn-ghost" data-drawer="{% url 'imaging_new' %}?encounter={{ open_encounter.pk }}" data-title="Imaging request"><i class="bi bi-radioactive"></i>Imaging</button>
+      <a class="btn btn-ghost" href="{% url 'encounter_detail' open_encounter.pk %}"><i class="bi bi-clipboard2-pulse"></i>Current visit</a>
+    {% else %}
+      <button class="btn btn-primary" data-drawer="{% url 'encounter_new' %}?patient={{ p.pk }}" data-title="Start encounter"><i class="bi bi-clipboard2-plus"></i>Start encounter</button>
+    {% endif %}
     <a class="btn btn-ghost" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-activity"></i>Lab insights</a>
-    <a class="btn btn-ghost" href="{% url 'ticket_new' %}?patient={{ p.pk }}"><i class="bi bi-ticket-perforated"></i>Queue</a>
     <div class="dropdown">
-      <button class="btn btn-ghost" data-bs-toggle="dropdown" aria-expanded="false" onclick="this.nextElementSibling.classList.toggle('show')"><i class="bi bi-three-dots"></i></button>
+      <button class="btn btn-ghost" aria-expanded="false" aria-label="More actions" onclick="this.nextElementSibling.classList.toggle('show')"><i class="bi bi-three-dots"></i></button>
       <ul class="dropdown-menu dropdown-menu-end" style="right:0;left:auto;top:110%">
-        <li><a class="dropdown-item" href="{% url 'allergy_new' p.pk %}">Record allergy</a></li>
-        <li><a class="dropdown-item" href="{% url 'condition_new' p.pk %}">Add condition</a></li>
+        <li><button class="dropdown-item" data-drawer="{% url 'allergy_new' p.pk %}" data-title="Record allergy">Record allergy</button></li>
+        <li><button class="dropdown-item" data-drawer="{% url 'condition_new' p.pk %}" data-title="Add condition">Add condition</button></li>
+        <li><button class="dropdown-item" data-drawer="{% url 'ticket_new' %}?patient={{ p.pk }}" data-title="Queue ticket">Add to queue</button></li>
         {% if open_encounter %}
-        <li><a class="dropdown-item" href="{% url 'prescription_new' %}?encounter={{ open_encounter.pk }}">Prescribe</a></li>
-        <li><a class="dropdown-item" href="{% url 'lab_new' %}?encounter={{ open_encounter.pk }}">Order lab test</a></li>
-        <li><a class="dropdown-item" href="{% url 'referral_new' %}?encounter={{ open_encounter.pk }}">Refer</a></li>
-        <li><a class="dropdown-item" href="{% url 'admission_new' %}?encounter={{ open_encounter.pk }}">Admit</a></li>
+        <li><a class="dropdown-item" href="{% url 'network_specialists' %}?encounter={{ open_encounter.pk }}">Find a specialist</a></li>
+        <li><button class="dropdown-item" data-drawer="{% url 'referral_new' %}?encounter={{ open_encounter.pk }}" data-title="Referral">Refer</button></li>
+        <li><button class="dropdown-item" data-drawer="{% url 'admission_new' %}?encounter={{ open_encounter.pk }}" data-title="Admit patient">Admit</button></li>
         {% endif %}
       </ul>
     </div>
@@ -42,7 +47,7 @@
   <i class="bi bi-exclamation-triangle-fill"></i>
   {% if allergies %}<b>Allergies</b>{% for a in allergies %}{% if a.status == 'active' %}<span class="tag">{{ a.substance }} · {{ a.severity }}</span>{% endif %}{% endfor %}
   {% else %}<b>No allergies documented.</b> This does not mean the patient has none. Ask and record before prescribing.{% endif %}
-  <a class="ms-auto small fw-semibold" href="{% url 'allergy_new' p.pk %}" style="color:inherit">Record allergy</a>
+  <button class="ms-auto small fw-semibold linklike" data-drawer="{% url 'allergy_new' p.pk %}" data-title="Record allergy" style="color:inherit">Record allergy</button>
 </div>
 {% endwith %}
 
@@ -53,14 +58,15 @@
       <button data-tab="visits" role="tab">Visits<span class="n">{{ encounters|length }}</span></button>
       <button data-tab="meds" role="tab">Prescriptions<span class="n">{{ prescriptions|length }}</span></button>
       <button data-tab="labs" role="tab">Lab requests<span class="n">{{ lab_reqs|length }}</span></button>
+      <button data-tab="imaging" role="tab">Imaging<span class="n">{{ imaging|length }}</span></button>
       <button data-tab="care" role="tab">Referrals &amp; stays</button>
       <button data-tab="forms" role="tab">Forms<span class="n">{{ submissions|length }}</span></button>
     </div>
 
     <div class="tab-pane" data-pane="timeline">
-      <div class="tl-legend"><span style="--k:var(--teal)">Visit</span><span style="--k:var(--amber)">Prescription</span><span style="--k:var(--indigo)">Lab</span><span style="--k:var(--plum)">Referral</span><span style="--k:var(--red)">Admission</span></div>
+      <div class="tl-legend"><span style="--k:#0E7490">Imaging</span><span style="--k:var(--teal)">Visit</span><span style="--k:var(--amber)">Prescription</span><span style="--k:var(--indigo)">Lab</span><span style="--k:var(--plum)">Referral</span><span style="--k:var(--red)">Admission</span></div>
       {% if timeline %}
-      <ul class="timeline">
+      <ul class="timeline scroll-y">
         {% for t in timeline %}
         <li class="tl-item {{ t.kind }}">
           <div class="t">{% if t.url %}<a href="{{ t.url }}">{{ t.title }}</a>{% else %}{{ t.title }}{% endif %}{% if t.flag %} <span class="tag red">Abnormal</span>{% endif %}</div>
@@ -79,18 +85,33 @@
     </div>
 
     <div class="tab-pane" data-pane="meds">
+      {% if open_encounter %}<button class="btn btn-sm btn-primary mb-3" data-drawer="{% url 'prescription_new' %}?encounter={{ open_encounter.pk }}" data-title="New prescription"><i class="bi bi-plus-lg"></i>Prescribe</button>{% endif %}
       {% for x in prescriptions %}
-      <div class="rx-card"><div class="d-flex gap-2 align-items-center"><b>{{ x.number }}</b><span class="small muted">{{ x.created_at|date:'j M Y' }}</span><span class="tag {{ x.state|tone }} ms-auto">{{ x.get_state_display }}</span></div>
-        <ol class="rx-items">{% for i in x.items.all %}<li><span class="med">{{ i.medication }}</span><span class="dir">{{ i.directions }}</span><span class="qty">× {{ i.quantity }}</span></li>{% endfor %}</ol></div>
+      <a class="rx-card linkcard" href="{% url 'prescription_detail' x.pk %}"><div class="d-flex gap-2 align-items-center"><b>{{ x.number }}</b><span class="small muted">{{ x.created_at|date:'j M Y' }}</span><span class="tag {{ x.state|tone }} ms-auto">{{ x.get_state_display }}</span></div>
+        <ol class="rx-items">{% for i in x.items.all %}<li><span class="med">{{ i.medication }}</span><span class="dir">{{ i.directions }}</span><span class="qty">× {{ i.quantity }}</span>{% if i.availability == 'unavailable' %} <span class="tag red">Not available</span>{% elif i.availability == 'ordered' %} <span class="tag indigo">Ordered</span>{% endif %}</li>{% endfor %}</ol></a>
       {% empty %}<div class="empty">No prescriptions.</div>{% endfor %}
     </div>
 
     <div class="tab-pane" data-pane="labs">
-      <a class="btn btn-sm btn-ink mb-3" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-person-arms-up"></i>Open body map &amp; trends</a>
+      <div class="d-flex gap-2 mb-3">{% if open_encounter %}<button class="btn btn-sm btn-primary" data-drawer="{% url 'lab_new' %}?encounter={{ open_encounter.pk }}" data-title="New lab request"><i class="bi bi-plus-lg"></i>Order lab tests</button>{% endif %}<a class="btn btn-sm btn-ink" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-person-arms-up"></i>Open body map &amp; trends</a></div>
       {% for r in lab_reqs %}
-      <div class="req-mini"><div class="d-flex gap-2 align-items-center mb-1"><b>{{ r.number }}</b><span class="small muted">{{ r.created_at|date:'j M Y H:i' }}</span>{% if r.priority != 'routine' %}<span class="tag {% if r.priority == 'stat' %}red{% else %}amber{% endif %}">{{ r.get_priority_display }}</span>{% endif %}<span class="tag {{ r.stage|tone }} ms-auto">{{ r.stage|title }}</span></div>
-        {% for l in r.orders.all %}<div class="small mb-1"><b>{{ l.test.name }}</b> <span class="muted">· {{ l.get_status_display }}</span>{% if l.values.all %}<div>{% for v in l.values.all %}<span class="vchip {% if v.is_critical %}crit{% elif v.is_abnormal %}abn{% endif %}" title="Ref {{ v.parameter.range_label }}">{{ v.parameter.name }} <b>{{ v.display }}</b> {{ v.parameter.unit }}</span>{% endfor %}</div>{% endif %}</div>{% endfor %}</div>
+      <a class="req-mini linkcard" href="{% url 'lab_request_detail' r.pk %}"><div class="d-flex gap-2 align-items-center mb-1"><b>{{ r.number }}</b><span class="small muted">{{ r.created_at|date:'j M Y H:i' }}</span>{% if r.priority != 'routine' %}<span class="tag {% if r.priority == 'stat' %}red{% else %}amber{% endif %}">{{ r.get_priority_display }}</span>{% endif %}<span class="tag {{ r.stage|tone }} ms-auto">{{ r.stage|title }}</span></div>
+        {% for l in r.orders.all %}<div class="small mb-1"><b>{{ l.test.name }}</b> <span class="muted">· {{ l.get_status_display }}</span>{% if l.values.all %}<div>{% for v in l.values.all %}<span class="vchip {% if v.is_critical %}crit{% elif v.is_abnormal %}abn{% endif %}" title="Ref {{ v.parameter.range_label }}">{{ v.parameter.name }} <b>{{ v.display }}</b> {{ v.parameter.unit }}</span>{% endfor %}</div>{% endif %}</div>{% endfor %}</a>
       {% empty %}<div class="empty">No lab requests.</div>{% endfor %}
+    </div>
+
+    <div class="tab-pane" data-pane="imaging">
+      {% if open_encounter %}<button class="btn btn-sm btn-ink mb-3" data-drawer="{% url 'imaging_new' %}?encounter={{ open_encounter.pk }}" data-title="Imaging request"><i class="bi bi-plus-lg"></i>Request imaging</button>{% endif %}
+      <div class="img-grid scroll-y">
+        {% for o in imaging %}
+        <a class="img-tile" href="{% url 'imaging_detail' o.pk %}">
+          {% with first=o.images.all|first %}{% if first %}<img src="{% url 'imaging_file' first.pk %}" alt="{{ o.region }}" loading="lazy">{% else %}<div class="noimg"><i class="bi bi-hourglass-split"></i></div>{% endif %}{% endwith %}
+          <div><span class="mod mod-{{ o.modality }}">{{ o.get_modality_display }}</span> <b>{{ o.region }}</b>{% if o.abnormal %} <span class="tag red">Abnormal</span>{% endif %}
+            <div class="small muted">{{ o.number }} · {{ o.get_status_display }} · {{ o.created_at|date:'j M Y' }}</div>
+            {% if o.impression %}<div class="small">{{ o.impression|truncatechars:80 }}</div>{% endif %}</div>
+        </a>
+        {% empty %}<div class="empty"><i class="bi bi-radioactive"></i>No imaging yet.</div>{% endfor %}
+      </div>
     </div>
 
     <div class="tab-pane" data-pane="care">
@@ -128,6 +149,7 @@
   </section>
 
   <div class="stack">
+    {% include 'hospital/_similar.html' with patient_id=p.pk %}
     <section class="panel">
       <div class="panel-head"><h2>Latest vitals</h2>{% if vitals_at %}<span class="hint">{{ vitals_at|date:'j M, H:i' }}</span>{% endif %}</div>
       {% if vitals %}<div class="vitals">{% for label, unit, val in vitals %}<div class="vital"><span>{{ label }}</span><b>{{ val }}</b><small>{{ unit }}</small></div>{% endfor %}</div>

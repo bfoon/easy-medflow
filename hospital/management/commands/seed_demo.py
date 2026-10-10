@@ -12,7 +12,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from hospital.models import (LabRequest, PrescriptionItem, LabResultValue, Admission, Allergy, Attendance, AuditEvent, Bed, Condition, Department, Encounter,
+from hospital.models import (Bed, Admission, FormDefinition, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingImage, ImagingOrder, LabRequest, PrescriptionItem, LabResultValue, Admission, Allergy, Attendance, AuditEvent, Bed, Condition, Department, Encounter,
                              FormDefinition, FormSubmission, LabOrder, LabTest, Medication, Patient, Prescription,
                              QueueTicket, Referral, StaffProfile, StockBatch, WorkflowDefinition, WorkflowRun)
 from hospital.services import advance_workflow, group_orphan_lab_orders, sign_document
@@ -42,7 +42,7 @@ RX = {
 STAFF = [('dr.jallow', 'Fatou', 'Jallow', 'doctor', 'General Medicine'), ('dr.ceesay', 'Lamin', 'Ceesay', 'doctor', 'Emergency'),
          ('nurse.bah', 'Isatou', 'Bah', 'nurse', 'Outpatient'), ('reception.sowe', 'Modou', 'Sowe', 'reception', 'Outpatient'),
          ('lab.touray', 'Awa', 'Touray', 'lab', 'Laboratory'), ('pharm.njie', 'Ebrima', 'Njie', 'pharmacy', 'Pharmacy'),
-         ('manager.camara', 'Mariama', 'Camara', 'management', None)]
+         ('manager.camara', 'Mariama', 'Camara', 'management', None), ('radiology.darboe', 'Alieu', 'Darboe', 'radiology', 'Radiology')]
 
 
 class Command(BaseCommand):
@@ -67,9 +67,10 @@ class Command(BaseCommand):
         with transaction.atomic():
             self.seed(o)
         self.stdout.write(self.style.SUCCESS(
-            f"Demo data created. Staff logins (password: {o['password']}): " + ', '.join(s[0] for s in STAFF)))
+            f"Demo data created. Staff logins (password: {o['password']}): " + ', '.join(s[0] for s in STAFF) + ', partner.kotu (partner portal)'))
 
     def seed(self, o):
+        opts = o
         U = get_user_model()
         now = timezone.now()
         depts = {d.name: d for d in Department.objects.all()}
@@ -240,7 +241,7 @@ class Command(BaseCommand):
             elif n == 0:
                 sign_document('form', s, doctor, 'Reviewed and signed')
             audit(nurse, 'submit_form', f'form_submission:{s.pk}', now - timedelta(minutes=30 + n * 7))
-        self.structured_results(now, doctor, lab, depts, tests, staff)
+        self.structured_results(now, doctor, lab, depts, tests, staff, opts)
         audit(pharm, 'dispense', 'prescription:1', now - timedelta(minutes=12))
         audit(lab, 'lab_update', 'lab_order:1', now - timedelta(minutes=8))
 
@@ -275,7 +276,7 @@ class Command(BaseCommand):
         order.performed_by = tech
         order.save(update_fields=['abnormal', 'result', 'performed_by'])
 
-    def structured_results(self, now, doctor, lab, depts, tests, staff):
+    def structured_results(self, now, doctor, lab, depts, tests, staff, opts=None):
         meds = {m.name: m for m in Medication.objects.all()}
         for o in LabOrder.objects.filter(status__in=['resulted', 'verified']).select_related('test', 'encounter__patient'):
             self.fill(o, lab)
@@ -341,6 +342,56 @@ class Command(BaseCommand):
         self.add_items(rx, [('Paracetamol', '500 mg', 2, 'PRN', 2, 'For pain; not more than 8 tablets in 24 hours'),
                             ('Amlodipine', '5 mg', 1, 'OD', 30, 'Continue usual dose'), ('Metformin', '500 mg', 1, 'BD', 30, 'Withhold if fasting for procedures')], meds)
         self.featured = p
+        self.outcomes_and_imaging(now, doctor, staff, p, now_e, depts)
+        self.network(now, doctor, staff, p, now_e, opts)
+        self.bed_history(now, doctor, depts)
+
+    def outcomes_and_imaging(self, now, doctor, staff, featured, featured_enc, depts):
+        from django.core.files.base import ContentFile
+        from hospital import demo_images
+        # Outcomes for completed visits. Most courses work; some don't, so the comparisons have something to show.
+        weights = {'resolved': 70, 'improved': 20, 'no_change': 7, 'worsened': 3}
+        for e in Encounter.objects.filter(status='completed', outcome=''):
+            w = dict(weights)
+            if 'diabetes' in e.diagnosis.lower():
+                w = {'improved': 70, 'no_change': 25, 'worsened': 5}
+            meds = {i.medication.name for rx in e.prescriptions.all() for i in rx.items.all()}
+            if 'infection' in e.diagnosis.lower() and 'Amoxicillin' not in meds:
+                w = {'resolved': 45, 'improved': 25, 'no_change': 25, 'worsened': 5}
+            e.outcome = random.choices(list(w), weights=list(w.values()))[0]; e.save(update_fields=['outcome'])
+        # An alternative regimen for respiratory infections (paracetamol alone) so two approaches can be compared
+        for e in Encounter.objects.filter(status='completed', diagnosis__icontains='respiratory')[::2]:
+            for rx in e.prescriptions.all():
+                rx.items.filter(medication__name='Amoxicillin').delete()
+
+        rad = staff.get('radiology', doctor)
+        def study(enc, modality, region, system, status, png=None, caption='', impression='', findings='', measurements=None, abnormal=False, prio='routine', q='', hours=2):
+            o = ImagingOrder.objects.create(encounter=enc, modality=modality, region=region, body_system=system, status=status, priority=prio, clinical_question=q,
+                                            requested_by=doctor, performed_by=rad if status != 'requested' else None, findings=findings, impression=impression,
+                                            measurements=measurements or [], abnormal=abnormal, reported_by=rad if status == 'reported' else None,
+                                            reported_at=now - timedelta(hours=hours - 1) if status == 'reported' else None)
+            ImagingOrder.objects.filter(pk=o.pk).update(created_at=now - timedelta(hours=hours))
+            if png:
+                ImagingImage.objects.create(order=o, file=ContentFile(png, name=f'demo-{modality}.png'), caption=caption, uploaded_by=rad)
+            return o
+        study(featured_enc, 'xray', 'Chest PA', 'lungs', 'reported', demo_images.chest_xray(), 'PA view', q='Chest pain, breathless',
+              findings='Enlarged cardiac silhouette. Upper-lobe venous diversion with mild interstitial markings. No effusion or pneumothorax.',
+              impression='Cardiomegaly with mild pulmonary venous congestion.', abnormal=True,
+              measurements=[{'label': 'Cardiothoracic ratio', 'value': '0.58', 'unit': '', 'abnormal': True}], hours=3)
+        study(featured_enc, 'ecg', 'Heart · 12-lead', 'heart', 'reported', demo_images.ecg_strip(), 'Lead V3', q='Chest pain', prio='stat',
+              findings='Sinus tachycardia 104/min. ST elevation in V2–V4.', impression='Anterior ST elevation. Urgent cardiology review.', abnormal=True,
+              measurements=[{'label': 'Heart rate', 'value': '104', 'unit': '/min', 'abnormal': True}, {'label': 'QTc', 'value': '438', 'unit': 'ms', 'abnormal': False}], hours=5)
+        study(featured_enc, 'echo', 'Heart', 'heart', 'reported', demo_images.echo(), 'Apical 4-chamber', prio='urgent',
+              findings='Dilated left ventricle with anterior wall hypokinesia.', impression='Reduced left ventricular function.', abnormal=True,
+              measurements=[{'label': 'Ejection fraction', 'value': '38', 'unit': '%', 'abnormal': True}, {'label': 'LV end-diastolic diameter', 'value': '59', 'unit': 'mm', 'abnormal': True}], hours=2)
+        others = list(Encounter.objects.filter(status='open').exclude(patient=featured).select_related('patient')[:4])
+        if others:
+            study(others[0], 'xray', 'Left knee', 'bone', 'reported', demo_images.knee_xray(), 'AP view', impression='No fracture or joint effusion.',
+                  findings='Normal alignment. Joint spaces preserved.', q='Fall, knee pain', hours=4)
+        if len(others) > 1:
+            study(others[1], 'ultrasound', 'Abdomen', 'liver', 'requested', q='Right upper quadrant pain', hours=1)
+        if len(others) > 2:
+            study(others[2], 'ct', 'Head', 'brain', 'requested', q='Head injury, drowsy', prio='stat', hours=0)
 
     @staticmethod
     def add_items(rx, lines, meds):
@@ -348,3 +399,102 @@ class Command(BaseCommand):
             qty = PrescriptionItem.calculate_quantity(per, freq, days) or per * 8
             PrescriptionItem.objects.create(prescription=rx, medication=meds[name], dose=dose, units_per_dose=per, frequency=freq,
                                             duration_days=days, quantity=qty, instructions=note, sort_order=i)
+
+
+    # ------------------------------------------------------------------ referral network (all names fictional)
+    def network(self, now, doctor, staff, featured, featured_enc, opts):
+        from hospital.views import PREOP_CHECKLIST
+        F = [('Kotu Heart Centre', 'clinic', 'Kotu', '+220 446 1200', 'Cath lab, Echocardiography, Cardiac ICU, Stress testing'),
+             ('Banjul Regional Teaching Hospital', 'hospital', 'Banjul', '+220 422 8000', 'ICU, General surgery, Neurosurgery, CT, MRI, Dialysis'),
+             ('Riverside Orthopaedic & Spine Clinic', 'clinic', 'Bakau', '+220 449 3311', 'Orthopaedic theatre, Physiotherapy, X-ray'),
+             ('Atlantic Diagnostics', 'diagnostic', 'Kololi', '+220 446 7788', 'MRI, CT, Ultrasound, Mammography'),
+             ('Brikama Mother & Child Centre', 'maternity', 'Brikama', '+220 448 2020', 'Obstetric theatre, NICU, Ultrasound'),
+             ('Serene Rehabilitation Centre', 'rehab', 'Lamin', '+220 445 9090', 'Physiotherapy, Speech therapy, Occupational therapy')]
+        fac = {}
+        for name, kind, loc, phone, caps in F:
+            fac[name] = NetworkFacility.objects.create(name=name, kind=kind, location=loc, phone=phone, capabilities=caps,
+                                                       email=name.lower().split()[0] + '@network.example')
+        S = [('Kotu Heart Centre', 'Aminata Bojang', 'Interventional cardiology', 4.9, 142, True, 'Coronary angiography and stenting; 15 years in acute coronary care.'),
+             ('Kotu Heart Centre', 'Pa Modou Saine', 'Cardiology', 4.6, 88, True, 'Heart failure and echocardiography.'),
+             ('Kotu Heart Centre', 'Fatoumata Kinteh', 'Cardiothoracic surgery', 4.7, 41, False, 'Valve and bypass surgery.'),
+             ('Banjul Regional Teaching Hospital', 'Lamin Jatta', 'Nephrology', 4.5, 63, True, 'Acute kidney injury and dialysis.'),
+             ('Banjul Regional Teaching Hospital', 'Ndey Secka', 'Neurology', 4.4, 57, True, 'Stroke and epilepsy.'),
+             ('Banjul Regional Teaching Hospital', 'Ousman Fofana', 'Neurosurgery', 4.2, 22, False, 'Head and spine trauma.'),
+             ('Banjul Regional Teaching Hospital', 'Haddy Nyang', 'General surgery', 4.3, 104, False, 'Abdominal and emergency surgery.'),
+             ('Banjul Regional Teaching Hospital', 'Momodou Colley', 'Endocrinology', 4.8, 76, True, 'Diabetes and thyroid disease.'),
+             ('Riverside Orthopaedic & Spine Clinic', 'Kebba Ceesay', 'Orthopaedics', 4.6, 95, False, 'Fractures and joint replacement.'),
+             ('Riverside Orthopaedic & Spine Clinic', 'Isatou Mbye', 'Spine surgery', 4.1, 18, False, 'Degenerative spine disease.'),
+             ('Atlantic Diagnostics', 'Yusupha Darboe', 'Radiology', 4.5, 120, True, 'MRI and CT reporting.'),
+             ('Atlantic Diagnostics', 'Sainabou Touray', 'Breast imaging', 4.7, 34, False, 'Mammography and breast ultrasound.'),
+             ('Brikama Mother & Child Centre', 'Mariama Drammeh', 'Obstetrics & gynaecology', 4.8, 160, False, 'High-risk pregnancy.'),
+             ('Brikama Mother & Child Centre', 'Bakary Sanneh', 'Neonatology', 4.6, 49, False, 'Newborn intensive care.'),
+             ('Brikama Mother & Child Centre', 'Kaddy Jallow', 'Paediatrics', 4.4, 71, True, 'General paediatrics.'),
+             ('Serene Rehabilitation Centre', 'Ebrima Sowe', 'Physiotherapy', 4.3, 39, True, 'Post-surgical and stroke rehabilitation.'),
+             ('Banjul Regional Teaching Hospital', 'Awa Ceesay', 'Ophthalmology', 3.9, 12, False, 'Cataract and glaucoma.')]
+        specs = []
+        day0 = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
+        for fname, name, spec, rating, reviews, tele, bio in S:
+            sp = Specialist.objects.create(facility=fac[fname], name=name, speciality=spec, rating=rating, reviews=reviews, telehealth=tele, bio=bio,
+                                           languages='English, Wolof, Mandinka', consult_fee=random.choice([0, 500, 750, 1000]))
+            specs.append(sp)
+            for d in range(1, 15):
+                day = day0 + timedelta(days=d)
+                if day.weekday() >= 5 or random.random() < .25:
+                    continue
+                for h in sorted(random.sample([9, 9.5, 10, 10.5, 11, 14, 14.5, 15, 15.5, 16], random.randint(2, 6))):
+                    SpecialistSlot.objects.create(specialist=sp, start=day + timedelta(hours=h),
+                                                  mode='video' if tele and random.random() < .3 else 'in_person')
+        partner = get_user_model().objects.create_user('partner.kotu', password=opts['password'], first_name='Kotu', last_name='Heart Centre')
+        StaffProfile.objects.create(user=partner, role='partner', facility=fac['Kotu Heart Centre'])
+
+        # some slots already booked by other referrals, so the calendars look real
+        others = list(Encounter.objects.exclude(patient=featured).select_related('patient')[:40])
+        for sp in specs:
+            for sl in random.sample(list(sp.slots.all()), min(2, sp.slots.count())):
+                e = random.choice(others)
+                Referral.objects.create(encounter=e, facility=sp.facility, specialist=sp, slot=sl, destination=sp.facility.name, speciality=sp.speciality,
+                                        reason='Specialist opinion requested.', status='sent', sent_at=now, consent_to_share=True, contact=sp.facility.phone)
+
+        # featured patient: coronary angiography at the heart centre, with a shared pre-procedure checklist
+        cardio = specs[0]
+        slot = cardio.slots.filter(start__gte=now, referral__isnull=True, mode='in_person').order_by('start').first()  # a procedure needs an in-person slot
+        ref = Referral.objects.create(encounter=featured_enc, kind='operation', facility=cardio.facility, specialist=cardio, slot=slot, destination=cardio.facility.name,
+                                      speciality=cardio.speciality, urgency='emergency', status='accepted', sent_at=now - timedelta(hours=2), consent_to_share=True,
+                                      accepted_by='Dr Aminata Bojang', contact=cardio.facility.phone, planned_date=timezone.localtime(slot.start).date() if slot else timezone.localdate() + timedelta(days=1),
+                                      reason='58-year-old diabetic man with 2 h of central chest pain, troponin rising 48 → 96 → 182 ng/L, anterior ST elevation on ECG, '
+                                             'EF 38% on echo. Potassium 6.4 being treated. Request urgent coronary angiography and possible PCI.')
+        tests = {t.code: t for t in LabTest.objects.all()}
+        consent = FormDefinition.objects.filter(slug='procedure-consent').first()
+        for side, kind, title, code in PREOP_CHECKLIST:
+            ReferralTask.objects.create(referral=ref, requested_by_side='receiver' if side == 'sender' else 'sender', assigned_to_side=side, kind=kind, title=title,
+                                        lab_test=tests.get(code), form=consent if kind == 'form' else None, due=ref.planned_date, created_by=doctor if side == 'receiver' else partner)
+        done = {'Full blood count': ('Hb 14.2, WBC 12.6, platelets 248', doctor), 'Renal function': ('Creatinine 141, K 6.4: treated, repeat due 18:00', doctor),
+                'Theatre / procedure slot confirmed': ('Cath lab booked for the appointment slot', partner)}
+        for t in ref.tasks.all():
+            if t.title in done:
+                t.status, t.response, t.completed_by, t.completed_at = 'done', done[t.title][0], done[t.title][1], now - timedelta(minutes=40)
+                t.save()
+        ReferralTask.objects.create(referral=ref, requested_by_side='receiver', assigned_to_side='sender', kind='document', title='Send the latest ECG and echo report',
+                                    created_by=partner, status='done', response='Both visible in the shared record.', completed_by=doctor, completed_at=now - timedelta(minutes=50))
+        ReferralTask.objects.create(referral=ref, requested_by_side='receiver', assigned_to_side='sender', kind='test', title='Repeat potassium before transfer',
+                                    lab_test=tests.get('RFT'), due=timezone.localdate(), created_by=partner, details='Must be below 5.5 before the procedure.')
+        Referral.objects.create(encounter=featured_enc, facility=fac['Banjul Regional Teaching Hospital'], specialist=specs[7], destination='Banjul Regional Teaching Hospital',
+                                speciality='Endocrinology', reason='Diabetes review after cardiac event.', status='draft', consent_to_share=False)
+
+    def bed_history(self, now, doctor, depts):
+        """A month of past stays so each bed's history, occupancy and turnover have something to show."""
+        pts = list(Patient.objects.exclude(first_name='Babucarr')[:30])
+        for b in Bed.objects.all():
+            t = now - timedelta(days=30)
+            while True:
+                t += timedelta(hours=random.randint(6, 60))
+                stay = timedelta(hours=random.randint(30, 150))
+                if t + stay > now - timedelta(days=1):
+                    break
+                p = random.choice(pts)
+                e = Encounter.objects.create(patient=p, clinician=doctor, department=depts['General Medicine'], reason='Inpatient stay',
+                                             diagnosis=random.choice(['Severe malaria', 'Pneumonia', 'Dehydration', 'Post-operative care', 'Pre-eclampsia']),
+                                             status='completed', outcome=random.choice(['resolved', 'improved', 'improved']), completed_at=t + stay)
+                a = Admission.objects.create(encounter=e, bed=b)
+                Admission.objects.filter(pk=a.pk).update(admitted_at=t, discharged_at=t + stay)
+                t += stay

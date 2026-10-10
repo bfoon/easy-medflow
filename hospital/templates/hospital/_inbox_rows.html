@@ -1,0 +1,9 @@
+{% load medflow %}<div class="scroll-y">{% for r in rows %}
+<a class="sp-row" href="{% url 'referral_detail' r.pk %}">
+  <span class="avatar {{ r.encounter.patient.sex }}">{{ r.encounter.patient.initials }}</span>
+  <span class="flex-fill"><b>{{ r.encounter.patient.full_name }}</b> <span class="small muted">{{ r.number }}</span><br><span class="small">{{ r.get_kind_display }} · {{ r.reason|truncatechars:80 }}</span></span>
+  <span class="hide-sm small">{% if r.slot %}<i class="bi bi-calendar-check"></i> {{ r.slot.start|date:'D j M H:i' }}{% elif r.planned_date %}<i class="bi bi-calendar"></i> {{ r.planned_date|date:'j M' }}{% endif %}</span>
+  <span class="text-nowrap">{% if r.open_for_me %}<span class="tag amber">{{ r.open_for_me }} for you</span>{% endif %} {% if r.open_for_them %}<span class="tag">{{ r.open_for_them }} awaiting them</span>{% endif %}</span>
+  <span class="tag {{ r.urgency|tone }}">{{ r.get_urgency_display }}</span><span class="tag {{ r.status|tone }}">{{ r.get_status_display }}</span>
+</a>
+{% empty %}<div class="empty">Nothing here.</div>{% endfor %}</div>

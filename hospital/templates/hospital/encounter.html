@@ -4,11 +4,21 @@
 {% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }} · {{ e.department|default:'No department' }} · {{ e.created_at|date:'j M Y, H:i' }} · {{ e.clinician|display_name }} <span class="tag {{ e.status|tone }} ms-1">{{ e.get_status_display }}</span></p>{% endblock %}
 {% block actions %}
 {% if e.status == 'open' %}
-  <a class="btn btn-ghost" href="{% url 'lab_new' %}?encounter={{ e.pk }}&next={{ request.path|urlencode }}"><i class="bi bi-droplet-half"></i>Lab request</a>
-  <a class="btn btn-ghost" href="{% url 'prescription_new' %}?encounter={{ e.pk }}&next={{ request.path|urlencode }}"><i class="bi bi-capsule"></i>Prescribe</a>
-  <a class="btn btn-ghost" href="{% url 'referral_new' %}?encounter={{ e.pk }}"><i class="bi bi-signpost-split"></i>Refer</a>
-  <a class="btn btn-ghost" href="{% url 'admission_new' %}?encounter={{ e.pk }}"><i class="bi bi-hospital"></i>Admit</a>
-  <form method="post" action="{% url 'encounter_complete' e.pk %}" data-confirm="Complete this visit? Notes become read-only in this view.">{% csrf_token %}<button class="btn btn-primary"><i class="bi bi-check2-circle"></i>Complete visit</button></form>
+  <button class="btn btn-ghost" data-drawer="{% url 'lab_new' %}?encounter={{ e.pk }}" data-title="New lab request"><i class="bi bi-droplet-half"></i>Lab tests</button>
+  <button class="btn btn-ghost" data-drawer="{% url 'prescription_new' %}?encounter={{ e.pk }}" data-title="New prescription"><i class="bi bi-capsule"></i>Prescribe</button>
+  <button class="btn btn-ghost" data-drawer="{% url 'imaging_new' %}?encounter={{ e.pk }}" data-title="Imaging request"><i class="bi bi-radioactive"></i>Imaging</button>
+  <a class="btn btn-ghost" href="{% url 'network_specialists' %}?encounter={{ e.pk }}"><i class="bi bi-person-badge"></i>Specialist</a>
+  <button class="btn btn-ghost" data-drawer="{% url 'referral_new' %}?encounter={{ e.pk }}" data-title="Referral"><i class="bi bi-signpost-split"></i>Refer</button>
+  <button class="btn btn-ghost" data-drawer="{% url 'admission_new' %}?encounter={{ e.pk }}" data-title="Admit patient"><i class="bi bi-hospital"></i>Admit</button>
+  <details class="complete-pop"><summary class="btn btn-primary"><i class="bi bi-check2-circle"></i>Complete visit</summary>
+    <form method="post" action="{% url 'encounter_complete' e.pk %}" class="pop-card">{% csrf_token %}
+      <label class="form-label" for="outcome">Outcome</label>
+      <select class="form-select mb-2" id="outcome" name="outcome" required><option value="">Choose…</option>{% for v, l in outcomes %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select>
+      <input class="form-control mb-2" name="outcome_notes" maxlength="300" placeholder="Note (optional)">
+      <button class="btn btn-primary w-100">Complete visit</button>
+      <p class="form-text mb-0 mt-2">Outcomes feed the anonymous “what worked” comparisons.</p>
+    </form></details>
+{% else %}{% if e.outcome %}<span class="tag {% if e.outcome == 'resolved' or e.outcome == 'improved' %}teal{% elif e.outcome == 'worsened' %}red{% endif %}">Outcome: {{ e.get_outcome_display }}</span>{% endif %}
 {% endif %}
 {% endblock %}
 {% block content %}
@@ -31,7 +41,7 @@
       <div class="panel-head"><h2>Prescriptions</h2><a class="more" href="{% url 'pharmacy' %}">Pharmacy</a></div>
       {% for x, chk in prescriptions %}
       <div class="rx-card">
-        <div class="d-flex gap-2 align-items-center"><b>{{ x.number }}</b><span class="tag {{ x.state|tone }} ms-auto">{{ x.get_state_display }}</span></div>
+        <div class="d-flex gap-2 align-items-center"><a href="{% url 'prescription_detail' x.pk %}"><b>{{ x.number }}</b></a><span class="tag {{ x.state|tone }} ms-auto">{{ x.get_state_display }}</span></div>
         <ol class="rx-items">{% for line in chk.lines %}<li class="{% if line.possible_allergy_matches %}danger{% endif %}"><span class="med">{{ line.item.medication }}</span><span class="dir">{{ line.item.directions }}</span><span class="qty">× {{ line.item.quantity }}</span>{% if line.possible_allergy_matches %}<span class="tag red">Possible allergy</span>{% endif %}</li>{% endfor %}</ol>
         {% if chk.any_allergy %}<div class="alert-mf danger mb-2"><i class="bi bi-exclamation-octagon-fill"></i><div>Possible allergy match. Override: {{ x.override_reason|default:'none documented' }}</div></div>{% endif %}
         {% if x.signed_at %}<span class="stamp"><i class="bi bi-patch-check-fill"></i>Signed by {{ x.signed_by|display_name }}</span>{% endif %}
@@ -48,10 +58,15 @@
     <section class="panel">
       <div class="panel-head"><h2>Lab orders</h2><a class="more" href="{% url 'patient_labs' p.pk %}">Insights</a></div>
       {% for r in lab_reqs %}
-      <div class="req-mini"><div class="d-flex gap-2 align-items-center mb-1"><b>{{ r.number }}</b>{% if r.priority != 'routine' %}<span class="tag {% if r.priority == 'stat' %}red{% else %}amber{% endif %}">{{ r.get_priority_display }}</span>{% endif %}<span class="tag {{ r.stage|tone }} ms-auto">{{ r.stage|title }}</span></div>
+      <div class="req-mini"><div class="d-flex gap-2 align-items-center mb-1"><a href="{% url 'lab_request_detail' r.pk %}"><b>{{ r.number }}</b></a>{% if r.priority != 'routine' %}<span class="tag {% if r.priority == 'stat' %}red{% else %}amber{% endif %}">{{ r.get_priority_display }}</span>{% endif %}<span class="tag {{ r.stage|tone }} ms-auto">{{ r.stage|title }}</span></div>
         {% for l in r.orders.all %}<div class="small mb-1"><b>{{ l.test.name }}</b> <span class="muted">· {{ l.get_status_display }}</span>{% if l.values.all %}<div>{% for v in l.values.all %}<span class="vchip {% if v.is_critical %}crit{% elif v.is_abnormal %}abn{% endif %}">{{ v.parameter.name }} <b>{{ v.display }}</b> {{ v.parameter.unit }}</span>{% endfor %}</div>{% endif %}</div>{% endfor %}</div>
       {% empty %}<p class="muted small mb-0">None ordered.</p>{% endfor %}
     </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Imaging</h2></div>
+      <ul class="plain ruled">{% for o in imaging %}<li class="d-flex gap-2 align-items-center"><a href="{% url 'imaging_detail' o.pk %}"><span class="mod mod-{{ o.modality }}">{{ o.get_modality_display }}</span> {{ o.region }}</a>{% if o.abnormal %}<span class="tag red">Abnormal</span>{% endif %}<span class="tag ms-auto">{{ o.get_status_display }}</span></li>{% empty %}<li class="muted small">None requested.</li>{% endfor %}</ul>
+    </section>
+    {% include 'hospital/_similar.html' with patient_id=p.pk %}
     <section class="panel">
       <div class="panel-head"><h2>Referrals &amp; admission</h2></div>
       <ul class="plain ruled">

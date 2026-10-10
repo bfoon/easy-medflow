@@ -1,0 +1,13 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Referral inbox{% endblock %}
+{% block heading %}{{ fac.name }}{% endblock %}
+{% block subheading %}<p class="sub">Referrals sent to you through the MedFlow network. Accept them, view the shared record, and ask the referring hospital for tests or forms before the patient arrives.</p>{% endblock %}
+{% block content %}
+<div class="urg-sum mb-4">
+  <div style="--u:var(--amber)"><b>{{ new|length }}</b><span>new referrals</span></div>
+  <div style="--u:var(--teal)"><b>{{ active|length }}</b><span>accepted / in transfer</span></div>
+</div>
+<section class="panel flush mb-3"><div class="panel-head"><h2>New</h2></div>{% include 'hospital/_inbox_rows.html' with rows=new %}</section>
+<section class="panel flush mb-3"><div class="panel-head"><h2>Accepted &amp; in transfer</h2></div>{% include 'hospital/_inbox_rows.html' with rows=active %}</section>
+<section class="panel flush"><div class="panel-head"><h2>Closed</h2></div>{% include 'hospital/_inbox_rows.html' with rows=closed %}</section>
+{% endblock %}

@@ -90,7 +90,7 @@ SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', False)
 SECURE_HSTS_SECONDS = env.int('SECURE_HSTS_SECONDS', default=0)  # set e.g. 31536000 once HTTPS is permanent
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = 'same-origin'
-X_FRAME_OPTIONS = 'DENY'
+X_FRAME_OPTIONS = 'SAMEORIGIN'  # pages may be framed only by MedFlow itself (the slide-out panel); other sites are still blocked
 
 CELERY_BROKER_URL = env('REDIS_URL', default='redis://redis:6379/0')
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL

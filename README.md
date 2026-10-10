@@ -34,6 +34,16 @@ and creates the admin account. Restarts keep your data and skip the demo seed. D
 
 These credentials are for local use only. For real patients use the production stack below.
 
+### Troubleshooting Docker
+
+| Message | Cause and fix |
+| --- | --- |
+| `failed to resolve host 'db'` / `Could not reach the database at db:5432` | The `db` container is not running, or this container is not part of the compose stack. Run `docker compose ps -a` and `docker compose logs db`. Start everything with `docker compose up -d`, and run commands with `docker compose exec web python manage.py …`. In PyCharm use a **Docker Compose** interpreter with service `web`, not a plain Docker interpreter. |
+| `Bind for 127.0.0.1:8000 failed: port is already allocated` | Another program (often a PyCharm run configuration) or an older MedFlow stack uses port 8000. Stop it, or start with `$env:MEDFLOW_PORT=8080; docker compose up -d`. |
+| Running Django directly in PyCharm against the Docker database | Set `POSTGRES_HOST=localhost`, `POSTGRES_PORT=5433`, `POSTGRES_PASSWORD=medflow-dev-password`, `DJANGO_DEBUG=True`. Or use `USE_SQLITE=True` for a local file database. |
+
+After a reboot or a Docker Desktop restart, `web` and `worker` wait up to 90 seconds for the database instead of crashing.
+
 ## Quick start (local, no Docker)
 
 ```bash
@@ -118,6 +128,64 @@ earliest-expiring stock first, and nothing is dispensed if any line is short.
 
 Port 8000 already in use? Start with `MEDFLOW_PORT=8080 docker compose up -d` (PowerShell: `$env:MEDFLOW_PORT=8080; docker compose up -d`).
 
+## Working from the patient page
+
+On a patient's page, **Order lab tests**, **Prescribe**, **Imaging**, allergies, conditions, referrals and admissions
+open in a slide-out panel. Save, and the panel closes and the page refreshes where you were. Every lab request,
+prescription and imaging study opens its own detail page.
+
+**Out-of-stock medicines** (prescription detail page): *Order from supplier* raises a supplier order (Pharmacy →
+Supplier orders); the line is dispensed once the stock is received, and the rest of the prescription can be dispensed
+meanwhile (*partly dispensed*). *Not available · inform patient* records what the patient was told, skips the line
+when dispensing and prints a note for the patient.
+
+## Imaging
+
+X-ray, CT, MRI, ultrasound, ECG, echo, mammogram and fluoroscopy requests, with a worklist for the `radiology` role.
+Upload JPG/PNG/WEBP images (each is checked to be a real image; export DICOM to JPG/PNG first), view them with zoom,
+pan, brightness, contrast and invert, and write a report with measurements. Images are served only to signed-in staff.
+Reported studies appear on the body map (camera badge) and under *Charts & lists*. Demo images are synthetic
+illustrations, labelled as such.
+
+## Organ illustrations and similar cases
+
+In *Lab insights*, opening an organ shows an animated illustration shaped by the patient's results, for example red
+cells drawn from haemoglobin, an irregular heartbeat when potassium is high, or slowed kidney filtering when creatinine
+is raised. Tap a part to learn what it does. These are teaching visuals, not diagnostic images.
+
+*What worked for similar cases* (patient and visit pages) compares completed visits with a similar diagnosis by the
+medicines prescribed and their recorded outcome. Other patients are anonymous (sex and age band only, no names,
+numbers or real dates), and any treatment group with fewer than 3 patients is hidden. The patient's own past visits
+are shown as *This patient* and link to the visit. This is observational data, not evidence. Record an outcome when
+completing a visit so the comparisons stay meaningful.
+
+## Referral and specialist network
+
+**Specialist network** lists partner hospitals, clinics and diagnostic centres and their specialists. Start from
+*Top rated* or search the full list by name, speciality or facility, and sort by rating or soonest availability.
+A specialist's page shows two weeks of slots; click a free slot to open the referral with that slot held for the
+patient (a slot can only be booked once, and it is released if the referral is declined or cancelled). Add
+facilities, specialists and slots under Configuration.
+
+Before a referral is sent to a network facility, the patient's **consent to share records** must be recorded. The
+receiving facility then sees a shared record (allergies, conditions, medicines, recent results and imaging reports);
+every view is logged.
+
+Each referral has **two-way preparation requests**: the receiving facility can ask the referring hospital for a test
+(ordered with one click), a form or a document, and the referring hospital can ask the receiver to book theatre,
+reserve a bed and so on. Operation referrals start with a pre-operation checklist (bloods, group and save, consent,
+fasting, theatre, anaesthetic review) timed to the planned date.
+
+**Partner facilities** sign in with the `partner` role linked to their facility (Configuration → Staff profiles).
+They see only referrals sent to them, never drafts, and the patient record only with consent; nothing else in the
+hospital is visible to them. Demo login: `partner.kotu`.
+
+## Beds
+
+Click any bed on the bed board for its page: the current patient with length of stay, vitals, medicines and pending
+tests, quick actions (prescribe, order tests, discharge), a ward strip to jump between beds, 30-day occupancy,
+average stay, and everyone who has used the bed. Empty beds can be taken out of service with a reason.
+
 ## Modules included
 
 - Patient MRN, demographics, longitudinal encounters, symptoms, assessments, diagnoses, vitals, conditions, allergies, medications, labs, admissions, referrals, structured forms and chart timeline.
@@ -159,7 +227,7 @@ For HTTPS deployments set `SECURE_SSL_REDIRECT=True`, correct `DJANGO_ALLOWED_HO
 ## Development utilities
 
 ```bash
-USE_SQLITE=True python manage.py test hospital   # 20 workflow tests
+USE_SQLITE=True python manage.py test hospital   # 39 workflow tests
 docker compose -f compose.prod.yml logs -f web
 docker compose -f compose.prod.yml exec web python manage.py check --deploy
 ```

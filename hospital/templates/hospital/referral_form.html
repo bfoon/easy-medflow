@@ -1,0 +1,63 @@
+{% extends 'hospital/base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block heading %}{{ title }}{% endblock %}
+{% block subheading %}<p class="sub">Choose a facility and specialist from the network, pick a free slot, and record the patient's consent before their records are shared.</p>{% endblock %}
+{% block content %}
+<form method="post" class="panel form-shell" novalidate id="ref-form" data-slots-url="{% url 'api_specialist_slots' 0 %}">{% csrf_token %}
+  {% for e in form.non_field_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ e }}</div></div>{% endfor %}
+  {{ form.slot_id }}
+  <div class="form-grid">
+    {% with field=form.encounter %}{% include 'hospital/_field.html' with span=1 %}{% endwith %}
+    {% with field=form.kind %}{% include 'hospital/_field.html' %}{% endwith %}
+    {% with field=form.urgency %}{% include 'hospital/_field.html' %}{% endwith %}
+    {% with field=form.facility %}{% include 'hospital/_field.html' %}{% endwith %}
+    {% with field=form.specialist %}{% include 'hospital/_field.html' %}{% endwith %}
+  </div>
+  <div class="field" id="slot-box" hidden>
+    <label class="form-label">Appointment slot <span class="muted small">(optional)</span></label>
+    <div class="slot-pick" id="slot-pick"></div>
+    <div class="form-text" id="slot-note"></div>
+  </div>
+  <div class="form-grid">
+    {% with field=form.speciality %}{% include 'hospital/_field.html' %}{% endwith %}
+    <div id="planned-wrap">{% with field=form.planned_date %}{% include 'hospital/_field.html' %}{% endwith %}</div>
+    {% with field=form.destination %}{% include 'hospital/_field.html' %}{% endwith %}
+    {% with field=form.reason %}{% include 'hospital/_field.html' %}{% endwith %}
+  </div>
+  <div class="consent-box">{% with field=form.consent_to_share %}{% include 'hospital/_field.html' %}{% endwith %}
+    <p class="form-text mb-0">With consent, the receiving facility sees allergies, conditions, medicines, recent results and imaging reports once the referral is sent.</p></div>
+  <div id="op-note" class="alert-mf info mt-3" hidden><i class="bi bi-clipboard2-check"></i><div>An operation referral adds a pre-operation checklist (blood tests, consent, fasting, theatre and anaesthetic booking) shared by both facilities.</div></div>
+  <div class="form-actions">{% with field=form.send_now %}<label class="d-flex gap-2 align-items-center me-auto">{{ field }} {{ field.label }}</label>{% endwith %}
+    <button class="btn btn-primary"><i class="bi bi-send"></i>Save referral</button><a href="javascript:history.back()" class="btn btn-ghost">Cancel</a></div>
+</form>
+{% endblock %}
+{% block scripts %}<script>
+(() => {
+  const f = document.getElementById('ref-form'), fac = f.querySelector('[name="facility"]'), sp = f.querySelector('[name="specialist"]'), slot = f.querySelector('[name="slot_id"]');
+  const kind = f.querySelector('[name="kind"]'), box = document.getElementById('slot-box'), pick = document.getElementById('slot-pick');
+  const allSpec = [...sp.options].map(o => ({v: o.value, t: o.text}));
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  // specialists in the dropdown are labelled "Dr Name · Speciality"; keep only those at the chosen facility (looked up via the slots API)
+  const facOf = {};
+  async function loadSlots() {
+    if (!sp.value) { box.hidden = true; slot.value = ''; return; }
+    const d = await fetch(f.dataset.slotsUrl.replace('/0/', `/${sp.value}/`), {credentials: 'same-origin'}).then(r => r.json());
+    facOf[sp.value] = d.facility;
+    if (!fac.value) fac.value = d.facility;
+    const spec = f.querySelector('[name="speciality"]'); if (!spec.value) spec.value = d.speciality;
+    box.hidden = false;
+    if (!d.slots.length) { pick.innerHTML = ''; document.getElementById('slot-note').textContent = 'No free slots in the next three weeks. The referral can still be sent; the facility will schedule.'; slot.value = ''; return; }
+    let day = '';
+    pick.innerHTML = d.slots.map(s => { const head = s.day !== day ? `<span class="slot-day">${esc(s.label.split(' · ')[0])}</span>` : ''; day = s.day;
+      return `${head}<button type="button" class="slot ${String(s.id) === slot.value ? 'on' : ''}" data-id="${s.id}" title="${esc(s.mode)}">${esc(s.label.split(' · ')[1])}${s.mode === 'Video call' ? ' <i class="bi bi-camera-video"></i>' : ''}</button>`; }).join('');
+    document.getElementById('slot-note').textContent = slot.value ? 'Slot selected. It is held for this patient when you save.' : 'Pick a slot, or leave empty to let the facility schedule.';
+  }
+  pick.addEventListener('click', e => { const b = e.target.closest('.slot'); if (!b) return; slot.value = slot.value === b.dataset.id ? '' : b.dataset.id;
+    pick.querySelectorAll('.slot').forEach(x => x.classList.toggle('on', x.dataset.id === slot.value));
+    document.getElementById('slot-note').textContent = slot.value ? 'Slot selected. It is held for this patient when you save.' : 'Pick a slot, or leave empty to let the facility schedule.'; });
+  sp.addEventListener('change', () => { slot.value = ''; loadSlots(); });
+  fac.addEventListener('change', () => { if (sp.value && facOf[sp.value] && String(facOf[sp.value]) !== fac.value) { sp.value = ''; box.hidden = true; slot.value = ''; } });
+  const op = () => { const isOp = kind.value === 'operation'; document.getElementById('op-note').hidden = !isOp; document.getElementById('planned-wrap').querySelector('label').innerHTML = isOp ? 'Planned operation date <span class="text-danger">*</span>' : 'Planned date'; };
+  kind.addEventListener('change', op); op(); loadSlots();
+})();
+</script>{% endblock %}
