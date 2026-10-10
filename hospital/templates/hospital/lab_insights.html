@@ -1,0 +1,90 @@
+{% extends 'hospital/base.html' %}{% load static medflow %}
+{% block title %}Lab insights · {{ p.full_name }}{% endblock %}
+{% block topbar %}
+<header class="topbar">
+  <div><h1>Lab insights</h1><p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %}{% if pending %} · <span class="tag amber">{{ pending|length }} test{{ pending|length|pluralize }} pending</span>{% endif %}</p></div>
+  <div class="actions">
+    <div class="review" id="review" title="Out-of-range results you have acknowledged">
+      <svg viewBox="0 0 44 44" width="44" height="44"><circle cx="22" cy="22" r="18" class="r-track"/><circle cx="22" cy="22" r="18" class="r-prog" id="r-prog"/></svg>
+      <div><b id="r-text">—</b><span id="r-sub">findings reviewed</span></div>
+    </div>
+    <div class="seg" role="tablist" aria-label="Results view">
+      <button data-view="body" role="tab"><i class="bi bi-person-arms-up"></i>Body map</button>
+      <button data-view="clean" role="tab"><i class="bi bi-bar-chart-line"></i>Charts &amp; lists</button>
+    </div>
+    {% if open_encounter %}<a class="btn btn-primary" href="{% url 'lab_new' %}?encounter={{ open_encounter.pk }}&next={{ request.path|urlencode }}"><i class="bi bi-plus-lg"></i>Order tests</a>{% endif %}
+  </div>
+</header>
+{% endblock %}
+{% block content %}
+<div id="insights" data-ack-url="{% url 'lab_ack' 0 %}" data-view-url="{% url 'set_lab_view' %}" data-initial-view="{{ view }}">
+
+  <!-- ===================== BODY MAP ===================== -->
+  <section class="view view-body" data-pane-view="body">
+    <div class="body-stage panel">
+      <div class="stage-tools">
+        <span class="legend"><span><i style="background:var(--red)"></i>Needs attention</span><span><i style="background:var(--teal)"></i>Within range</span><span><i style="background:#C9D5CF"></i>Not tested</span></span>
+        <button class="btn btn-sm btn-ghost ms-auto" id="zoom-out" hidden><i class="bi bi-zoom-out"></i>Whole body</button>
+      </div>
+      <svg id="body" viewBox="0 0 400 800" role="img" aria-label="Body map of laboratory findings" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <radialGradient id="skin" cx="50%" cy="35%" r="70%"><stop offset="0" stop-color="#F4F7F6"/><stop offset="1" stop-color="#E1E9E6"/></radialGradient>
+        </defs>
+        <g class="silhouette">
+          <g class="limbs" stroke="url(#skin)" stroke-linecap="round" fill="none">
+            <path d="M150,186 L118,320" stroke-width="36"/><path d="M118,320 L100,450" stroke-width="28"/>
+            <path d="M250,186 L282,320" stroke-width="36"/><path d="M282,320 L300,450" stroke-width="28"/>
+            <path d="M178,490 L168,640" stroke-width="48"/><path d="M168,640 L166,768" stroke-width="36"/>
+            <path d="M222,490 L232,640" stroke-width="48"/><path d="M232,640 L234,768" stroke-width="36"/>
+          </g>
+          <g fill="url(#skin)"><circle cx="98" cy="468" r="17"/><circle cx="302" cy="468" r="17"/><ellipse cx="160" cy="782" rx="24" ry="10"/><ellipse cx="240" cy="782" rx="24" ry="10"/></g>
+          <path fill="url(#skin)" d="M146,170 C170,158 230,158 254,170 C274,178 280,196 276,222 L262,330 C256,372 258,402 262,428 C268,470 256,500 244,506 L156,506 C144,500 132,470 138,428 C142,402 144,372 138,330 L124,222 C120,196 126,178 146,170 Z"/>
+          <rect x="184" y="118" width="32" height="44" rx="12" fill="url(#skin)"/>
+          <ellipse cx="200" cy="76" rx="46" ry="54" fill="url(#skin)"/>
+          <path class="bone-hint" d="M176,500 L169,632 M224,500 L231,632" stroke="#fff" stroke-width="7" stroke-linecap="round" fill="none"/>
+        </g>
+        <g id="vessels" class="vessels">
+          <path id="v-aorta" d="M200,166 L200,470"/>
+          <path id="v-car-l" d="M200,168 C196,150 194,128 190,96"/><path id="v-car-r" d="M200,168 C204,150 206,128 210,96"/>
+          <path id="v-arm-l" d="M200,180 C172,182 154,192 142,230 L118,320 L102,452"/><path id="v-arm-r" d="M200,180 C228,182 246,192 258,230 L282,320 L298,452"/>
+          <path id="v-leg-l" d="M200,470 C190,480 180,492 177,520 L168,640 L166,762"/><path id="v-leg-r" d="M200,470 C210,480 220,492 223,520 L232,640 L234,762"/>
+        </g>
+        <g id="droplets"></g>
+        <g class="organs">
+          <g class="org" data-sys="brain"><ellipse cx="200" cy="66" rx="35" ry="29" fill="#F2B8C6"/><path d="M200,40 C196,56 204,74 200,94" stroke="#D98FA3" stroke-width="2" fill="none"/></g>
+          <g class="org" data-sys="thyroid"><ellipse cx="191" cy="150" rx="8" ry="6" fill="#C99BD9"/><ellipse cx="209" cy="150" rx="8" ry="6" fill="#C99BD9"/><rect x="194" y="148" width="12" height="4" fill="#C99BD9"/></g>
+          <g class="org breathe" data-sys="lungs"><path fill="#F6C1C1" d="M191,196 C170,190 151,206 149,240 C147,278 152,302 167,307 C181,311 191,300 191,286 Z"/><path fill="#F6C1C1" d="M209,196 C230,190 249,206 251,240 C253,278 248,302 233,307 C219,311 209,300 209,286 Z"/></g>
+          <g class="org beat" data-sys="heart"><path fill="#E05263" d="M214,253 C206,240 187,244 189,261 C191,277 214,292 214,294 C214,292 237,277 239,261 C241,244 222,240 214,253 Z"/></g>
+          <g class="org" data-sys="liver"><path fill="#B9694F" d="M149,318 C149,303 177,299 213,305 C224,307 224,318 213,324 C197,334 176,347 160,345 C150,343 147,331 149,318 Z"/></g>
+          <g class="org" data-sys="stomach"><path fill="#F0A884" d="M226,314 C245,306 259,318 255,337 C251,355 234,363 222,357 C213,352 216,341 224,337 C232,333 230,325 226,314 Z"/></g>
+          <g class="org" data-sys="pancreas"><path fill="#F1CE6B" d="M187,361 C200,355 224,355 241,351 C248,351 248,360 239,362 C223,366 205,371 190,371 C183,370 182,364 187,361 Z"/></g>
+          <g class="org" data-sys="kidneys"><ellipse cx="168" cy="388" rx="11" ry="19" fill="#B5454F"/><ellipse cx="232" cy="388" rx="11" ry="19" fill="#B5454F"/></g>
+          <g class="org" data-sys="bladder"><ellipse cx="200" cy="468" rx="17" ry="13" fill="#F2D27A"/></g>
+          <g class="org" data-sys="reproductive"><ellipse cx="200" cy="494" rx="11" ry="6" fill="#E8A0BF"/></g>
+          <g class="org" data-sys="immune"><circle cx="150" cy="212" r="5" fill="#9FB8C9"/><circle cx="250" cy="212" r="5" fill="#9FB8C9"/><circle cx="186" cy="160" r="4" fill="#9FB8C9"/><circle cx="214" cy="160" r="4" fill="#9FB8C9"/><circle cx="178" cy="482" r="4" fill="#9FB8C9"/><circle cx="222" cy="482" r="4" fill="#9FB8C9"/></g>
+          <g class="org" data-sys="bone"><circle cx="168" cy="640" r="12" fill="none" stroke="#C9C2B0" stroke-width="5"/><circle cx="232" cy="640" r="12" fill="none" stroke="#C9C2B0" stroke-width="5"/></g>
+        </g>
+        <g id="markers"></g>
+      </svg>
+      <div class="map-tip" id="map-tip" hidden></div>
+    </div>
+    <aside class="panel detail" id="detail" aria-live="polite"></aside>
+  </section>
+
+  <!-- ===================== CHARTS & LISTS ===================== -->
+  <section class="view view-clean" data-pane-view="clean">
+    <div class="kpis" id="kpis"></div>
+    <div class="filters" id="cat-chips"></div>
+    <div class="grid g-main">
+      <div class="stack">
+        <section class="panel"><div class="panel-head"><h2>Trends</h2><span class="hint">Shaded band is the reference range</span></div><div class="trend-grid" id="trends"></div></section>
+        <section class="panel flush"><div class="panel-head"><h2>All results</h2><input class="form-control form-control-sm ms-auto" style="max-width:220px" id="res-filter" placeholder="Filter…" aria-label="Filter results"></div><div id="orders"></div></section>
+      </div>
+      <section class="panel align-self-start"><div class="panel-head"><h2>Needs attention</h2></div><div id="flagged"></div></section>
+    </div>
+  </section>
+</div>
+{{ data|json_script:"lab-data" }}
+{% endblock %}
+{% block scripts %}<script src="{% static 'hospital/js/insights.js' %}"></script>{% endblock %}

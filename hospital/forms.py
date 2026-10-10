@@ -1,5 +1,5 @@
 from django import forms
-from .models import (Patient, Encounter, QueueTicket, Referral, LabOrder, Prescription,
+from .models import (PrescriptionItem, Medication, Patient, Encounter, QueueTicket, Referral, LabOrder, Prescription,
                      FormDefinition, WorkflowDefinition, Admission, Allergy, Condition, Bed)
 
 
@@ -109,13 +109,48 @@ class LabOrderForm(StyledModelForm):
 class PrescriptionForm(StyledModelForm):
     class Meta:
         model = Prescription
-        fields = ['encounter', 'medication', 'directions', 'quantity', 'allergy_reviewed', 'override_reason']
-        labels = {'allergy_reviewed': 'I have reviewed this patient\'s documented allergies'}
+        fields = ['encounter', 'allergy_reviewed', 'override_reason', 'notes']
+        labels = {'allergy_reviewed': "I have reviewed this patient's documented allergies",
+                  'override_reason': 'Clinical justification (required if a possible allergy match is shown)', 'notes': 'Notes for the pharmacist'}
+        widgets = {'override_reason': forms.Textarea(attrs={'rows': 2}), 'notes': forms.Textarea(attrs={'rows': 2})}
 
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
         self.fields['encounter'].queryset = Encounter.objects.filter(status='open').select_related('patient')
-        self.fields['medication'].queryset = self.fields['medication'].queryset.filter(active=True)
+        self.fields['encounter'].label = 'Visit'
+
+
+class PrescriptionItemForm(StyledModelForm):
+    class Meta:
+        model = PrescriptionItem
+        fields = ['medication', 'dose', 'units_per_dose', 'route', 'frequency', 'duration_days', 'quantity', 'instructions']
+        labels = {'units_per_dose': 'Per dose', 'duration_days': 'Days', 'quantity': 'Total qty'}
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.fields['medication'].queryset = Medication.objects.filter(active=True).order_by('name')
+        self.fields['quantity'].required = False
+        self.fields['units_per_dose'].widget.attrs.update({'step': '0.25', 'min': '0.25'})
+        self.fields['duration_days'].widget.attrs.update({'min': '1'})
+        self.fields['dose'].widget.attrs['placeholder'] = 'e.g. 500 mg'
+        self.fields['instructions'].widget.attrs['placeholder'] = 'e.g. after food'
+
+    def clean(self):
+        data = super().clean()
+        if self.cleaned_data.get('DELETE') or not data.get('medication'):
+            return data
+        if not data.get('quantity'):
+            q = PrescriptionItem.calculate_quantity(data.get('units_per_dose'), data.get('frequency'), data.get('duration_days'))
+            if q is None:
+                self.add_error('quantity', 'Enter the total quantity for “when required” or “as directed” medicines.')
+            else:
+                data['quantity'] = q
+                self.instance.quantity = q
+        return data
+
+
+PrescriptionItemFormSet = forms.inlineformset_factory(
+    Prescription, PrescriptionItem, form=PrescriptionItemForm, extra=0, min_num=1, validate_min=True, can_delete=True, max_num=30)
 
 
 class AllergyForm(StyledModelForm):

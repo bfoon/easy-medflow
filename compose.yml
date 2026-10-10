@@ -1,24 +1,79 @@
-# Local development / demo stack: SQLite, DEBUG on, demo data, live code reload.
+# Full local stack: PostgreSQL + Redis + web + Celery worker, with demo data.
 #   docker compose up -d --build
-# Never use this file for real patient data. Production: docker compose -f compose.prod.yml up -d --build
-name: medflow-dev
+# Works without a .env file. For a real deployment use compose.prod.yml (requires .env with strong secrets).
+name: medflow
+
+x-app-env: &app-env
+  DJANGO_DEBUG: "True"
+  DJANGO_SECRET_KEY: dev-only-insecure-change-me
+  DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,0.0.0.0
+  POSTGRES_DB: medflow
+  POSTGRES_USER: medflow
+  POSTGRES_PASSWORD: medflow-dev-password
+  POSTGRES_HOST: db
+  POSTGRES_PORT: "5432"
+  REDIS_URL: redis://redis:6379/0
+
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: medflow
+      POSTGRES_USER: medflow
+      POSTGRES_PASSWORD: medflow-dev-password
+    ports:
+      - "127.0.0.1:${MEDFLOW_DB_PORT:-5433}:5432"   # connect from your machine: localhost:5433 (5433 avoids clashing with a local PostgreSQL)
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medflow -d medflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
   web:
     build: .
     command: ["sh", "/app/dev-start.sh"]
     environment:
-      DJANGO_DEBUG: "True"
-      USE_SQLITE: "True"
-      SQLITE_PATH: /data/db.sqlite3
-      DJANGO_SECRET_KEY: dev-only-insecure-change-me
-      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,0.0.0.0
+      <<: *app-env
       DJANGO_SUPERUSER_USERNAME: admin
       DJANGO_SUPERUSER_EMAIL: admin@example.com
       DJANGO_SUPERUSER_PASSWORD: medflow-admin-2026
+      MEDFLOW_PORT: ${MEDFLOW_PORT:-8000}
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${MEDFLOW_PORT:-8000}:8000"   # another program on 8000? run with MEDFLOW_PORT=8080
     volumes:
-      - .:/app            # edit code on your machine, the server reloads
-      - medflow_dev_data:/data
+      - .:/app                # edit code on your machine; the server reloads
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["celery", "-A", "config", "worker", "-l", "info"]
+    environment:
+      <<: *app-env
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    volumes:
+      - .:/app
+    restart: unless-stopped
+
 volumes:
-  medflow_dev_data:
+  postgres_data:
+  redis_data:

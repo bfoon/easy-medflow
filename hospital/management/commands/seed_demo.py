@@ -12,25 +12,33 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from hospital.models import (Admission, Allergy, Attendance, AuditEvent, Bed, Condition, Department, Encounter,
+from hospital.models import (LabRequest, PrescriptionItem, LabResultValue, Admission, Allergy, Attendance, AuditEvent, Bed, Condition, Department, Encounter,
                              FormDefinition, FormSubmission, LabOrder, LabTest, Medication, Patient, Prescription,
                              QueueTicket, Referral, StaffProfile, StockBatch, WorkflowDefinition, WorkflowRun)
-from hospital.services import advance_workflow, sign_document
+from hospital.services import advance_workflow, group_orphan_lab_orders, sign_document
 
 FIRST_F = ['Awa', 'Fatou', 'Isatou', 'Mariama', 'Binta', 'Haddy', 'Ndey', 'Kaddy', 'Aminata', 'Jainaba', 'Sainabou', 'Oumie']
 FIRST_M = ['Lamin', 'Ebrima', 'Modou', 'Ousman', 'Alieu', 'Momodou', 'Bakary', 'Sulayman', 'Omar', 'Musa', 'Kebba', 'Yusupha']
 LAST = ['Jallow', 'Ceesay', 'Bah', 'Touray', 'Sowe', 'Camara', 'Njie', 'Jobe', 'Sanneh', 'Darboe', 'Faye', 'Manneh', 'Sarr', 'Drammeh']
 PLACES = ['Serrekunda', 'Bakau', 'Brikama', 'Banjul', 'Lamin', 'Kololi', 'Farafenni', 'Soma']
-REASONS = [('Fever and headache for 3 days', 'Suspected malaria', 'Malaria RDT'), ('Persistent cough', 'Upper respiratory tract infection', 'Complete Blood Count'),
-           ('Abdominal pain', 'Gastritis', 'Stool Microscopy'), ('Routine antenatal visit', 'Normal pregnancy, 24 weeks', 'Haemoglobin'),
-           ('Diarrhoea and vomiting', 'Acute gastroenteritis', 'Stool Microscopy'), ('Dizziness, high BP reading', 'Hypertension, uncontrolled', 'Renal Function Panel'),
-           ('Increased thirst and urination', 'Type 2 diabetes, suspected', 'Blood Glucose'), ('Painful urination', 'Urinary tract infection', 'Urinalysis'),
-           ('Fatigue and pallor', 'Iron-deficiency anaemia', 'Haemoglobin'), ('Child with fever', 'Febrile illness, pediatric', 'Malaria RDT')]
-RX = {'Suspected malaria': ('Artemether/Lumefantrine', '4 tablets twice daily for 3 days', 24), 'Upper respiratory tract infection': ('Paracetamol', '1 g every 8 hours as needed', 18),
-      'Gastritis': ('Paracetamol', '500 mg every 8 hours as needed', 12), 'Acute gastroenteritis': ('ORS', '1 sachet after each loose stool', 10),
-      'Hypertension, uncontrolled': ('Amlodipine', '5 mg once daily', 30), 'Type 2 diabetes, suspected': ('Metformin', '500 mg twice daily with meals', 60),
-      'Urinary tract infection': ('Amoxicillin', '500 mg three times daily for 7 days', 21), 'Iron-deficiency anaemia': ('Ferrous sulfate', '200 mg twice daily', 60),
-      'Febrile illness, pediatric': ('Paracetamol', '15 mg/kg every 6 hours as needed', 10), 'Normal pregnancy, 24 weeks': ('Ferrous sulfate', '200 mg once daily', 30)}
+REASONS = [('Fever and headache for 3 days', 'Suspected malaria', 'MAL'), ('Persistent cough', 'Upper respiratory tract infection', 'CBC'),
+           ('Abdominal pain', 'Gastritis', 'STL'), ('Routine antenatal visit', 'Normal pregnancy, 24 weeks', 'HB'),
+           ('Diarrhoea and vomiting', 'Acute gastroenteritis', 'STL'), ('Dizziness, high BP reading', 'Hypertension, uncontrolled', 'RFT'),
+           ('Increased thirst and urination', 'Type 2 diabetes, suspected', 'GLU'), ('Painful urination', 'Urinary tract infection', 'UA'),
+           ('Fatigue and pallor', 'Iron-deficiency anaemia', 'HB'), ('Child with fever', 'Febrile illness, pediatric', 'MAL')]
+# Each diagnosis gets a realistic multi-medicine prescription: (medicine, strength, per dose, frequency, days, instructions)
+RX = {
+    'Suspected malaria': [('Artemether/Lumefantrine', '20/120 mg', 4, 'BD', 3, 'Take with food or milk'), ('Paracetamol', '500 mg', 2, 'TDS', 3, 'For fever')],
+    'Upper respiratory tract infection': [('Paracetamol', '500 mg', 2, 'QDS', 5, ''), ('Amoxicillin', '500 mg', 1, 'TDS', 5, 'Complete the course')],
+    'Gastritis': [('Paracetamol', '500 mg', 1, 'PRN', 5, 'Not more than 8 tablets in 24 hours')],
+    'Acute gastroenteritis': [('ORS', '20.5 g', 1, 'TDS', 3, 'One sachet in 1 litre of clean water'), ('Zinc sulfate', '20 mg', 1, 'OD', 10, '')],
+    'Hypertension, uncontrolled': [('Amlodipine', '5 mg', 1, 'OD', 30, 'Take in the morning')],
+    'Type 2 diabetes, suspected': [('Metformin', '500 mg', 1, 'BD', 30, 'Take with meals')],
+    'Urinary tract infection': [('Amoxicillin', '500 mg', 1, 'TDS', 7, 'Complete the course'), ('Paracetamol', '500 mg', 2, 'PRN', 3, 'For pain')],
+    'Iron-deficiency anaemia': [('Ferrous sulfate', '200 mg', 1, 'BD', 30, 'Take with orange juice; may darken stools')],
+    'Febrile illness, pediatric': [('Paracetamol', '120 mg/5 mL', 5, 'QDS', 3, 'Dose by weight; 5 mL per dose')],
+    'Normal pregnancy, 24 weeks': [('Ferrous sulfate', '200 mg', 1, 'OD', 30, '')],
+}
 STAFF = [('dr.jallow', 'Fatou', 'Jallow', 'doctor', 'General Medicine'), ('dr.ceesay', 'Lamin', 'Ceesay', 'doctor', 'Emergency'),
          ('nurse.bah', 'Isatou', 'Bah', 'nurse', 'Outpatient'), ('reception.sowe', 'Modou', 'Sowe', 'reception', 'Outpatient'),
          ('lab.touray', 'Awa', 'Touray', 'lab', 'Laboratory'), ('pharm.njie', 'Ebrima', 'Njie', 'pharmacy', 'Pharmacy'),
@@ -87,7 +95,7 @@ class Command(BaseCommand):
             StockBatch.objects.create(medication=m, batch_number=f'B{random.randint(10000, 99999)}', expiry=date.today() + timedelta(days=random.randint(60, 540)), quantity=qty)
             StockBatch.objects.create(medication=m, batch_number=f'X{random.randint(10000, 99999)}', expiry=date.today() - timedelta(days=10), quantity=50)
 
-        tests = {t.name: t for t in LabTest.objects.all()}
+        tests = {t.code: t for t in LabTest.objects.all()}
         meds = {m.name: m for m in Medication.objects.all()}
         patients = []
         for i in range(o['patients']):
@@ -128,8 +136,8 @@ class Command(BaseCommand):
                 lo = LabOrder.objects.create(encounter=e, test=tests[test], status='verified', result=random.choice(['Within normal limits', 'Positive', 'Negative', 'Hb 9.8 g/dL']),
                                              reference_range='See lab manual', abnormal=random.random() < .3, verified_by=lab, verified_at=when + timedelta(hours=2), resulted_at=when + timedelta(hours=1, minutes=30))
                 LabOrder.objects.filter(pk=lo.pk).update(created_at=when)
-                name, directions, qty = RX[dx]
-                rx = Prescription.objects.create(encounter=e, medication=meds[name], directions=directions, quantity=qty, state='dispensed', allergy_reviewed=True, signed_by=doctor, signed_at=when)
+                rx = Prescription.objects.create(encounter=e, state='dispensed', allergy_reviewed=True, signed_by=doctor, signed_at=when)
+                self.add_items(rx, RX[dx], meds)
                 Prescription.objects.filter(pk=rx.pk).update(created_at=when)
 
         # today: a live waiting room in every state
@@ -159,16 +167,20 @@ class Command(BaseCommand):
                 audit(nurse, 'queue_transition', f'ticket:{t.pk}', when + timedelta(minutes=20))
 
         # labs across the whole pipeline, prescriptions in every state
-        lab_states = ['ordered', 'ordered', 'collected', 'processing', 'resulted', 'resulted']
-        for (e, dx, test), st in zip(open_encs * 2, lab_states):
-            lo = LabOrder.objects.create(encounter=e, test=tests[test], status=st, specimen_id=f'SP-{random.randint(100000, 999999)}' if st != 'ordered' else '',
-                                         result='Positive for P. falciparum' if st == 'resulted' and 'malaria' in dx.lower() else 'Hb 8.9 g/dL' if st == 'resulted' else '',
-                                         reference_range='12–16 g/dL' if st == 'resulted' else '', abnormal=st == 'resulted', resulted_at=now if st == 'resulted' else None)
-            LabOrder.objects.filter(pk=lo.pk).update(created_at=now - timedelta(minutes=random.randint(10, 90)))
-            audit(doctor, 'create', f'hospital.LabOrder:{lo.pk}', now - timedelta(minutes=random.randint(5, 60)))
+        bundles = [(['CBC', 'MAL', 'GLU'], 'ordered', 'urgent'), (['RFT', 'LFT', 'CRP'], 'collected', 'routine'), (['UA', 'CRP'], 'processing', 'routine'),
+                   (['CBC', 'HB', 'MPS'], 'resulted', 'urgent'), (['LIPID', 'HBA1C', 'GLU'], 'ordered', 'routine')]
+        for (e, dx, _), (codes, st, prio) in zip(open_encs, bundles):
+            created = now - timedelta(minutes=random.randint(10, 90)); spec = f'SP-{random.randint(100000, 999999)}' if st != 'ordered' else ''
+            lr = LabRequest.objects.create(encounter=e, requested_by=doctor, priority=prio, specimen_id=spec,
+                                           clinical_notes=f'{dx}.' if prio == 'urgent' else '', collected_at=created if spec else None)
+            LabRequest.objects.filter(pk=lr.pk).update(created_at=created)
+            for code in codes:
+                lo = LabOrder.objects.create(encounter=e, request=lr, test=tests[code], status=st, specimen_id=spec, resulted_at=now if st == 'resulted' else None)
+                LabOrder.objects.filter(pk=lo.pk).update(created_at=created)
+            audit(doctor, 'create', f'hospital.LabRequest:{lr.pk}', created)
         for (e, dx, _), st in zip(open_encs, ['draft', 'signed', 'signed', 'draft', 'signed']):
-            name, directions, qty = RX[dx]
-            rx = Prescription.objects.create(encounter=e, medication=meds[name], directions=directions, quantity=qty, allergy_reviewed=True)
+            rx = Prescription.objects.create(encounter=e, allergy_reviewed=True)
+            self.add_items(rx, RX[dx], meds)
             if st == 'signed':
                 rx.state = 'signed'; rx.signed_by = doctor; rx.signed_at = now; rx.save()
                 sign_document('prescription', rx, doctor, 'Prescriber authorization')
@@ -228,5 +240,111 @@ class Command(BaseCommand):
             elif n == 0:
                 sign_document('form', s, doctor, 'Reviewed and signed')
             audit(nurse, 'submit_form', f'form_submission:{s.pk}', now - timedelta(minutes=30 + n * 7))
+        self.structured_results(now, doctor, lab, depts, tests, staff)
         audit(pharm, 'dispense', 'prescription:1', now - timedelta(minutes=12))
         audit(lab, 'lab_update', 'lab_order:1', now - timedelta(minutes=8))
+
+
+    # ------------------------------------------------------------------ structured lab values
+    @staticmethod
+    def fill(order, tech, overrides=None, abnormal_rate=0.2):
+        """Give every parameter of an order a plausible value, flagged against the catalogue's limits."""
+        overrides = overrides or {}
+        sex = order.encounter.patient.sex
+        for prm in order.test.parameters.all():
+            if prm.code in overrides:
+                val = overrides[prm.code]
+            elif prm.kind == 'choice':
+                ok = [c for c in prm.choices if c not in prm.abnormal_choices] or prm.choices
+                val = random.choice(prm.abnormal_choices) if prm.abnormal_choices and random.random() < abnormal_rate / 2 else ok[0]
+            elif prm.kind == 'text':
+                val = 'No abnormality seen'
+            else:
+                lo, hi = prm.range_for(sex)
+                lo = float(lo) if lo is not None else (float(hi) * .4 if hi is not None else 1.0)
+                hi = float(hi) if hi is not None else lo * 1.8
+                v = random.uniform(lo + (hi - lo) * .1, hi - (hi - lo) * .1)
+                if random.random() < abnormal_rate:
+                    v = hi * random.uniform(1.08, 1.35) if random.random() < .6 else lo * random.uniform(.7, .92)
+                val = round(v, prm.decimals)
+            num = val if prm.kind == 'number' else None
+            LabResultValue.objects.update_or_create(order=order, parameter=prm, defaults={
+                'value_number': num, 'value_text': '' if num is not None else str(val), 'flag': prm.flag_for(val, sex), 'entered_by': tech})
+        order.abnormal = order.values.exclude(flag__in=['', 'N']).exists()
+        order.result = ''
+        order.performed_by = tech
+        order.save(update_fields=['abnormal', 'result', 'performed_by'])
+
+    def structured_results(self, now, doctor, lab, depts, tests, staff):
+        meds = {m.name: m for m in Medication.objects.all()}
+        for o in LabOrder.objects.filter(status__in=['resulted', 'verified']).select_related('test', 'encounter__patient'):
+            self.fill(o, lab)
+        LabOrder.objects.filter(status__in=['collected', 'processing']).update(performed_by=lab)
+
+        # Featured demo patient: an evolving cardiac emergency with history, so the body map and trends have a story.
+        p = Patient.objects.create(first_name='Babucarr', last_name='Sowe', dob=date.today() - timedelta(days=58 * 365 + 40), sex='M',
+                                   phone='+220 712 4408', address='14 Kairaba Ave, Serrekunda', blood_group='A+',
+                                   emergency_contact='Isatou Sowe · +220 712 4409', medical_alerts='Type 2 diabetes. Hypertension.')
+        Condition.objects.create(patient=p, name='Type 2 diabetes', status='active', onset=date.today() - timedelta(days=2200))
+        Condition.objects.create(patient=p, name='Hypertension', status='active', onset=date.today() - timedelta(days=1500))
+
+        def visit(days_ago, reason, dx, status='completed'):
+            e = Encounter.objects.create(patient=p, clinician=doctor, department=depts['Emergency' if days_ago < 3 else 'General Medicine'],
+                                         reason=reason, diagnosis=dx, status=status, symptoms=reason,
+                                         vitals={'bp': '168/98', 'heart_rate': '104', 'temperature_c': '36.9', 'spo2': '94', 'resp_rate': '22'} if days_ago < 3 else {'bp': '148/92', 'heart_rate': '82'})
+            Encounter.objects.filter(pk=e.pk).update(created_at=now - timedelta(days=days_ago))
+            return e
+
+        def result(e, code, hours_ago, values, status='verified', ack=False):
+            o = LabOrder.objects.create(encounter=e, test=tests[code], status=status, specimen_id=f'SP-{random.randint(100000, 999999)}',
+                                        resulted_at=now - timedelta(hours=hours_ago), verified_by=lab if status == 'verified' else None,
+                                        verified_at=now - timedelta(hours=hours_ago - .5) if status == 'verified' else None)
+            LabOrder.objects.filter(pk=o.pk).update(created_at=now - timedelta(hours=hours_ago + 1))
+            o.refresh_from_db(); self.fill(o, lab, values, abnormal_rate=0)
+            if ack:
+                o.values.exclude(flag__in=['', 'N']).update(acknowledged_by=doctor, acknowledged_at=now - timedelta(hours=hours_ago - 1))
+            return o
+
+        # routine diabetes reviews over the past year: HbA1c improving, lipids high
+        for months, a1c, glu in [(11, 9.1, 9.8), (7, 8.4, 8.6), (3, 7.6, 7.4)]:
+            e = visit(months * 30, 'Diabetes review', 'Type 2 diabetes, suboptimal control')
+            result(e, 'HBA1C', months * 30 * 24, {'A1C': a1c}, ack=True)
+            result(e, 'GLU', months * 30 * 24, {'FBG': glu}, ack=True)
+            result(e, 'RFT', months * 30 * 24, {'CREA': [98, 104, 112][[11, 7, 3].index(months)], 'K': 4.6, 'NA': 139, 'UREA': 6.2, 'CL': 101}, ack=True)
+        e = visit(90, 'Lipid check', 'Dyslipidaemia')
+        result(e, 'LIPID', 90 * 24, {'TC': 6.4, 'LDL': 4.3, 'HDL': 0.9, 'TG': 2.4}, ack=True)
+
+        # today: chest pain → serial troponins rising past the critical limit, high potassium, raised BNP
+        now_e = visit(0, 'Central chest pain radiating to left arm, 2 hours', 'Suspected acute coronary syndrome', status='open')
+        result(now_e, 'TROP', 6, {'TNI': 48}, ack=True)
+        result(now_e, 'TROP', 3, {'TNI': 96})
+        result(now_e, 'TROP', 0.5, {'TNI': 182}, status='resulted')
+        result(now_e, 'CARD', 3, {'CKMB': 41, 'BNP': 640})
+        result(now_e, 'RFT', 3, {'CREA': 141, 'UREA': 9.4, 'NA': 137, 'K': 6.4, 'CL': 103})
+        result(now_e, 'CBC', 3, {'HB': 14.2, 'WBC': 12.6, 'PLT': 248, 'RBC': 4.9, 'HCT': 43, 'MCV': 88})
+        result(now_e, 'GLU', 3, {'FBG': 11.8})
+        result(now_e, 'LFT', 3, {'ALT': 64, 'AST': 92, 'ALP': 98, 'TBIL': 14, 'ALB': 41})
+        result(now_e, 'ABG', 2, {'PH': 7.33, 'PCO2': 4.4, 'PO2': 9.6, 'HCO3': 21, 'SAO2': 93})
+        LabOrder.objects.create(encounter=now_e, test=tests['TFT'])
+        t = QueueTicket.objects.create(patient=p, encounter=now_e, department=depts['Emergency'], priority=1, status='in_service', counter='Resus')
+        QueueTicket.objects.filter(pk=t.pk).update(created_at=now - timedelta(minutes=70), called_at=now - timedelta(minutes=66), started_at=now - timedelta(minutes=60))
+        LabOrder.objects.create(encounter=now_e, test=tests['HBA1C'])
+        # group everything into per-patient requests; the featured patient's current requests are STAT
+        group_orphan_lab_orders()
+        LabRequest.objects.filter(encounter=now_e).update(priority='stat', requested_by=doctor, clinical_notes='Central chest pain 2 h, query ACS. Diabetic.')
+        LabRequest.objects.filter(requested_by__isnull=True).update(requested_by=doctor)
+        for lr in LabRequest.objects.prefetch_related('orders'):
+            spec = next((o.specimen_id for o in lr.orders.all() if o.specimen_id), '')
+            if spec and not lr.specimen_id:
+                lr.specimen_id = spec; lr.save(update_fields=['specimen_id'])
+        rx = Prescription.objects.create(encounter=now_e, allergy_reviewed=True, notes='Chest pain protocol. Review after cardiology input.')
+        self.add_items(rx, [('Paracetamol', '500 mg', 2, 'PRN', 2, 'For pain; not more than 8 tablets in 24 hours'),
+                            ('Amlodipine', '5 mg', 1, 'OD', 30, 'Continue usual dose'), ('Metformin', '500 mg', 1, 'BD', 30, 'Withhold if fasting for procedures')], meds)
+        self.featured = p
+
+    @staticmethod
+    def add_items(rx, lines, meds):
+        for i, (name, dose, per, freq, days, note) in enumerate(lines):
+            qty = PrescriptionItem.calculate_quantity(per, freq, days) or per * 8
+            PrescriptionItem.objects.create(prescription=rx, medication=meds[name], dose=dose, units_per_dose=per, frequency=freq,
+                                            duration_days=days, quantity=qty, instructions=note, sort_order=i)

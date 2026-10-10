@@ -1,0 +1,37 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}My lab work{% endblock %}
+{% block heading %}My lab work{% endblock %}
+{% block subheading %}<p class="sub">Tests you collected, processed or resulted.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'labs' %}"><i class="bi bi-kanban"></i>Lab board</a>{% endblock %}
+{% block content %}
+<div class="filters">
+  <a class="chip {% if period == '1' %}on{% endif %}" href="?period=1&category={{ cat }}">Today</a>
+  <a class="chip {% if period == '7' %}on{% endif %}" href="?period=7&category={{ cat }}">7 days</a>
+  <a class="chip {% if period == '30' %}on{% endif %}" href="?period=30&category={{ cat }}">30 days</a>
+  <a class="chip {% if period == 'all' %}on{% endif %}" href="?period=all&category={{ cat }}">All time</a>
+  <select class="form-select form-select-sm ms-auto" style="max-width:220px" onchange="location.search='?period={{ period }}&category='+this.value" aria-label="Category"><option value="">All categories</option>{% for c in categories %}<option value="{{ c.code }}" {% if cat == c.code %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+</div>
+<div class="urg-sum mb-4">
+  <div style="--u:var(--ink)"><b data-count="{{ stats.requests }}">{{ stats.requests }}</b><span>patient requests</span></div>
+  <div style="--u:var(--indigo)"><b data-count="{{ stats.tests }}">{{ stats.tests }}</b><span>tests performed</span></div>
+  <div style="--u:var(--teal)"><b data-count="{{ stats.verified }}">{{ stats.verified }}</b><span>verified</span></div>
+  <div style="--u:var(--amber)"><b data-count="{{ stats.pending }}">{{ stats.pending }}</b><span>in progress</span></div>
+  <div style="--u:var(--red)"><b data-count="{{ stats.abnormal }}">{{ stats.abnormal }}</b><span>with abnormal values</span></div>
+</div>
+<div class="grid g-main">
+  <section class="panel flush">
+    <div class="scroll-x"><table class="mini-table worklist"><thead><tr><th>Request</th><th>Patient</th><th>Tests &amp; values</th><th>Updated</th></tr></thead><tbody>
+    {% for r in rows %}<tr>
+      <td><b>{{ r.number }}</b>{% if r.priority != 'routine' %}<div><span class="tag {% if r.priority == 'stat' %}red{% else %}amber{% endif %}">{{ r.get_priority_display }}</span></div>{% endif %}</td>
+      <td><a href="{% url 'patient_chart' r.encounter.patient_id %}">{{ r.encounter.patient.full_name }}</a><div class="small muted">{{ r.specimen_id }}</div></td>
+      <td>{% for o in r.orders.all %}<div class="mb-1"><b class="small" style="color:{{ o.test.category.color }}">{{ o.test.name }}</b> <span class="tag {{ o.status|tone }}">{{ o.get_status_display }}</span><br>{% for v in o.values.all %}<span class="vchip {% if v.is_critical %}crit{% elif v.is_abnormal %}abn{% endif %}" title="{{ v.parameter.name }}">{{ v.parameter.code }} {{ v.display }}</span>{% endfor %}</div>{% endfor %}</td>
+      <td class="small muted text-nowrap">{{ r.updated_at|date:'j M H:i' }}{% if r.stage in 'collected processing resulted' %}<br><a href="{% url 'lab_results_entry' r.pk %}">Open sheet</a>{% endif %}</td>
+    </tr>{% empty %}<tr><td colspan="4" class="empty">No requests in this period.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  <section class="panel align-self-start">
+    <div class="panel-head"><h2>By category</h2></div>
+    <ul class="plain ruled">{% for name, n in by_cat %}<li class="d-flex"><span>{{ name }}</span><b class="ms-auto">{{ n }}</b></li>{% empty %}<li class="muted small">Nothing yet.</li>{% endfor %}</ul>
+  </section>
+</div>
+{% endblock %}

@@ -7,6 +7,9 @@ set -eu
 echo "→ Applying migrations"
 python manage.py migrate --noinput
 
+echo "→ Loading standard configuration and lab catalogue"
+python manage.py bootstrap_hospital
+
 echo "→ Seeding fictional demo data (first start only)"
 python manage.py seed_demo --if-empty
 
@@ -23,5 +26,5 @@ else:
     print(f'   Created admin \"{name}\"')
 "
 
-echo "→ MedFlow is starting at http://localhost:${HOST_PORT:-8000}"
+echo "→ MedFlow is starting (open http://localhost:${MEDFLOW_PORT:-8000} on your machine)"
 exec python manage.py runserver 0.0.0.0:8000

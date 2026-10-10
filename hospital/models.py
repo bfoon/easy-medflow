@@ -21,6 +21,7 @@ class StaffProfile(Tracked):
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     license_number=models.CharField(max_length=100,blank=True)
     active=models.BooleanField(default=True)
+    lab_view=models.CharField(max_length=10,choices=[('body','Body map'),('clean','Charts & lists')],default='body',help_text='Preferred way to review lab results')
     def __str__(self):return f'{self.user} - {self.role}'
 
 class Patient(Tracked):
@@ -80,7 +81,7 @@ class Encounter(Tracked):
     vitals=models.JSONField(default=dict,blank=True,help_text='Measurements with units (e.g. bp, heart_rate, temperature_c)')
     status=models.CharField(max_length=20,choices=STATUS,default='open')
     completed_at=models.DateTimeField(null=True,blank=True)
-    def __str__(self):return f'{self.patient.mrn} - {self.created_at:%Y-%m-%d} / {self.status}'
+    def __str__(self):return f'{self.patient.first_name} {self.patient.last_name} · {self.patient.mrn} · {self.reason[:40]} · {self.created_at:%d %b}'
 
 class QueueTicket(Tracked):
     STATES=[(x,x.title()) for x in ['waiting','called','in_service','completed','skipped','cancelled']]
@@ -119,17 +120,110 @@ class Attendance(Tracked):
     note=models.CharField(max_length=250,blank=True)
     def __str__(self):return f'{self.staff} @ {self.clock_in}'
 
+BODY_SYSTEMS=[('brain','Brain & nerves'),('thyroid','Thyroid & endocrine'),('lungs','Lungs'),('heart','Heart'),
+    ('blood','Blood & vessels'),('liver','Liver'),('stomach','Stomach & gut'),('pancreas','Pancreas'),
+    ('kidneys','Kidneys'),('bladder','Bladder & urine'),('reproductive','Reproductive'),('bone','Bones & joints'),
+    ('immune','Immune & infection')]
+
+class LabCategory(Tracked):
+    """A section of the laboratory catalogue, e.g. Hematology or Clinical Chemistry."""
+    name=models.CharField(max_length=120,unique=True)
+    code=models.SlugField(max_length=40,unique=True)
+    color=models.CharField(max_length=7,default='#0F7B78',help_text='Hex colour used to tag the category')
+    sort_order=models.PositiveSmallIntegerField(default=0)
+    class Meta: ordering=['sort_order','name']; verbose_name_plural='lab categories'
+    def __str__(self):return self.name
+
 class LabTest(Tracked):
     code=models.CharField(max_length=40,unique=True)
     name=models.CharField(max_length=180)
+    category=models.ForeignKey(LabCategory,null=True,blank=True,on_delete=models.SET_NULL,related_name='tests')
+    body_system=models.CharField(max_length=20,choices=BODY_SYSTEMS,default='blood',help_text='Default organ for parameters of this test')
     sample_type=models.CharField(max_length=100,blank=True)
+    container=models.CharField(max_length=60,blank=True,help_text='e.g. Purple-top EDTA tube')
+    turnaround_hours=models.PositiveSmallIntegerField(default=24)
+    description=models.TextField(blank=True)
     price=models.DecimalField(max_digits=10,decimal_places=2,default=0)
     active=models.BooleanField(default=True)
+    class Meta: ordering=['name']
     def __str__(self):return self.name
+
+class LabParameter(Tracked):
+    """One measured value within a test (an analyte), with units, reference and critical limits."""
+    KIND=[('number','Number'),('choice','Choice'),('text','Free text')]
+    test=models.ForeignKey(LabTest,on_delete=models.CASCADE,related_name='parameters')
+    code=models.CharField(max_length=40)
+    name=models.CharField(max_length=120)
+    kind=models.CharField(max_length=10,choices=KIND,default='number')
+    unit=models.CharField(max_length=30,blank=True)
+    decimals=models.PositiveSmallIntegerField(default=1)
+    ref_low=models.DecimalField(max_digits=12,decimal_places=4,null=True,blank=True)
+    ref_high=models.DecimalField(max_digits=12,decimal_places=4,null=True,blank=True)
+    female_ref_low=models.DecimalField(max_digits=12,decimal_places=4,null=True,blank=True,help_text='Optional female-specific range')
+    female_ref_high=models.DecimalField(max_digits=12,decimal_places=4,null=True,blank=True)
+    critical_low=models.DecimalField(max_digits=12,decimal_places=4,null=True,blank=True)
+    critical_high=models.DecimalField(max_digits=12,decimal_places=4,null=True,blank=True)
+    choices=models.JSONField(default=list,blank=True,help_text='For choice parameters, e.g. ["Negative","Positive"]')
+    abnormal_choices=models.JSONField(default=list,blank=True,help_text='Choices that should be flagged, e.g. ["Positive"]')
+    body_system=models.CharField(max_length=20,choices=BODY_SYSTEMS,blank=True,help_text='Overrides the test default')
+    sort_order=models.PositiveSmallIntegerField(default=0)
+    class Meta: ordering=['sort_order','id']; unique_together=[('test','code')]
+    def __str__(self):return f'{self.test.code} · {self.name}'
+    @property
+    def system(self):return self.body_system or self.test.body_system
+    def range_for(self,sex=None):
+        if sex=='F' and self.female_ref_low is not None and self.female_ref_high is not None:
+            return self.female_ref_low,self.female_ref_high
+        return self.ref_low,self.ref_high
+    def flag_for(self,value,sex=None):
+        """N normal, L/H outside reference, LL/HH beyond critical limits, A abnormal choice, '' not assessable."""
+        if value in (None,''):return ''
+        if self.kind=='choice':return 'A' if value in (self.abnormal_choices or []) else 'N'
+        if self.kind!='number':return ''
+        from decimal import Decimal,InvalidOperation
+        try:v=Decimal(str(value))
+        except (InvalidOperation,ValueError):return ''
+        if self.critical_low is not None and v<self.critical_low:return 'LL'
+        if self.critical_high is not None and v>self.critical_high:return 'HH'
+        lo,hi=self.range_for(sex)
+        if lo is not None and v<lo:return 'L'
+        if hi is not None and v>hi:return 'H'
+        return 'N'
+    def range_label(self,sex=None):
+        if self.kind=='choice':return 'Expected: '+', '.join(x for x in self.choices if x not in self.abnormal_choices) if self.choices else ''
+        lo,hi=self.range_for(sex)
+        fmt=lambda d:f'{d.normalize():f}'
+        if lo is not None and hi is not None:return f'{fmt(lo)}–{fmt(hi)}'
+        if hi is not None:return f'< {fmt(hi)}'
+        if lo is not None:return f'> {fmt(lo)}'
+        return ''
+
+class LabRequest(Tracked):
+    """One laboratory request for a patient visit, holding every test ordered together."""
+    PRIORITY=[('routine','Routine'),('urgent','Urgent'),('stat','STAT · immediately')]
+    STAGES=['ordered','collected','processing','resulted','verified']
+    encounter=models.ForeignKey(Encounter,on_delete=models.PROTECT,related_name='lab_requests')
+    requested_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='lab_requests_made')
+    priority=models.CharField(max_length=10,choices=PRIORITY,default='routine')
+    clinical_notes=models.TextField(blank=True,help_text='Relevant history or question for the lab')
+    specimen_id=models.CharField(max_length=80,blank=True)
+    collected_at=models.DateTimeField(null=True,blank=True)
+    class Meta: ordering=['-created_at']
+    @property
+    def number(self):return f'LR-{self.pk:06d}'
+    def active_orders(self):return [o for o in self.orders.all() if o.status!='cancelled']
+    @property
+    def stage(self):
+        """The request sits at the stage of its least-advanced active test."""
+        active=self.active_orders()
+        if not active:return 'cancelled'
+        return min((o.status for o in active),key=self.STAGES.index)
+    def __str__(self):return f'{self.number} · {self.encounter.patient}'
 
 class LabOrder(Tracked):
     STATUS=[(x,x.replace('_',' ').title()) for x in ['ordered','collected','processing','resulted','verified','cancelled']]
     encounter=models.ForeignKey(Encounter,on_delete=models.PROTECT,related_name='labs')
+    request=models.ForeignKey(LabRequest,on_delete=models.CASCADE,null=True,blank=True,related_name='orders')
     test=models.ForeignKey(LabTest,on_delete=models.PROTECT)
     status=models.CharField(max_length=20,choices=STATUS,default='ordered')
     specimen_id=models.CharField(max_length=80,blank=True)
@@ -139,7 +233,35 @@ class LabOrder(Tracked):
     resulted_at=models.DateTimeField(null=True,blank=True)
     verified_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True)
     verified_at=models.DateTimeField(null=True,blank=True)
+    performed_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='lab_orders_performed')
+    @property
+    def worst_flag(self):
+        flags={v.flag for v in self.values.all()}
+        for f in ('HH','LL','H','L','A'):
+            if f in flags:return f
+        return 'N' if flags else ''
     def __str__(self):return f'{self.test} / {self.encounter.patient.mrn}'
+
+class LabResultValue(Tracked):
+    FLAGS=[('','—'),('N','Normal'),('L','Low'),('H','High'),('LL','Critical low'),('HH','Critical high'),('A','Abnormal')]
+    order=models.ForeignKey(LabOrder,on_delete=models.CASCADE,related_name='values')
+    parameter=models.ForeignKey(LabParameter,on_delete=models.PROTECT)
+    value_number=models.DecimalField(max_digits=12,decimal_places=4,null=True,blank=True)
+    value_text=models.CharField(max_length=500,blank=True)
+    flag=models.CharField(max_length=2,choices=FLAGS,blank=True)
+    entered_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name='+')
+    acknowledged_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='+')
+    acknowledged_at=models.DateTimeField(null=True,blank=True)
+    class Meta: unique_together=[('order','parameter')]; ordering=['parameter__sort_order','id']
+    @property
+    def display(self):
+        if self.value_number is not None:
+            return f'{round(self.value_number,self.parameter.decimals):f}'
+        return self.value_text
+    @property
+    def is_abnormal(self):return self.flag in ('L','H','LL','HH','A')
+    @property
+    def is_critical(self):return self.flag in ('LL','HH')
 
 class Medication(Tracked):
     name=models.CharField(max_length=180)
@@ -159,21 +281,66 @@ class StockBatch(Tracked):
     class Meta: unique_together=[('medication','batch_number','location')]
     def __str__(self):return f'{self.medication} / {self.batch_number} ({self.quantity})'
 
+FREQUENCIES=[
+    ('OD','Once daily',1),('BD','Twice daily',2),('TDS','Three times daily',3),('QDS','Four times daily',4),
+    ('Q4H','Every 4 hours',6),('Q6H','Every 6 hours',4),('Q8H','Every 8 hours',3),('Q12H','Every 12 hours',2),
+    ('MANE','Every morning',1),('NOCTE','At night',1),('WEEKLY','Once a week',None),('STAT','Once only, now',None),('PRN','When required',None),('ASDIR','As directed',None)]
+FREQ_PER_DAY={c:n for c,_,n in FREQUENCIES}
+ROUTES=[('oral','By mouth'),('iv','Intravenous (IV)'),('im','Intramuscular (IM)'),('sc','Subcutaneous'),('topical','On the skin'),
+        ('inhaled','Inhaled'),('sublingual','Under the tongue'),('rectal','Rectal'),('eye','Eye drops'),('ear','Ear drops'),('nasal','Nasal')]
+
 class Prescription(Tracked):
+    """One prescription for a visit. Holds one or more medicine lines (PrescriptionItem)."""
     STATES=[(x,x.title()) for x in ['draft','signed','dispensed','cancelled']]
     encounter=models.ForeignKey(Encounter,on_delete=models.PROTECT,related_name='prescriptions')
-    medication=models.ForeignKey(Medication,on_delete=models.PROTECT)
-    directions=models.TextField()
-    quantity=models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    notes=models.TextField(blank=True,help_text='Notes for the pharmacist')
     state=models.CharField(max_length=20,choices=STATES,default='draft')
     allergy_reviewed=models.BooleanField(default=False)
     override_reason=models.TextField(blank=True)
     signed_by=models.ForeignKey(settings.AUTH_USER_MODEL,null=True,blank=True,on_delete=models.SET_NULL)
     signed_at=models.DateTimeField(null=True,blank=True)
-    def __str__(self):return f'{self.medication} / {self.encounter.patient.mrn}'
+    @property
+    def number(self):return f'RX-{self.pk:06d}'
+    def __str__(self):return f'{self.number} / {self.encounter.patient.mrn}'
+
+class PrescriptionItem(Tracked):
+    """One medicine on a prescription: what, how much, how often, how long."""
+    prescription=models.ForeignKey(Prescription,on_delete=models.CASCADE,related_name='items')
+    medication=models.ForeignKey(Medication,on_delete=models.PROTECT)
+    dose=models.CharField(max_length=60,blank=True,help_text='Strength per dose, e.g. 500 mg')
+    units_per_dose=models.DecimalField(max_digits=6,decimal_places=2,default=1,validators=[MinValueValidator(0.25)],help_text='Tablets, capsules, sachets or mL per dose')
+    route=models.CharField(max_length=12,choices=ROUTES,default='oral')
+    frequency=models.CharField(max_length=8,choices=[(c,l) for c,l,_ in FREQUENCIES],default='TDS')
+    duration_days=models.PositiveSmallIntegerField(default=5,validators=[MinValueValidator(1)])
+    quantity=models.PositiveIntegerField(validators=[MinValueValidator(1)],help_text='Total units to dispense')
+    instructions=models.CharField(max_length=300,blank=True,help_text='e.g. after food, avoid alcohol')
+    sort_order=models.PositiveSmallIntegerField(default=0)
+    class Meta: ordering=['sort_order','id']
+    @staticmethod
+    def calculate_quantity(units_per_dose,frequency,duration_days):
+        """Units needed for the course. None when it cannot be worked out (when required / once a week rounding)."""
+        import math
+        u=float(units_per_dose or 1);d=int(duration_days or 1)
+        if frequency=='STAT':return max(1,math.ceil(u))
+        if frequency=='WEEKLY':return max(1,math.ceil(u*math.ceil(d/7)))
+        n=FREQ_PER_DAY.get(frequency)
+        return max(1,math.ceil(u*n*d)) if n else None
+    @property
+    def directions(self):
+        u=self.units_per_dose.normalize() if self.units_per_dose is not None else 1
+        unit=(self.medication.form or 'unit').lower()
+        parts=[f"{u:f} {unit}{'' if u==1 else 's'}"+(f' ({self.dose})' if self.dose else ''),self.get_route_display().lower(),
+               self.get_frequency_display().lower()]
+        if self.frequency=='ASDIR':
+            return f"{self.medication}: as directed"+(f'. {self.instructions}' if self.instructions else '')
+        if self.frequency not in ('STAT','PRN'):parts.append(f"for {self.duration_days} day{'s' if self.duration_days!=1 else ''}")
+        text=' '.join(parts)
+        return text[0].upper()+text[1:]+(f'. {self.instructions}' if self.instructions else '')
+    def __str__(self):return f'{self.medication} · {self.directions}'
 
 class Dispense(Tracked):
     prescription=models.ForeignKey(Prescription,on_delete=models.PROTECT,related_name='dispenses')
+    item=models.ForeignKey(PrescriptionItem,on_delete=models.PROTECT,null=True,blank=True,related_name='dispenses')
     batch=models.ForeignKey(StockBatch,on_delete=models.PROTECT)
     quantity=models.PositiveIntegerField(validators=[MinValueValidator(1)])
     dispensed_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)

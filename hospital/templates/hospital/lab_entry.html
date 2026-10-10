@@ -1,0 +1,95 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Results · {{ lr.number }}{% endblock %}
+{% block heading %}Results · {{ lr.number }}{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %} · Specimen {{ lr.specimen_id|default:'—' }} · {{ sections|length }} test{{ sections|length|pluralize }}{% if lr.priority != 'routine' %} · <span class="tag {% if lr.priority == 'stat' %}red{% else %}amber{% endif %}">{{ lr.get_priority_display }}</span>{% endif %}</p>{% endblock %}
+{% block content %}
+{% if lr.clinical_notes %}<div class="alert-mf info mb-3"><i class="bi bi-chat-left-text"></i><div><b>Clinical notes:</b> {{ lr.clinical_notes }}</div></div>{% endif %}
+<form method="post" class="grid g-main" novalidate>{% csrf_token %}
+  <div class="stack">
+    {% for sec in sections %}
+    <section class="panel flush test-section" id="t{{ sec.o.pk }}" style="--cat:{{ sec.o.test.category.color|default:'#5A6F7D' }}">
+      <div class="sec-head"><span class="cat-dot"></span><h2>{{ sec.o.test.name }}</h2><span class="small muted">{{ sec.o.test.category }} · {{ sec.o.test.sample_type }}</span><span class="tag {{ sec.o.status|tone }} ms-auto">{{ sec.o.get_status_display }}</span></div>
+      <div class="entry-head"><span>Parameter</span><span>Result</span><span>Reference{% if p.sex == 'F' %} (female){% endif %}</span><span>Flag</span></div>
+      {% for r in sec.rows %}
+      <div class="entry-row">
+        <label for="{{ r.key }}"><b>{{ r.p.name }}</b><small>{{ r.p.code }}</small></label>
+        <div>
+          {% if r.p.kind == 'choice' %}
+            <select class="form-select" id="{{ r.key }}" name="{{ r.key }}" data-param="{{ r.key }}"><option value="">—</option>{% for c in r.p.choices %}<option {% if r.value == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+          {% elif r.p.kind == 'text' %}
+            <input class="form-control" id="{{ r.key }}" name="{{ r.key }}" value="{{ r.value }}" data-param="{{ r.key }}" maxlength="500">
+          {% else %}
+            <div class="input-group"><input class="form-control" id="{{ r.key }}" name="{{ r.key }}" value="{{ r.value }}" inputmode="decimal" data-param="{{ r.key }}" autocomplete="off">{% if r.p.unit %}<span class="input-group-text">{{ r.p.unit }}</span>{% endif %}</div>
+            <div class="rangebar" aria-hidden="true"><i class="band"></i><i class="pin"></i></div>
+          {% endif %}
+          {% if r.error %}<div class="field-error">{{ r.error }}</div>{% endif %}
+        </div>
+        <span class="small muted">{{ r.range|default:'—' }}{% if r.p.critical_low is not None or r.p.critical_high is not None %}<br><span class="crit-note">Critical {% if r.p.critical_low is not None %}&lt;{{ r.p.critical_low.normalize }}{% endif %}{% if r.p.critical_low is not None and r.p.critical_high is not None %} · {% endif %}{% if r.p.critical_high is not None %}&gt;{{ r.p.critical_high.normalize }}{% endif %}</span>{% endif %}</span>
+        <span class="flag-cell" data-flag-for="{{ r.key }}">{% include 'hospital/_flag.html' with flag=r.flag %}</span>
+      </div>
+      {% endfor %}
+      <div class="px-4 py-3"><input class="form-control form-control-sm" name="comment_{{ sec.o.pk }}" value="{{ sec.o.result }}" placeholder="Comment for {{ sec.o.test.name }} (optional)" aria-label="Comment for {{ sec.o.test.name }}"></div>
+    </section>
+    {% endfor %}
+    <div class="panel"><div class="d-flex gap-2 flex-wrap align-items-center">
+      <button class="btn btn-primary" name="action" value="submit"><i class="bi bi-send-check"></i>Submit completed tests</button>
+      <button class="btn btn-ghost" name="action" value="save">Save draft</button>
+      <a class="btn btn-ghost" href="{% url 'labs' %}">Back to board</a>
+      <span class="small muted ms-auto">Tests with every value filled are submitted; the rest stay in processing.</span>
+    </div></div>
+  </div>
+  <aside class="panel align-self-start" style="position:sticky;top:20px">
+    <div class="panel-head"><h2>Live check</h2></div>
+    <div class="live-tally">
+      <div><b id="t-done">0</b><span>entered of {{ n_values }}</span></div>
+      <div class="abn"><b id="t-abn">0</b><span>out of range</span></div>
+      <div class="crit"><b id="t-crit">0</b><span>critical</span></div>
+    </div>
+    <ul class="plain ruled mt-3 jump">{% for sec in sections %}<li><a href="#t{{ sec.o.pk }}" class="d-flex gap-2"><span class="cat-dot" style="background:{{ sec.o.test.category.color }}"></span>{{ sec.o.test.name }}<span class="ms-auto small muted" data-count-for="{{ sec.o.pk }}"></span></a></li>{% endfor %}</ul>
+    <div class="alert-mf danger mt-3" id="crit-alert" hidden><i class="bi bi-telephone-fill"></i><div><b>Critical value.</b> Re-check the sample, then telephone the requesting clinician immediately after submitting.</div></div>
+    <p class="form-text mt-3 mb-0">Reference limits come from the test catalogue and may differ by sex. Your laboratory must validate them.</p>
+  </aside>
+</form>
+{{ rules|json_script:"rules" }}
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const rules = Object.fromEntries(JSON.parse(document.getElementById('rules').textContent).map(r => [r.id, r]));
+  const LABEL = {HH: ['crit', '▲▲ Critical'], LL: ['crit', '▼▼ Critical'], H: ['abn', '▲ High'], L: ['abn', '▼ Low'], A: ['abn', 'Abnormal'], N: ['ok', 'Normal']};
+  const flagOf = (r, raw) => {
+    if (raw === '' || raw == null) return '';
+    if (r.kind === 'choice') return (r.abn || []).includes(raw) ? 'A' : 'N';
+    if (r.kind !== 'number') return '';
+    const v = parseFloat(String(raw).replace(',', '.')); if (isNaN(v)) return '?';
+    if (r.clo != null && v < r.clo) return 'LL'; if (r.chi != null && v > r.chi) return 'HH';
+    if (r.lo != null && v < r.lo) return 'L'; if (r.hi != null && v > r.hi) return 'H'; return 'N';
+  };
+  const update = () => {
+    let done = 0, abn = 0, crit = 0; const per = {};
+    document.querySelectorAll('[data-param]').forEach(el => {
+      const r = rules[el.dataset.param], f = flagOf(r, el.value.trim()), row = el.closest('.entry-row'), oid = el.dataset.param.split('_')[1];
+      per[oid] = per[oid] || [0, 0]; per[oid][1]++;
+      if (el.value.trim()) { done++; per[oid][0]++; }
+      if (['H', 'L', 'A'].includes(f)) abn++; if (['HH', 'LL'].includes(f)) { abn++; crit++; }
+      row.dataset.state = f === 'HH' || f === 'LL' ? 'crit' : ['H', 'L', 'A'].includes(f) ? 'abn' : f === 'N' ? 'ok' : '';
+      const cell = document.querySelector(`[data-flag-for="${r.id}"]`);
+      cell.innerHTML = f === '?' ? '<span class="flag abn">Not a number</span>' : f ? `<span class="flag ${LABEL[f][0]}">${LABEL[f][1]}</span>` : '';
+      const bar = row.querySelector('.rangebar');
+      if (bar && r.kind === 'number') {
+        const v = parseFloat(el.value.replace(',', '.'));
+        const lo = r.lo ?? 0, hi = r.hi ?? (r.lo != null ? r.lo * 2 : 1), span = (hi - lo) || 1, min = lo - span * .6, max = hi + span * .6;
+        const pct = x => Math.max(0, Math.min(100, (x - min) / (max - min) * 100));
+        bar.querySelector('.band').style.cssText = `left:${pct(lo)}%;width:${pct(hi) - pct(lo)}%`;
+        const pin = bar.querySelector('.pin'); pin.hidden = isNaN(v); if (!isNaN(v)) pin.style.left = pct(v) + '%';
+      }
+    });
+    Object.entries(per).forEach(([oid, [d, t]]) => { const el = document.querySelector(`[data-count-for="${oid}"]`); if (el) el.textContent = d === t ? '✓ complete' : `${d}/${t}`; });
+    document.getElementById('t-done').textContent = done; document.getElementById('t-abn').textContent = abn; document.getElementById('t-crit').textContent = crit;
+    document.getElementById('crit-alert').hidden = !crit;
+  };
+  document.querySelectorAll('[data-param]').forEach(el => el.addEventListener('input', update));
+  update();
+})();
+</script>
+{% endblock %}

@@ -1,18 +1,125 @@
 {% extends 'hospital/base.html' %}
 {% block title %}{{ title }}{% endblock %}
 {% block heading %}{{ title }}{% endblock %}
-{% block subheading %}{% if subtitle %}<p class="sub">{{ subtitle }}</p>{% endif %}{% endblock %}
+{% block subheading %}<p class="sub">{{ subtitle }}</p>{% endblock %}
 {% block content %}
-<form method="post" novalidate class="grid g-main">
-  {% csrf_token %}
-  <section class="panel">
-    {% for e in form.non_field_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ e }}</div></div>{% endfor %}
-    <div class="form-grid">{% for field in form %}{% include 'hospital/_field.html' %}{% endfor %}</div>
-    <div class="form-actions"><button class="btn btn-primary"><i class="bi bi-check2"></i>Save draft</button><a href="javascript:history.back()" class="btn btn-ghost">Cancel</a></div>
-  </section>
-  <aside class="panel align-self-start" style="position:sticky;top:20px">
-    <div class="panel-head"><h2><i class="bi bi-shield-plus me-1" style="color:var(--teal)"></i>Safety check</h2><span class="hint">Updates as you type</span></div>
-    <div data-rx-check></div>
-  </aside>
+<form method="post" novalidate id="rx-form">{% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.GET.next }}">
+  {% for e in form.non_field_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ e }}</div></div>{% endfor %}
+  {% for e in formset.non_form_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ e }}</div></div>{% endfor %}
+  <div class="grid g-main">
+    <div class="stack">
+      <section class="panel">
+        {% with field=form.encounter %}{% include 'hospital/_field.html' %}{% endwith %}
+        <div class="allergy-strip none mb-0" id="allergy-box"><i class="bi bi-person-vcard"></i>Choose a visit to see the patient's allergies.</div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>Medicines</h2><span class="hint" id="line-count"></span></div>
+        {{ formset.management_form }}
+        <div id="lines">{% for f in formset.forms %}{% include 'hospital/_rx_line.html' %}{% endfor %}</div>
+        <button type="button" class="btn btn-ghost w-100 mt-1" id="add-line" style="border-style:dashed"><i class="bi bi-plus-lg"></i>Add another medicine</button>
+        <template id="line-template">{% with f=formset.empty_form %}{% include 'hospital/_rx_line.html' %}{% endwith %}</template>
+      </section>
+    </div>
+    <aside class="stack align-self-start" style="position:sticky;top:20px">
+      <section class="panel">
+        <div class="panel-head"><h2><i class="bi bi-receipt me-1" style="color:var(--teal)"></i>Prescription summary</h2></div>
+        <ol class="rx-summary" id="summary"><li class="muted">No medicines yet.</li></ol>
+      </section>
+      <section class="panel">
+        {% with field=form.allergy_reviewed %}{% include 'hospital/_field.html' %}{% endwith %}
+        <div class="field" id="override-wrap" {% if not form.override_reason.value and not form.override_reason.errors %}hidden{% endif %}>
+          {% with field=form.override_reason %}<label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for e in field.errors %}<div class="field-error">{{ e }}</div>{% endfor %}{% endwith %}</div>
+        {% with field=form.notes %}{% include 'hospital/_field.html' %}{% endwith %}
+        <button class="btn btn-primary w-100"><i class="bi bi-check2"></i>Save prescription</button>
+        <p class="form-text mt-2 mb-0">Allergy checks match names only. Interactions and dosing are not checked; a pharmacist must review.</p>
+      </section>
+    </aside>
+  </div>
 </form>
+{{ meds|json_script:"rx-meds" }}{{ per_day|json_script:"rx-perday" }}
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const MEDS = JSON.parse(document.getElementById('rx-meds').textContent), PER_DAY = JSON.parse(document.getElementById('rx-perday').textContent);
+  // dose times on a 24h strip, by frequency (hours of the day)
+  const TIMES = {OD: [8], BD: [8, 20], TDS: [8, 14, 20], QDS: [6, 12, 18, 22], Q4H: [2, 6, 10, 14, 18, 22], Q6H: [0, 6, 12, 18], Q8H: [6, 14, 22], Q12H: [8, 20], MANE: [7], NOCTE: [22], WEEKLY: [8], STAT: [], PRN: [], ASDIR: []};
+  const ROUTE = {oral: 'by mouth', iv: 'intravenously', im: 'intramuscularly', sc: 'subcutaneously', topical: 'on the skin', inhaled: 'inhaled', sublingual: 'under the tongue', rectal: 'rectally', eye: 'in the eye', ear: 'in the ear', nasal: 'in the nose'};
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const lines = document.getElementById('lines'), total = document.querySelector('[name="items-TOTAL_FORMS"]'), enc = document.querySelector('[name="encounter"]');
+  const q = (line, name) => line.querySelector(`[name$="-${name}"]`);
+  const calc = (u, f, d) => { u = +u || 1; d = +d || 1; if (f === 'STAT') return Math.ceil(u); if (f === 'WEEKLY') return Math.ceil(u * Math.ceil(d / 7)); return PER_DAY[f] ? Math.ceil(u * PER_DAY[f] * d) : null; };
+  let allergyMatch = {};
+
+  function refresh(line) {
+    const med = MEDS[q(line, 'medication').value], f = q(line, 'frequency').value, u = q(line, 'units_per_dose').value || 1, d = q(line, 'duration_days').value || 1;
+    const unit = med ? (med.form || 'unit').toLowerCase() : 'unit', plural = +u === 1 ? unit : unit + 's';
+    line.querySelector('.unit-label').textContent = med ? `(${plural})` : '';
+    const dose = q(line, 'dose'); if (med && !dose.value && med.strength) dose.placeholder = med.strength;
+    const qty = q(line, 'quantity'), auto = calc(u, f, d), hint = line.querySelector('[data-qty-hint]');
+    if (!qty.dataset.manual) { qty.value = auto ?? ''; }
+    hint.textContent = qty.dataset.manual ? 'Edited' : auto == null ? 'Enter manually' : 'Auto';
+    const fText = q(line, 'frequency').selectedOptions[0]?.text.toLowerCase() || '';
+    line.querySelector('[data-sentence]').innerHTML = med
+      ? `<b>${esc(med.name)}</b> · ${esc(+u)} ${esc(plural)}${dose.value ? ` (${esc(dose.value)})` : ''} ${esc(ROUTE[q(line, 'route').value] || '')}, ${esc(fText)}${['STAT', 'PRN', 'ASDIR'].includes(f) ? '' : ` for ${esc(d)} day${+d === 1 ? '' : 's'}`}${qty.value ? ` = <b>${esc(qty.value)} ${esc(+qty.value === 1 ? unit : unit + 's')}</b>` : ''}`
+      : 'Choose a medicine';
+    const strip = line.querySelector('[data-strip]'); strip.querySelectorAll('i').forEach(i => i.remove());
+    (TIMES[f] || []).forEach((h, i) => { const dot = document.createElement('i'); dot.style.left = `${((h - 6 + 24) % 24) / 24 * 100}%`; dot.style.animationDelay = `${i * 60}ms`; dot.title = `${h}:00`; strip.appendChild(dot); });
+    strip.dataset.mode = f === 'PRN' ? 'prn' : f === 'STAT' ? 'stat' : f === 'ASDIR' ? 'asdir' : '';
+    safety(line); summary();
+  }
+  const timers = new WeakMap();
+  function safety(line) {
+    const box = line.querySelector('[data-safety]'), med = q(line, 'medication').value, qty = q(line, 'quantity').value || 1;
+    if (!enc.value || !med) { box.innerHTML = ''; delete allergyMatch[line.dataset.key]; overrideToggle(); return; }
+    clearTimeout(timers.get(line));
+    timers.set(line, setTimeout(() => fetch(`{% url 'api_rx_check' %}?encounter=${enc.value}&medication=${med}&quantity=${qty}`, {credentials: 'same-origin'}).then(r => r.json()).then(d => {
+      if (!d.ready) return;
+      allergyMatch[line.dataset.key] = d.possible_allergy_matches.length > 0;
+      box.innerHTML = (d.possible_allergy_matches.length ? `<span class="tag red"><i class="bi bi-exclamation-octagon-fill"></i>Possible allergy: ${d.possible_allergy_matches.map(a => esc(a.substance)).join(', ')}</span>` : '<span class="tag teal"><i class="bi bi-shield-check"></i>No name match with recorded allergies</span>')
+        + (d.insufficient_stock ? ` <span class="tag amber">Only ${d.inventory_available} in stock</span>` : ` <span class="tag">${d.inventory_available} in stock</span>`);
+      line.classList.toggle('danger', d.possible_allergy_matches.length > 0);
+      overrideToggle();
+    }).catch(() => {}), 250));
+  }
+  function overrideToggle() { document.getElementById('override-wrap').hidden = !Object.values(allergyMatch).some(Boolean) && !document.querySelector('[name="override_reason"]').value; }
+  function summary() {
+    const live = [...lines.querySelectorAll('[data-line]')].filter(l => !l.hidden);
+    live.forEach((l, i) => l.querySelector('.rx-n').textContent = i + 1);
+    document.getElementById('line-count').textContent = `${live.length} line${live.length === 1 ? '' : 's'}`;
+    const items = live.filter(l => q(l, 'medication').value).map(l => `<li>${l.querySelector('[data-sentence]').innerHTML}</li>`);
+    document.getElementById('summary').innerHTML = items.join('') || '<li class="muted">No medicines yet.</li>';
+  }
+  function wire(line) {
+    line.dataset.key = Math.random().toString(36).slice(2);
+    line.addEventListener('input', e => { if (e.target.name?.endsWith('-quantity')) e.target.dataset.manual = e.target.value ? '1' : ''; refresh(line); });
+    line.addEventListener('change', () => refresh(line));
+    line.querySelector('[data-remove]').addEventListener('click', () => {
+      const live = [...lines.querySelectorAll('[data-line]')].filter(l => !l.hidden);
+      if (live.length === 1) { window.mfToast?.('A prescription needs at least one medicine.', 'warning'); return; }
+      q(line, 'DELETE').checked = true; line.hidden = true; delete allergyMatch[line.dataset.key]; overrideToggle(); summary();
+    });
+    const qty = q(line, 'quantity'); if (qty.value && calc(q(line, 'units_per_dose').value, q(line, 'frequency').value, q(line, 'duration_days').value) != +qty.value) qty.dataset.manual = '1';
+    refresh(line);
+  }
+  document.getElementById('add-line').addEventListener('click', () => {
+    const n = +total.value, html = document.getElementById('line-template').innerHTML.replace(/__prefix__/g, n);
+    lines.insertAdjacentHTML('beforeend', html); total.value = n + 1;
+    const line = lines.lastElementChild; wire(line); line.querySelector('select').focus();
+  });
+  async function loadAllergies() {
+    const box = document.getElementById('allergy-box');
+    if (!enc.value) { box.className = 'allergy-strip none mb-0'; box.innerHTML = '<i class="bi bi-person-vcard"></i>Choose a visit to see the patient\'s allergies.'; return; }
+    const first = [...lines.querySelectorAll('[data-line]')].find(l => q(l, 'medication').value);
+    const med = first ? q(first, 'medication').value : Object.keys(MEDS)[0];
+    const d = await fetch(`{% url 'api_rx_check' %}?encounter=${enc.value}&medication=${med}&quantity=1`, {credentials: 'same-origin'}).then(r => r.json()).catch(() => ({}));
+    if (!d.ready) return;
+    box.className = 'allergy-strip mb-0' + (d.documented_allergies.length ? '' : ' none');
+    box.innerHTML = `<i class="bi bi-exclamation-triangle-fill"></i><b>${esc(d.patient)}</b>` + (d.documented_allergies.length ? d.documented_allergies.map(a => `<span class="tag">${esc(a.substance)} · ${esc(a.severity)}</span>`).join('') : ' · no allergies documented; ask before prescribing');
+  }
+  enc.addEventListener('change', () => { loadAllergies(); lines.querySelectorAll('[data-line]').forEach(safety); });
+  lines.querySelectorAll('[data-line]').forEach(wire); loadAllergies();
+})();
+</script>
 {% endblock %}

@@ -66,3 +66,8 @@ STATUS_TONE = {
 @register.filter
 def tone(status):
     return STATUS_TONE.get(str(status), '')
+
+
+@register.filter
+def range_for_sex(parameter, sex):
+    return parameter.range_label(sex)

@@ -14,11 +14,12 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .forms import (VITAL_FIELDS, AdmissionForm, AllergyForm, ConditionForm, EncounterForm, FormDefinitionForm,
-                    LabOrderForm, PatientForm, PrescriptionForm, ReferralForm, TicketForm, WorkflowDefinitionForm)
-from .models import (Admission, Attendance, AuditEvent, Bed, Department, Encounter, FormDefinition, FormSubmission,
+                    LabOrderForm, PatientForm, PrescriptionForm, PrescriptionItemFormSet, ReferralForm, TicketForm, WorkflowDefinitionForm)
+from .models import (FREQUENCIES, LabRequest, PrescriptionItem, BODY_SYSTEMS, LabCategory, LabParameter, LabResultValue, LabTest, StaffProfile,
+                     Admission, Attendance, AuditEvent, Bed, Department, Encounter, FormDefinition, FormSubmission,
                      LabOrder, Medication, Patient, Prescription, QueueTicket, Referral, Signature, Ward,
                      WorkflowDefinition, WorkflowRun)
-from .services import advance_workflow, assign_bed, availability, discharge, dispense, prescription_warnings, sign_document
+from .services import advance_workflow, assign_bed, availability, discharge, dispense, prescription_check, prescription_warnings, sign_document
 
 # Staff accounts are provisioned by administrators; there is no public signup.
 ROLES = {
@@ -84,7 +85,7 @@ def hospital_snapshot():
         {'key': 'arrived', 'label': 'Arrived today', 'value': tickets_today.count(), 'url': reverse('queue')},
         {'key': 'waiting', 'label': 'Waiting', 'value': waiting, 'url': reverse('queue')},
         {'key': 'consult', 'label': 'With a clinician', 'value': QueueTicket.objects.filter(status__in=['called', 'in_service']).count(), 'url': reverse('queue')},
-        {'key': 'lab', 'label': 'Lab pending', 'value': LabOrder.objects.filter(status__in=['ordered', 'collected', 'processing']).count(), 'url': reverse('labs')},
+        {'key': 'lab', 'label': 'Lab requests pending', 'value': LabRequest.objects.filter(orders__status__in=['ordered', 'collected', 'processing']).distinct().count(), 'url': reverse('labs')},
         {'key': 'pharmacy', 'label': 'Rx to dispense', 'value': Prescription.objects.filter(state='signed').count(), 'url': reverse('pharmacy')},
         {'key': 'admitted', 'label': 'Admitted', 'value': Admission.objects.filter(discharged_at__isnull=True).count(), 'url': reverse('beds')},
     ]
@@ -106,7 +107,7 @@ ACTION_LABELS = {
     'create': 'created', 'queue_transition': 'moved a ticket', 'dispense': 'dispensed',
     'esign': 'e-signed', 'discharge': 'discharged', 'attendance': 'logged attendance', 'workflow_action': 'acted on a workflow',
     'submit_form': 'submitted a form', 'lab_update': 'updated a lab order', 'referral_update': 'updated a referral',
-    'complete_encounter': 'completed a visit', 'bed_ready': 'readied a bed', 'prescribing_warning_review': 'reviewed Rx safety',
+    'complete_encounter': 'completed a visit', 'lab_acknowledge': 'reviewed a lab finding', 'bed_ready': 'readied a bed', 'prescribing_warning_review': 'reviewed Rx safety',
 }
 
 
@@ -144,6 +145,8 @@ def dashboard(request):
         'patients_total': Patient.objects.count(),
         'referrals_open': Referral.objects.exclude(status__in=['completed', 'cancelled', 'declined']).count(),
         'on_duty': Attendance.objects.filter(clock_out__isnull=True).count(),
+        'critical_values': LabResultValue.objects.filter(flag__in=['LL', 'HH'], acknowledged_at__isnull=True)
+            .select_related('parameter', 'order__encounter__patient').order_by('-created_at')[:5],
     })
 
 
@@ -190,15 +193,16 @@ def patient_chart(request, pk):
     p = get_object_or_404(Patient, pk=pk)
     audit(request, 'view_chart', f'patient:{p.pk}')
     encounters = list(p.encounters.select_related('clinician', 'department').order_by('-created_at')[:50])
-    prescriptions = Prescription.objects.filter(encounter__patient=p).select_related('medication').order_by('-created_at')[:100]
-    labs = LabOrder.objects.filter(encounter__patient=p).select_related('test').order_by('-created_at')[:100]
+    prescriptions = Prescription.objects.filter(encounter__patient=p).prefetch_related('items__medication').order_by('-created_at')[:100]
+    labs = LabOrder.objects.filter(encounter__patient=p).select_related('test', 'request').order_by('-created_at')[:100]
+    lab_reqs = list(lab_requests_qs().filter(encounter__patient=p).order_by('-created_at')[:50])
     referrals = Referral.objects.filter(encounter__patient=p).order_by('-created_at')
     admissions = list(Admission.objects.filter(encounter__patient=p).select_related('bed__ward').order_by('-admitted_at'))
     # One merged, reverse-chronological timeline across every clinical record type.
     timeline = (
         [{'when': e.created_at, 'kind': 'visit', 'title': e.reason, 'meta': e.get_status_display(), 'url': reverse('encounter_detail', args=[e.pk])} for e in encounters] +
-        [{'when': x.created_at, 'kind': 'rx', 'title': str(x.medication), 'meta': x.get_state_display()} for x in prescriptions] +
-        [{'when': x.created_at, 'kind': 'lab', 'title': x.test.name, 'meta': x.get_status_display(), 'flag': x.abnormal} for x in labs] +
+        [{'when': x.created_at, 'kind': 'rx', 'title': ', '.join(str(i.medication) for i in x.items.all()) or x.number, 'meta': f'{x.number} · {x.get_state_display()}'} for x in prescriptions] +
+        [{'when': r.created_at, 'kind': 'lab', 'title': ', '.join(o.test.name for o in r.orders.all()), 'meta': f'{r.number} · {r.get_priority_display()} · {r.stage.title()}', 'flag': any(o.abnormal for o in r.orders.all())} for r in lab_reqs] +
         [{'when': x.created_at, 'kind': 'referral', 'title': f'Referral to {x.destination}', 'meta': x.get_status_display()} for x in referrals] +
         [{'when': x.admitted_at, 'kind': 'admission', 'title': f'Admitted to {x.bed}', 'meta': 'Discharged' if x.discharged_at else 'Current'} for x in admissions]
     )
@@ -208,7 +212,7 @@ def patient_chart(request, pk):
     return render(request, 'hospital/chart.html', {
         'p': p, 'allergies': p.allergies.order_by('status', '-created_at'), 'conditions': p.conditions.order_by('status', '-created_at'),
         'encounters': encounters, 'prescriptions': prescriptions, 'labs': labs, 'referrals': referrals, 'admissions': admissions,
-        'submissions': p.submissions.select_related('definition').prefetch_related('signature_set').order_by('-created_at'),
+        'lab_reqs': lab_reqs, 'submissions': p.submissions.select_related('definition').prefetch_related('signature_set').order_by('-created_at'),
         'available_forms': FormDefinition.objects.filter(published=True), 'timeline': timeline[:40],
         'vitals': vitals, 'vitals_at': latest.created_at if latest else None,
         'open_encounter': next((e for e in encounters if e.status == 'open'), None),
@@ -254,10 +258,11 @@ def encounter_detail(request, pk):
     authorize(request, 'clinical')
     e = get_object_or_404(Encounter.objects.select_related('patient', 'clinician', 'department'), pk=pk)
     audit(request, 'view_chart', f'encounter:{e.pk}')
-    rx = e.prescriptions.select_related('medication')
+    rx = e.prescriptions.prefetch_related('items__medication').select_related('signed_by')
     return render(request, 'hospital/encounter.html', {
-        'e': e, 'p': e.patient, 'labs': e.labs.select_related('test'), 'referrals': e.referrals.all(),
-        'prescriptions': [(x, prescription_warnings(e, x.medication, x.quantity)) for x in rx],
+        'e': e, 'p': e.patient, 'labs': e.labs.select_related('test').prefetch_related('values__parameter'), 'referrals': e.referrals.all(),
+        'prescriptions': [(x, prescription_check(x)) for x in rx],
+        'lab_reqs': lab_requests_qs().filter(encounter=e),
         'allergies': e.patient.allergies.filter(status='active'), 'admissions': e.admissions.select_related('bed'),
         'vitals': [(lbl, unit, e.vitals.get(k)) for k, lbl, unit, _ in VITAL_FIELDS if e.vitals.get(k)],
         'can_sign': role_of(request.user) in ('doctor', 'admin'),
@@ -413,53 +418,298 @@ def referral_transition(request, pk, state):
 
 # ---------------------------------------------------------------- laboratory
 
+def lab_requests_qs():
+    from django.db.models import Prefetch
+    return (LabRequest.objects.select_related('encounter__patient', 'requested_by')
+            .prefetch_related(Prefetch('orders', queryset=LabOrder.objects.select_related('test__category').prefetch_related('values__parameter').order_by('id'))))
+
+
 @login_required
 def labs(request):
+    """The lab board: one card per patient request, holding all of its tests."""
     authorize(request)
-    orders = list(LabOrder.objects.select_related('encounter__patient', 'test').order_by('created_at')[:300])
-    lanes = [('ordered', 'Ordered'), ('collected', 'Specimen collected'), ('processing', 'Processing'), ('resulted', 'Awaiting verification')]
-    board = [{'key': k, 'label': lbl, 'orders': [o for o in orders if o.status == k]} for k, lbl in lanes]
-    done = sorted([o for o in orders if o.status == 'verified'], key=lambda o: o.verified_at or o.created_at, reverse=True)[:20]
+    reqs = [r for r in lab_requests_qs().order_by('created_at')[:300]]
+    lanes = [('ordered', 'Awaiting collection'), ('collected', 'Specimen collected'), ('processing', 'Processing'), ('resulted', 'Awaiting verification')]
+    rank = {'stat': 0, 'urgent': 1, 'routine': 2}
+    board = [{'key': k, 'label': lbl, 'requests': sorted([r for r in reqs if r.stage == k], key=lambda r: (rank[r.priority], r.created_at))} for k, lbl in lanes]
+    done = sorted([r for r in reqs if r.stage == 'verified'], key=lambda r: r.updated_at, reverse=True)[:20]
     return render(request, 'hospital/labs.html', {'board': board, 'done': done})
 
 
 @login_required
 def lab_new(request):
-    return edit_page(request, LabOrderForm, 'Order laboratory test', 'labs', 'clinical')
+    """Order several catalogue tests for one patient as a single lab request."""
+    authorize(request, 'clinical')
+    encounters = Encounter.objects.filter(status='open').select_related('patient').order_by('-created_at')[:300]
+    categories = LabCategory.objects.prefetch_related(models_prefetch_tests()).all()
+    selected_enc = request.POST.get('encounter') or request.GET.get('encounter', '')
+    if request.method == 'POST':
+        enc = Encounter.objects.filter(pk=selected_enc, status='open').first()
+        tests = list(LabTest.objects.filter(pk__in=request.POST.getlist('tests'), active=True))
+        priority = request.POST.get('priority') if request.POST.get('priority') in dict(LabRequest.PRIORITY) else 'routine'
+        if not enc or not tests:
+            messages.error(request, 'Choose an open visit and at least one test.')
+        else:
+            with transaction.atomic():
+                lr = LabRequest.objects.create(encounter=enc, requested_by=request.user, priority=priority,
+                                               clinical_notes=request.POST.get('clinical_notes', '')[:2000])
+                for t in tests:
+                    LabOrder.objects.create(encounter=enc, request=lr, test=t)
+                audit(request, 'create', f'hospital.LabRequest:{lr.pk}', {'tests': len(tests)})
+            messages.success(request, f'Lab request {lr.number}: {len(tests)} test{"s" if len(tests) > 1 else ""} for {enc.patient.full_name}.')
+            return redirect(request.POST.get('next') or 'labs')
+    return render(request, 'hospital/lab_order_form.html', {'encounters': encounters, 'categories': categories, 'priorities': LabRequest.PRIORITY,
+                                                            'selected_enc': str(selected_enc), 'selected': request.POST.getlist('tests')})
 
 
-LAB_FLOW = {'collect': ('ordered', 'collected'), 'process': ('collected', 'processing'),
-            'result': ('processing', 'resulted'), 'verify': ('resulted', 'verified')}
+def models_prefetch_tests():
+    from django.db.models import Prefetch
+    return Prefetch('tests', queryset=LabTest.objects.filter(active=True).prefetch_related('parameters'))
 
 
 @login_required
 @require_POST
-def lab_update(request, pk, step):
+def lab_request_action(request, pk, step):
+    """Move every test in a request forward together: collect, process, verify, or cancel the whole request."""
+    authorize(request, 'lab')
+    with transaction.atomic():
+        lr = get_object_or_404(LabRequest.objects.select_for_update(), pk=pk)
+        orders = list(lr.orders.select_for_update())
+        now, moved = timezone.now(), 0
+        if step == 'collect':
+            lr.specimen_id = request.POST.get('specimen_id', '').strip()[:80] or lr.specimen_id or f'SP-{lr.pk:06d}'
+            lr.collected_at = now; lr.save(update_fields=['specimen_id', 'collected_at', 'updated_at'])
+            for o in orders:
+                if o.status == 'ordered':
+                    o.status, o.specimen_id, o.performed_by = 'collected', lr.specimen_id, o.performed_by or request.user; o.save(); moved += 1
+        elif step == 'process':
+            for o in orders:
+                if o.status == 'collected':
+                    o.status, o.performed_by = 'processing', o.performed_by or request.user; o.save(); moved += 1
+        elif step == 'verify':
+            for o in orders:
+                if o.status == 'resulted':
+                    o.status, o.verified_by, o.verified_at = 'verified', request.user, now; o.save(); moved += 1
+        elif step == 'cancel':
+            for o in orders:
+                if o.status not in ('verified', 'cancelled'):
+                    o.status = 'cancelled'; o.save(); moved += 1
+        else:
+            return HttpResponseBadRequest('Unknown step')
+        if not moved:
+            return HttpResponseBadRequest('Nothing in this request can take that step')
+        lr.save(update_fields=['updated_at'])
+        audit(request, 'lab_update', f'lab_request:{lr.pk}', {'step': step, 'tests': moved})
+    if step == 'process':
+        return redirect('lab_results_entry', pk=lr.pk)
+    if step == 'verify':
+        messages.success(request, f'{moved} result{"s" if moved > 1 else ""} verified and released for {lr.number}.')
+    return redirect(request.POST.get('next') or 'labs')
+
+
+@login_required
+@require_POST
+def lab_order_cancel(request, pk):
+    """Cancel one test inside a request without touching the others."""
     authorize(request, 'lab')
     with transaction.atomic():
         o = get_object_or_404(LabOrder.objects.select_for_update(), pk=pk)
-        if step == 'cancel':
-            if o.status in ('verified', 'cancelled'):
-                return HttpResponseBadRequest('Cannot cancel')
-            o.status = 'cancelled'
-        elif step in LAB_FLOW and o.status == LAB_FLOW[step][0]:
-            if step == 'collect':
-                o.specimen_id = request.POST.get('specimen_id', '').strip()[:80] or o.specimen_id or f'SP-{o.pk:06d}'
-            if step == 'result':
-                result = request.POST.get('result', '').strip()
-                if not result:
-                    messages.error(request, 'Enter a result before submitting.')
-                    return redirect('labs')
-                o.result = result[:4000]; o.reference_range = request.POST.get('reference_range', '')[:100]
-                o.abnormal = request.POST.get('abnormal') == 'on'; o.resulted_at = timezone.now()
-            if step == 'verify':
-                o.verified_by = request.user; o.verified_at = timezone.now()
-            o.status = LAB_FLOW[step][1]
-        else:
-            return HttpResponseBadRequest('Invalid lab step')
-        o.save()
-        audit(request, 'lab_update', f'lab_order:{o.pk}', {'status': o.status})
-    return redirect('labs')
+        if o.status in ('verified', 'cancelled'):
+            return HttpResponseBadRequest('Cannot cancel')
+        o.status = 'cancelled'; o.save()
+        audit(request, 'lab_update', f'lab_order:{o.pk}', {'status': 'cancelled'})
+    messages.success(request, f'{o.test.name} cancelled.')
+    return redirect(request.POST.get('next') or 'labs')
+
+
+@login_required
+def lab_results_entry(request, pk):
+    """One results sheet for the whole request: a section per test, a row per parameter."""
+    authorize(request, 'lab')
+    lr = get_object_or_404(lab_requests_qs(), pk=pk)
+    p = lr.encounter.patient
+    orders = [o for o in lr.orders.all() if o.status in ('collected', 'processing', 'resulted')]
+    if not orders:
+        messages.error(request, 'No tests in this request are ready for results. Collect the specimen first.')
+        return redirect('labs')
+    errors, sections = {}, []
+    if request.method == 'POST':
+        from decimal import Decimal, InvalidOperation
+        submit = request.POST.get('action') == 'submit'
+        parsed = {}
+        for o in orders:
+            for prm in o.test.parameters.all():
+                key = f'p_{o.pk}_{prm.pk}'
+                raw = request.POST.get(key, '').strip()
+                if prm.kind == 'number' and raw:
+                    try:
+                        parsed[key] = Decimal(raw.replace(',', '.'))
+                    except InvalidOperation:
+                        errors[key] = 'Enter a number'
+                elif prm.kind == 'choice' and raw and raw not in prm.choices:
+                    errors[key] = 'Choose a listed option'
+                else:
+                    parsed[key] = raw[:500]
+        if not errors:
+            completed, partial, crit = [], [], 0
+            with transaction.atomic():
+                for o in orders:
+                    for prm in o.test.parameters.all():
+                        val = parsed.get(f'p_{o.pk}_{prm.pk}')
+                        if val in (None, ''):
+                            LabResultValue.objects.filter(order=o, parameter=prm).delete(); continue
+                        num = val if prm.kind == 'number' else None
+                        LabResultValue.objects.update_or_create(order=o, parameter=prm, defaults={
+                            'value_number': num, 'value_text': '' if num is not None else val, 'flag': prm.flag_for(val, p.sex), 'entered_by': request.user})
+                    o.result = request.POST.get(f'comment_{o.pk}', '')[:4000]
+                    o.performed_by = o.performed_by or request.user
+                    o.abnormal = o.values.exclude(flag__in=['', 'N']).exists()
+                    if o.status == 'collected':
+                        o.status = 'processing'
+                    required = [prm for prm in o.test.parameters.all() if prm.kind != 'text']
+                    filled = all(parsed.get(f'p_{o.pk}_{prm.pk}') not in (None, '') for prm in required)
+                    if submit and o.status == 'processing':
+                        if filled:
+                            o.status, o.resulted_at = 'resulted', timezone.now(); completed.append(o.test.name)
+                            crit += o.values.filter(flag__in=['LL', 'HH']).count()
+                        elif any(parsed.get(f'p_{o.pk}_{prm.pk}') not in (None, '') for prm in required):
+                            partial.append(o.test.name)
+                    o.save()
+                audit(request, 'lab_update', f'lab_request:{lr.pk}', {'submitted': completed})
+            if submit:
+                if completed:
+                    messages.success(request, f'Submitted for verification: {", ".join(completed)}.')
+                if partial:
+                    messages.warning(request, f'Saved but not submitted (values missing): {", ".join(partial)}.')
+                if crit:
+                    messages.warning(request, f'{crit} critical value{"s" if crit > 1 else ""} submitted. Telephone the requesting clinician now and document it.')
+                if not completed and not partial:
+                    messages.error(request, 'Enter every value of at least one test before submitting, or save as draft.')
+                return redirect('labs' if completed and not partial else request.path)
+            messages.success(request, 'Draft saved.')
+            return redirect(request.path)
+    rules = []
+    for o in orders:
+        existing = {v.parameter_id: v for v in o.values.all()}
+        rows = []
+        for prm in o.test.parameters.all():
+            key = f'p_{o.pk}_{prm.pk}'
+            v = existing.get(prm.pk)
+            lo, hi = prm.range_for(p.sex)
+            rows.append({'p': prm, 'key': key, 'value': request.POST.get(key) if request.method == 'POST' else (v.display if v else ''),
+                         'flag': v.flag if v else '', 'error': errors.get(key), 'range': prm.range_label(p.sex)})
+            rules.append({'id': key, 'kind': prm.kind, 'lo': _f(lo), 'hi': _f(hi), 'clo': _f(prm.critical_low), 'chi': _f(prm.critical_high), 'abn': prm.abnormal_choices})
+        sections.append({'o': o, 'rows': rows})
+    return render(request, 'hospital/lab_entry.html', {'lr': lr, 'p': p, 'sections': sections, 'rules': rules,
+                                                       'n_values': sum(len(s['rows']) for s in sections)})
+
+
+def _f(d):
+    return float(d) if d is not None else None
+
+
+@login_required
+def lab_mine(request):
+    """Requests this technician worked on, newest first."""
+    authorize(request, 'lab')
+    period = request.GET.get('period', '7')
+    qs = lab_requests_qs().filter(orders__performed_by=request.user).distinct().order_by('-updated_at')
+    if period != 'all':
+        qs = qs.filter(updated_at__gte=timezone.now() - timedelta(days=int(period) if period.isdigit() else 7))
+    cat = request.GET.get('category', '')
+    if cat:
+        qs = qs.filter(orders__test__category__code=cat)
+    rows = list(qs[:200])
+    tests = [o for r in rows for o in r.orders.all() if o.performed_by_id == request.user.pk]
+    stats = {'requests': len(rows), 'tests': len(tests), 'verified': sum(o.status == 'verified' for o in tests),
+             'pending': sum(o.status in ('collected', 'processing', 'resulted') for o in tests), 'abnormal': sum(o.abnormal for o in tests)}
+    by_cat = {}
+    for o in tests:
+        k = o.test.category.name if o.test.category else 'Uncategorised'
+        by_cat[k] = by_cat.get(k, 0) + 1
+    return render(request, 'hospital/lab_mine.html', {'rows': rows, 'stats': stats, 'by_cat': sorted(by_cat.items(), key=lambda x: -x[1]),
+                                                      'period': period, 'cat': cat, 'categories': LabCategory.objects.all()})
+
+
+@login_required
+def lab_catalog(request):
+    authorize(request)
+    return render(request, 'hospital/lab_catalog.html', {'categories': LabCategory.objects.prefetch_related(models_prefetch_tests()),
+                                                         'uncategorised': LabTest.objects.filter(category__isnull=True, active=True), 'systems': dict(BODY_SYSTEMS)})
+
+
+def lab_view_pref(request):
+    p = getattr(request.user, 'hospital_staff', None)
+    try:
+        return p.lab_view if p else request.session.get('lab_view', 'body')
+    except Exception:
+        return 'body'
+
+
+@login_required
+@require_POST
+def set_lab_view(request):
+    view = request.POST.get('view')
+    if view not in ('body', 'clean'):
+        return HttpResponseBadRequest('Unknown view')
+    p = StaffProfile.objects.filter(user=request.user).first()
+    if p:
+        p.lab_view = view; p.save(update_fields=['lab_view', 'updated_at'])
+    request.session['lab_view'] = view
+    return JsonResponse({'ok': True, 'view': view})
+
+
+def patient_lab_data(patient):
+    """Everything the insights page needs, as plain JSON: per-parameter history plus per-system summaries."""
+    orders = (LabOrder.objects.filter(encounter__patient=patient, status__in=['resulted', 'verified'])
+              .select_related('test__category').prefetch_related('values__parameter__test', 'values__acknowledged_by').order_by('resulted_at', 'created_at'))
+    params, order_list = {}, []
+    for o in orders:
+        when = o.resulted_at or o.created_at
+        cat = o.test.category
+        ovals = []
+        for v in o.values.all():
+            prm = v.parameter
+            lo, hi = prm.range_for(patient.sex)
+            entry = params.setdefault(prm.pk, {
+                'id': prm.pk, 'name': prm.name, 'unit': prm.unit, 'kind': prm.kind, 'system': prm.system, 'test': o.test.name,
+                'category': cat.name if cat else 'Other', 'color': cat.color if cat else '#5A6F7D', 'range': prm.range_label(patient.sex),
+                'lo': _f(lo), 'hi': _f(hi), 'clo': _f(prm.critical_low), 'chi': _f(prm.critical_high), 'history': []})
+            point = {'value_id': v.pk, 'order_id': o.pk, 'date': timezone.localtime(when).strftime('%Y-%m-%d %H:%M'), 'display': v.display,
+                     'num': _f(v.value_number), 'flag': v.flag, 'preliminary': o.status != 'verified',
+                     'ack': bool(v.acknowledged_at), 'ack_by': (v.acknowledged_by.get_full_name() or v.acknowledged_by.username) if v.acknowledged_by else ''}
+            entry['history'].append(point)
+            ovals.append({'name': prm.name, 'display': v.display, 'unit': prm.unit, 'flag': v.flag, 'range': entry['range']})
+        order_list.append({'id': o.pk, 'test': o.test.name, 'category': cat.name if cat else 'Other', 'color': cat.color if cat else '#5A6F7D',
+                           'date': timezone.localtime(when).strftime('%Y-%m-%d %H:%M'), 'status': o.get_status_display(), 'comment': o.result, 'values': ovals})
+    for e in params.values():
+        e['latest'] = e['history'][-1]
+    return {'patient': {'name': patient.full_name, 'sex': patient.sex, 'age': patient.age, 'mrn': patient.mrn},
+            'systems': dict(BODY_SYSTEMS), 'params': list(params.values()), 'orders': list(reversed(order_list))}
+
+
+@login_required
+def patient_labs(request, pk):
+    authorize(request, 'clinical')
+    p = get_object_or_404(Patient, pk=pk)
+    audit(request, 'view_chart', f'patient_labs:{p.pk}')
+    pending = LabOrder.objects.filter(encounter__patient=p, status__in=['ordered', 'collected', 'processing']).select_related('test')
+    return render(request, 'hospital/lab_insights.html', {'p': p, 'data': patient_lab_data(p), 'view': lab_view_pref(request),
+                                                          'pending': pending, 'open_encounter': p.encounters.filter(status='open').first()})
+
+
+@login_required
+@require_POST
+def lab_ack(request, pk):
+    """A clinician confirms they have seen an out-of-range result."""
+    authorize(request, 'clinical')
+    with transaction.atomic():
+        v = get_object_or_404(LabResultValue.objects.select_for_update(), pk=pk)
+        if not v.acknowledged_at:
+            v.acknowledged_by, v.acknowledged_at = request.user, timezone.now()
+            v.save(update_fields=['acknowledged_by', 'acknowledged_at', 'updated_at'])
+            audit(request, 'lab_acknowledge', f'lab_value:{v.pk}', {'flag': v.flag})
+    return JsonResponse({'ok': True, 'by': request.user.get_full_name() or request.user.username})
 
 
 # ---------------------------------------------------------------- pharmacy
@@ -472,7 +722,7 @@ def pharmacy(request):
         qty = availability(m)
         stock.append({'m': m, 'qty': qty, 'pct': min(100, round(qty * 100 / max(m.reorder_level * 3, 1))),
                       'level': 'out' if qty == 0 else 'low' if qty <= m.reorder_level else 'ok'})
-    rx = list(Prescription.objects.select_related('encounter__patient', 'medication', 'signed_by').order_by('-created_at')[:150])
+    rx = list(Prescription.objects.select_related('encounter__patient', 'signed_by').prefetch_related('items__medication').order_by('-created_at')[:150])
     lanes = [('draft', 'Drafts awaiting prescriber', [x for x in rx if x.state == 'draft']),
              ('signed', 'Signed · ready to dispense', [x for x in rx if x.state == 'signed']),
              ('dispensed', 'Dispensed', [x for x in rx if x.state == 'dispensed'][:12])]
@@ -483,24 +733,40 @@ def pharmacy(request):
 
 @login_required
 def prescription_new(request):
-    def save(form):
-        p = form.save(commit=False)
-        warnings = prescription_warnings(p.encounter, p.medication, p.quantity)
-        if not p.allergy_reviewed:
-            raise ValidationError('Confirm that you reviewed the allergy history before saving.')
-        if warnings['possible_allergy_matches'] and not p.override_reason.strip():
-            raise ValidationError('Possible allergy match. Document a clinical justification or choose another medication.')
-        p.save()
-        audit(request, 'prescribing_warning_review', f'prescription:{p.pk}',
-              {'possible_exact_match': bool(warnings['possible_allergy_matches']), 'stock': warnings['inventory_available']})
-        return p
-    return edit_page(request, PrescriptionForm, 'New prescription', 'pharmacy', 'clinical', save,
-                     template='hospital/prescription_form.html', subtitle='Saved as a draft until a prescriber signs it.')
+    """One prescription with as many medicine lines as needed."""
+    authorize(request, 'clinical')
+    form = PrescriptionForm(request.POST or None, initial={k: v for k, v in request.GET.items()})
+    formset = PrescriptionItemFormSet(request.POST or None, prefix='items')
+    if request.method == 'POST' and form.is_valid() and formset.is_valid():
+        enc = form.cleaned_data['encounter']
+        live = [f for f in formset.forms if f.cleaned_data and f.cleaned_data.get('medication') and not f.cleaned_data.get('DELETE')]
+        flagged = [f.cleaned_data['medication'] for f in live if prescription_warnings(enc, f.cleaned_data['medication'], f.cleaned_data['quantity'])['possible_allergy_matches']]
+        meds = [f.cleaned_data['medication'].pk for f in live]
+        if not live:
+            form.add_error(None, 'Add at least one medicine.')
+        elif not form.cleaned_data['allergy_reviewed']:
+            form.add_error('allergy_reviewed', 'Confirm that you reviewed the allergy history before saving.')
+        elif flagged and not form.cleaned_data['override_reason'].strip():
+            form.add_error('override_reason', f'Possible allergy match for {", ".join(str(m) for m in flagged)}. Document a clinical justification or remove it.')
+        elif len(meds) != len(set(meds)):
+            form.add_error(None, 'The same medicine is listed twice. Combine it into one line.')
+        else:
+            with transaction.atomic():
+                p = form.save()
+                for i, f in enumerate(live):
+                    item = f.save(commit=False); item.prescription = p; item.sort_order = i; item.save()
+                audit(request, 'create', f'hospital.Prescription:{p.pk}', {'lines': len(live), 'possible_allergy_match': bool(flagged)})
+            messages.success(request, f'Prescription {p.number} saved as a draft with {len(live)} medicine{"s" if len(live) > 1 else ""}.')
+            return redirect(request.POST.get('next') or 'pharmacy')
+    meds = {m.pk: {'form': m.form, 'strength': m.strength, 'name': str(m)} for m in Medication.objects.filter(active=True)}
+    return render(request, 'hospital/prescription_form.html', {
+        'form': form, 'formset': formset, 'title': 'New prescription', 'meds': meds,
+        'per_day': {c: n for c, _, n in FREQUENCIES}, 'subtitle': 'Add each medicine as its own line. Saved as a draft until a prescriber signs it.'})
 
 
 @login_required
 def api_rx_check(request):
-    """Live safety panel for the prescription form: allergies and stock for the chosen visit + medication."""
+    """Live safety check for one prescription line: allergies and stock for the chosen visit + medication."""
     authorize(request, 'clinical')
     try:
         e = Encounter.objects.select_related('patient').get(pk=request.GET.get('encounter'))
@@ -519,16 +785,16 @@ def prescription_sign(request, pk):
     if role_of(request.user) not in ('doctor', 'admin'):
         raise PermissionDenied('Prescriber role required')
     with transaction.atomic():
-        p = get_object_or_404(Prescription.objects.select_for_update().select_related('encounter__patient', 'medication'), pk=pk)
+        p = get_object_or_404(Prescription.objects.select_for_update().select_related('encounter__patient'), pk=pk)
         if p.state != 'draft':
             return HttpResponseBadRequest('Not a draft')
-        w = prescription_warnings(p.encounter, p.medication, p.quantity)
-        if not p.allergy_reviewed or (w['possible_allergy_matches'] and not p.override_reason.strip()):
+        check = prescription_check(p)
+        if not check['lines'] or not p.allergy_reviewed or (check['any_allergy'] and not p.override_reason.strip()):
             return HttpResponseBadRequest('Allergy review incomplete')
         p.state = 'signed'; p.signed_by = request.user; p.signed_at = timezone.now()
         p.save(update_fields=['state', 'signed_by', 'signed_at'])
         sig = sign_document('prescription', p, request.user, 'Prescriber authorization')
-    messages.success(request, f'Prescription signed · SHA-256 {sig.document_hash[:12]}…')
+    messages.success(request, f'{p.number} signed · SHA-256 {sig.document_hash[:12]}…')
     return redirect(request.POST.get('next') or 'pharmacy')
 
 
@@ -537,8 +803,8 @@ def prescription_sign(request, pk):
 def prescription_dispense(request, pk):
     authorize(request, 'pharmacy')
     try:
-        dispense(get_object_or_404(Prescription, pk=pk), request.user)
-        messages.success(request, 'Dispensed. Stock was drawn from the earliest-expiring batches first.')
+        p = dispense(get_object_or_404(Prescription, pk=pk), request.user)
+        messages.success(request, f'{p.number} dispensed. Stock was drawn from the earliest-expiring batches first.')
     except ValidationError as e:
         messages.error(request, '; '.join(e.messages))
     return redirect('pharmacy')

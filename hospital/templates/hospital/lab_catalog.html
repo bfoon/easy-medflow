@@ -1,0 +1,25 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Test catalogue{% endblock %}
+{% block heading %}Test catalogue{% endblock %}
+{% block subheading %}<p class="sub">The standard list lab staff choose from. Reference and critical limits are illustrative adult values; validate them for your analysers.</p>{% endblock %}
+{% block actions %}{% if request.user.is_staff %}
+  <a class="btn btn-ghost" href="{% url 'admin:hospital_labcategory_add' %}"><i class="bi bi-folder-plus"></i>Add category</a>
+  <a class="btn btn-primary" href="{% url 'admin:hospital_labtest_add' %}"><i class="bi bi-plus-lg"></i>Add test</a>{% endif %}{% endblock %}
+{% block content %}
+<input class="form-control mb-3" style="max-width:340px" placeholder="Filter tests or parameters…" data-filter=".cat-test" aria-label="Filter catalogue">
+{% for c in categories %}
+<section class="panel mb-3" style="border-top:4px solid {{ c.color }}">
+  <div class="panel-head"><h2>{{ c.name }}</h2><span class="hint">{{ c.tests.all|length }} test{{ c.tests.all|length|pluralize }}</span>{% if request.user.is_staff %}<a class="more" href="{% url 'admin:hospital_labcategory_change' c.pk %}">Edit</a>{% endif %}</div>
+  {% for t in c.tests.all %}
+  <details class="cat-test">
+    <summary><b>{{ t.name }}</b> <span class="small muted">{{ t.code }} · {{ t.sample_type }} · {{ t.container }} · ~{{ t.turnaround_hours }}h · {{ systems|get_item:t.body_system }}</span>{% if request.user.is_staff %}<a class="small ms-2" href="{% url 'admin:hospital_labtest_change' t.pk %}">Edit</a>{% endif %}</summary>
+    <div class="scroll-x"><table class="mini-table mt-2"><thead><tr><th>Parameter</th><th>Type</th><th>Unit</th><th>Reference</th><th>Female</th><th>Critical</th><th>Organ</th></tr></thead><tbody>
+      {% for p in t.parameters.all %}<tr><td>{{ p.name }} <span class="small muted">{{ p.code }}</span></td><td>{{ p.get_kind_display }}</td><td>{{ p.unit|default:'—' }}</td><td>{{ p.range_label|default:'—' }}</td>
+      <td class="small">{% if p.female_ref_low is not None %}{{ p|range_for_sex:'F' }}{% else %}—{% endif %}</td>
+      <td class="small crit-note">{% if p.critical_low is not None %}&lt;{{ p.critical_low.normalize }} {% endif %}{% if p.critical_high is not None %}&gt;{{ p.critical_high.normalize }}{% endif %}</td><td class="small">{{ systems|get_item:p.system }}</td></tr>{% endfor %}
+    </tbody></table></div>
+  </details>
+  {% endfor %}
+</section>
+{% endfor %}
+{% endblock %}

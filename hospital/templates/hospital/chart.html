@@ -19,6 +19,7 @@
   <div class="actions">
     {% if open_encounter %}<a class="btn btn-primary" href="{% url 'encounter_detail' open_encounter.pk %}"><i class="bi bi-clipboard2-pulse"></i>Open current visit</a>
     {% else %}<a class="btn btn-primary" href="{% url 'encounter_new' %}?patient={{ p.pk }}"><i class="bi bi-clipboard2-plus"></i>Start encounter</a>{% endif %}
+    <a class="btn btn-ghost" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-activity"></i>Lab insights</a>
     <a class="btn btn-ghost" href="{% url 'ticket_new' %}?patient={{ p.pk }}"><i class="bi bi-ticket-perforated"></i>Queue</a>
     <div class="dropdown">
       <button class="btn btn-ghost" data-bs-toggle="dropdown" aria-expanded="false" onclick="this.nextElementSibling.classList.toggle('show')"><i class="bi bi-three-dots"></i></button>
@@ -50,8 +51,8 @@
     <div class="tabs" role="tablist">
       <button data-tab="timeline" role="tab">Timeline</button>
       <button data-tab="visits" role="tab">Visits<span class="n">{{ encounters|length }}</span></button>
-      <button data-tab="meds" role="tab">Medications<span class="n">{{ prescriptions|length }}</span></button>
-      <button data-tab="labs" role="tab">Labs<span class="n">{{ labs|length }}</span></button>
+      <button data-tab="meds" role="tab">Prescriptions<span class="n">{{ prescriptions|length }}</span></button>
+      <button data-tab="labs" role="tab">Lab requests<span class="n">{{ lab_reqs|length }}</span></button>
       <button data-tab="care" role="tab">Referrals &amp; stays</button>
       <button data-tab="forms" role="tab">Forms<span class="n">{{ submissions|length }}</span></button>
     </div>
@@ -78,17 +79,18 @@
     </div>
 
     <div class="tab-pane" data-pane="meds">
-      <div class="scroll-x"><table class="mini-table"><thead><tr><th>Medication</th><th>Directions</th><th>Qty</th><th>Status</th><th>Date</th></tr></thead><tbody>
-      {% for x in prescriptions %}<tr><td><b>{{ x.medication }}</b></td><td>{{ x.directions }}</td><td>{{ x.quantity }}</td><td><span class="tag {{ x.state|tone }}">{{ x.get_state_display }}</span></td><td class="small muted">{{ x.created_at|date:'j M Y' }}</td></tr>
-      {% empty %}<tr><td colspan="5" class="empty">No prescriptions.</td></tr>{% endfor %}
-      </tbody></table></div>
+      {% for x in prescriptions %}
+      <div class="rx-card"><div class="d-flex gap-2 align-items-center"><b>{{ x.number }}</b><span class="small muted">{{ x.created_at|date:'j M Y' }}</span><span class="tag {{ x.state|tone }} ms-auto">{{ x.get_state_display }}</span></div>
+        <ol class="rx-items">{% for i in x.items.all %}<li><span class="med">{{ i.medication }}</span><span class="dir">{{ i.directions }}</span><span class="qty">× {{ i.quantity }}</span></li>{% endfor %}</ol></div>
+      {% empty %}<div class="empty">No prescriptions.</div>{% endfor %}
     </div>
 
     <div class="tab-pane" data-pane="labs">
-      <div class="scroll-x"><table class="mini-table"><thead><tr><th>Test</th><th>Result</th><th>Reference</th><th>Status</th><th>Date</th></tr></thead><tbody>
-      {% for x in labs %}<tr><td><b>{{ x.test.name }}</b></td><td>{% if x.result %}<span {% if x.abnormal %}class="text-danger fw-semibold"{% endif %}>{{ x.result|linebreaksbr }}</span>{% else %}<span class="muted">Pending</span>{% endif %}</td><td class="small muted">{{ x.reference_range|default:'—' }}</td><td><span class="tag {{ x.status|tone }}">{{ x.get_status_display }}</span></td><td class="small muted">{{ x.created_at|date:'j M Y' }}</td></tr>
-      {% empty %}<tr><td colspan="5" class="empty">No lab orders.</td></tr>{% endfor %}
-      </tbody></table></div>
+      <a class="btn btn-sm btn-ink mb-3" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-person-arms-up"></i>Open body map &amp; trends</a>
+      {% for r in lab_reqs %}
+      <div class="req-mini"><div class="d-flex gap-2 align-items-center mb-1"><b>{{ r.number }}</b><span class="small muted">{{ r.created_at|date:'j M Y H:i' }}</span>{% if r.priority != 'routine' %}<span class="tag {% if r.priority == 'stat' %}red{% else %}amber{% endif %}">{{ r.get_priority_display }}</span>{% endif %}<span class="tag {{ r.stage|tone }} ms-auto">{{ r.stage|title }}</span></div>
+        {% for l in r.orders.all %}<div class="small mb-1"><b>{{ l.test.name }}</b> <span class="muted">· {{ l.get_status_display }}</span>{% if l.values.all %}<div>{% for v in l.values.all %}<span class="vchip {% if v.is_critical %}crit{% elif v.is_abnormal %}abn{% endif %}" title="Ref {{ v.parameter.range_label }}">{{ v.parameter.name }} <b>{{ v.display }}</b> {{ v.parameter.unit }}</span>{% endfor %}</div>{% endif %}</div>{% endfor %}</div>
+      {% empty %}<div class="empty">No lab requests.</div>{% endfor %}
     </div>
 
     <div class="tab-pane" data-pane="care">

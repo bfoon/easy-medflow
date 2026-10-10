@@ -4,8 +4,8 @@
 {% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }} · {{ e.department|default:'No department' }} · {{ e.created_at|date:'j M Y, H:i' }} · {{ e.clinician|display_name }} <span class="tag {{ e.status|tone }} ms-1">{{ e.get_status_display }}</span></p>{% endblock %}
 {% block actions %}
 {% if e.status == 'open' %}
-  <a class="btn btn-ghost" href="{% url 'lab_new' %}?encounter={{ e.pk }}"><i class="bi bi-droplet-half"></i>Order lab</a>
-  <a class="btn btn-ghost" href="{% url 'prescription_new' %}?encounter={{ e.pk }}"><i class="bi bi-capsule"></i>Prescribe</a>
+  <a class="btn btn-ghost" href="{% url 'lab_new' %}?encounter={{ e.pk }}&next={{ request.path|urlencode }}"><i class="bi bi-droplet-half"></i>Lab request</a>
+  <a class="btn btn-ghost" href="{% url 'prescription_new' %}?encounter={{ e.pk }}&next={{ request.path|urlencode }}"><i class="bi bi-capsule"></i>Prescribe</a>
   <a class="btn btn-ghost" href="{% url 'referral_new' %}?encounter={{ e.pk }}"><i class="bi bi-signpost-split"></i>Refer</a>
   <a class="btn btn-ghost" href="{% url 'admission_new' %}?encounter={{ e.pk }}"><i class="bi bi-hospital"></i>Admit</a>
   <form method="post" action="{% url 'encounter_complete' e.pk %}" data-confirm="Complete this visit? Notes become read-only in this view.">{% csrf_token %}<button class="btn btn-primary"><i class="bi bi-check2-circle"></i>Complete visit</button></form>
@@ -29,13 +29,13 @@
     </section>
     <section class="panel">
       <div class="panel-head"><h2>Prescriptions</h2><a class="more" href="{% url 'pharmacy' %}">Pharmacy</a></div>
-      {% for x, w in prescriptions %}
+      {% for x, chk in prescriptions %}
       <div class="rx-card">
-        <div class="d-flex gap-2 align-items-center"><span class="med">{{ x.medication }}</span><span class="tag {{ x.state|tone }} ms-auto">{{ x.get_state_display }}</span></div>
-        <div class="dir">{{ x.directions }} · Qty {{ x.quantity }}</div>
-        {% if w.possible_allergy_matches %}<div class="alert-mf danger mb-2"><i class="bi bi-exclamation-octagon-fill"></i><div>Possible allergy match. Override: {{ x.override_reason|default:'none documented' }}</div></div>{% endif %}
-        <div class="meta"><span>Stock {{ w.inventory_available }}</span>{% if x.signed_at %}<span class="stamp"><i class="bi bi-patch-check-fill"></i>Signed by {{ x.signed_by|display_name }}</span>{% endif %}</div>
-        {% if x.state == 'draft' and can_sign %}<form class="acts" method="post" action="{% url 'prescription_sign' x.pk %}" data-confirm="Sign {{ x.medication }}? This records your authorisation with a document hash.">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="btn btn-sm btn-ink"><i class="bi bi-pen"></i>Sign prescription</button></form>{% endif %}
+        <div class="d-flex gap-2 align-items-center"><b>{{ x.number }}</b><span class="tag {{ x.state|tone }} ms-auto">{{ x.get_state_display }}</span></div>
+        <ol class="rx-items">{% for line in chk.lines %}<li class="{% if line.possible_allergy_matches %}danger{% endif %}"><span class="med">{{ line.item.medication }}</span><span class="dir">{{ line.item.directions }}</span><span class="qty">× {{ line.item.quantity }}</span>{% if line.possible_allergy_matches %}<span class="tag red">Possible allergy</span>{% endif %}</li>{% endfor %}</ol>
+        {% if chk.any_allergy %}<div class="alert-mf danger mb-2"><i class="bi bi-exclamation-octagon-fill"></i><div>Possible allergy match. Override: {{ x.override_reason|default:'none documented' }}</div></div>{% endif %}
+        {% if x.signed_at %}<span class="stamp"><i class="bi bi-patch-check-fill"></i>Signed by {{ x.signed_by|display_name }}</span>{% endif %}
+        {% if x.state == 'draft' and can_sign %}<form class="acts" method="post" action="{% url 'prescription_sign' x.pk %}" data-confirm="Sign {{ x.number }}? This records your authorisation with a document hash.">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="btn btn-sm btn-ink"><i class="bi bi-pen"></i>Sign prescription</button></form>{% endif %}
       </div>
       {% empty %}<div class="empty">No prescriptions for this visit.</div>{% endfor %}
     </section>
@@ -46,8 +46,11 @@
       {% if vitals %}<div class="vitals">{% for label, unit, val in vitals %}<div class="vital"><span>{{ label }}</span><b>{{ val }}</b><small>{{ unit }}</small></div>{% endfor %}</div>{% else %}<div class="empty">No vitals recorded.</div>{% endif %}
     </section>
     <section class="panel">
-      <div class="panel-head"><h2>Lab orders</h2></div>
-      <ul class="plain ruled">{% for l in labs %}<li><div class="d-flex"><b>{{ l.test.name }}</b><span class="tag {{ l.status|tone }} ms-auto">{{ l.get_status_display }}</span></div>{% if l.result %}<div class="small {% if l.abnormal %}text-danger fw-semibold{% endif %}">{{ l.result }} <span class="muted">({{ l.reference_range }})</span></div>{% endif %}</li>{% empty %}<li class="muted small">None ordered.</li>{% endfor %}</ul>
+      <div class="panel-head"><h2>Lab orders</h2><a class="more" href="{% url 'patient_labs' p.pk %}">Insights</a></div>
+      {% for r in lab_reqs %}
+      <div class="req-mini"><div class="d-flex gap-2 align-items-center mb-1"><b>{{ r.number }}</b>{% if r.priority != 'routine' %}<span class="tag {% if r.priority == 'stat' %}red{% else %}amber{% endif %}">{{ r.get_priority_display }}</span>{% endif %}<span class="tag {{ r.stage|tone }} ms-auto">{{ r.stage|title }}</span></div>
+        {% for l in r.orders.all %}<div class="small mb-1"><b>{{ l.test.name }}</b> <span class="muted">· {{ l.get_status_display }}</span>{% if l.values.all %}<div>{% for v in l.values.all %}<span class="vchip {% if v.is_critical %}crit{% elif v.is_abnormal %}abn{% endif %}">{{ v.parameter.name }} <b>{{ v.display }}</b> {{ v.parameter.unit }}</span>{% endfor %}</div>{% endif %}</div>{% endfor %}</div>
+      {% empty %}<p class="muted small mb-0">None ordered.</p>{% endfor %}
     </section>
     <section class="panel">
       <div class="panel-head"><h2>Referrals &amp; admission</h2></div>

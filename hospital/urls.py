@@ -29,7 +29,14 @@ urlpatterns = [
 
     path('labs/', v.labs, name='labs'),
     path('labs/new/', v.lab_new, name='lab_new'),
-    path('labs/<int:pk>/<str:step>/', v.lab_update, name='lab_update'),
+    path('labs/mine/', v.lab_mine, name='lab_mine'),
+    path('labs/catalog/', v.lab_catalog, name='lab_catalog'),
+    path('labs/view/', v.set_lab_view, name='set_lab_view'),
+    path('labs/values/<int:pk>/ack/', v.lab_ack, name='lab_ack'),
+    path('labs/requests/<int:pk>/results/', v.lab_results_entry, name='lab_results_entry'),
+    path('labs/requests/<int:pk>/<str:step>/', v.lab_request_action, name='lab_request_action'),
+    path('labs/tests/<int:pk>/cancel/', v.lab_order_cancel, name='lab_order_cancel'),
+    path('patients/<int:pk>/labs/', v.patient_labs, name='patient_labs'),
 
     path('pharmacy/', v.pharmacy, name='pharmacy'),
     path('prescriptions/new/', v.prescription_new, name='prescription_new'),

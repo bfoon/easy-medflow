@@ -1,5 +1,7 @@
 from django.core.management.base import BaseCommand
-from hospital.models import Department, LabTest, Ward, Bed, Medication
+from decimal import Decimal
+from hospital.models import Department, LabCategory, LabParameter, LabTest, Ward, Bed, Medication
+from hospital.lab_catalog import CATALOG
 
 
 class Command(BaseCommand):
@@ -8,11 +10,7 @@ class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         for name in ['Emergency', 'Outpatient', 'General Medicine', 'Pediatrics', 'Maternity', 'Laboratory', 'Pharmacy', 'Radiology', 'Surgery']:
             Department.objects.get_or_create(name=name)
-        tests = [('CBC', 'Complete Blood Count', 'Blood'), ('GLU', 'Blood Glucose', 'Blood'), ('UA', 'Urinalysis', 'Urine'),
-                 ('MAL', 'Malaria RDT', 'Blood'), ('HB', 'Haemoglobin', 'Blood'), ('LFT', 'Liver Function Panel', 'Blood'),
-                 ('RFT', 'Renal Function Panel', 'Blood'), ('STL', 'Stool Microscopy', 'Stool')]
-        for code, name, sample in tests:
-            LabTest.objects.get_or_create(code=code, defaults={'name': name, 'sample_type': sample})
+        self.load_lab_catalog()
         layout = [('General Ward', 'GW', 10, 'general'), ('Maternity Ward', 'MW', 6, 'maternity'),
                   ('Pediatric Ward', 'PW', 6, 'pediatric'), ('Intensive Care', 'ICU', 4, 'icu')]
         for ward_name, prefix, n, kind in layout:
@@ -27,4 +25,22 @@ class Command(BaseCommand):
         for name, generic, form, strength in meds:
             Medication.objects.get_or_create(name=name, defaults={'generic_name': generic, 'form': form, 'strength': strength})
         if kwargs.get('verbosity', 1):
-            self.stdout.write(self.style.SUCCESS('Seeded departments, lab catalog, 4 wards / 26 beds, and a medication catalog.'))
+            self.stdout.write(self.style.SUCCESS('Seeded departments, standard lab catalogue, 4 wards / 26 beds, and a medication catalog.'))
+
+    def load_lab_catalog(self):
+        """Add any missing standard categories, tests and parameters. Never overwrites local edits (e.g. your own ranges)."""
+        dec = lambda v: None if v is None else Decimal(str(v))
+        for i, (ccode, cname, color, tests) in enumerate(CATALOG):
+            cat, _ = LabCategory.objects.get_or_create(code=ccode, defaults={'name': cname, 'color': color, 'sort_order': i})
+            for code, name, system, sample, container, tat, params in tests:
+                test, created = LabTest.objects.get_or_create(code=code, defaults={
+                    'name': name, 'category': cat, 'body_system': system, 'sample_type': sample, 'container': container, 'turnaround_hours': tat})
+                if not created and test.category_id is None:  # upgrade a test from the original uncategorised catalogue
+                    test.category, test.body_system, test.container, test.turnaround_hours = cat, system, container, tat
+                    test.save(update_fields=['category', 'body_system', 'container', 'turnaround_hours', 'updated_at'])
+                for j, prm in enumerate(params):
+                    d = dict(prm); pcode = d.pop('code')
+                    for k in ('ref_low', 'ref_high', 'critical_low', 'critical_high', 'female_ref_low', 'female_ref_high'):
+                        if k in d: d[k] = dec(d[k])
+                    d['sort_order'] = j
+                    LabParameter.objects.get_or_create(test=test, code=pcode, defaults=d)

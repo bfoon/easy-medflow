@@ -1,0 +1,18 @@
+<div class="rx-line" data-line>
+  <div class="rx-line-head"><span class="rx-n">#</span><span class="rx-sentence" data-sentence>Choose a medicine</span>
+    <button type="button" class="btn btn-sm btn-ghost ms-auto" data-remove title="Remove this medicine" aria-label="Remove this medicine"><i class="bi bi-trash3"></i></button></div>
+  {{ f.id }}<span hidden>{{ f.DELETE }}</span>
+  {% for e in f.non_field_errors %}<div class="field-error mb-2">{{ e }}</div>{% endfor %}
+  <div class="rx-grid">
+    <div class="g-med">{% with field=f.medication %}<label class="form-label" for="{{ field.id_for_label }}">Medicine</label>{{ field }}{% for e in field.errors %}<div class="field-error">{{ e }}</div>{% endfor %}{% endwith %}</div>
+    <div>{% with field=f.dose %}<label class="form-label" for="{{ field.id_for_label }}">Strength</label>{{ field }}{% endwith %}</div>
+    <div>{% with field=f.units_per_dose %}<label class="form-label" for="{{ field.id_for_label }}">Per dose <span class="unit-label muted"></span></label>{{ field }}{% for e in field.errors %}<div class="field-error">{{ e }}</div>{% endfor %}{% endwith %}</div>
+    <div>{% with field=f.route %}<label class="form-label" for="{{ field.id_for_label }}">Route</label>{{ field }}{% endwith %}</div>
+    <div class="g-freq">{% with field=f.frequency %}<label class="form-label" for="{{ field.id_for_label }}">How often</label>{{ field }}{% endwith %}
+      <div class="day-strip" data-strip aria-hidden="true"><span class="lbl">6am</span><span class="lbl">noon</span><span class="lbl">6pm</span><span class="lbl">midnight</span></div></div>
+    <div>{% with field=f.duration_days %}<label class="form-label" for="{{ field.id_for_label }}">Days</label>{{ field }}{% for e in field.errors %}<div class="field-error">{{ e }}</div>{% endfor %}{% endwith %}</div>
+    <div>{% with field=f.quantity %}<label class="form-label" for="{{ field.id_for_label }}">Total qty</label>{{ field }}<div class="form-text" data-qty-hint>Auto</div>{% for e in field.errors %}<div class="field-error">{{ e }}</div>{% endfor %}{% endwith %}</div>
+    <div class="g-inst">{% with field=f.instructions %}<label class="form-label" for="{{ field.id_for_label }}">Instructions</label>{{ field }}{% endwith %}</div>
+  </div>
+  <div class="rx-safety" data-safety></div>
+</div>

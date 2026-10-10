@@ -1,0 +1,74 @@
+{% extends 'hospital/base.html' %}
+{% block title %}Order tests{% endblock %}
+{% block heading %}New lab request{% endblock %}
+{% block subheading %}<p class="sub">Pick a visit and tick every test you need. They go to the lab together as one request for this patient.</p>{% endblock %}
+{% block content %}
+<form method="post" class="builder" id="order-form">{% csrf_token %}
+  <section class="panel">
+    <div class="field"><label class="form-label" for="enc">Visit</label>
+      <select class="form-select" id="enc" name="encounter" required><option value="">Choose an open visit…</option>
+        {% for e in encounters %}<option value="{{ e.pk }}" {% if selected_enc == e.pk|stringformat:'s' %}selected{% endif %}>{{ e.patient.full_name }} · {{ e.patient.mrn }} · {{ e.reason|truncatechars:40 }}</option>{% endfor %}
+      </select></div>
+    <div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
+      <input class="form-control" style="max-width:280px" id="test-search" placeholder="Search tests or parameters…" aria-label="Search tests">
+      <button type="button" class="chip on" data-cat="">All</button>
+      {% for c in categories %}<button type="button" class="chip" data-cat="{{ c.code }}" style="--c:{{ c.color }}"><span class="cat-dot" style="background:{{ c.color }}"></span>{{ c.name }}</button>{% endfor %}
+    </div>
+    {% for c in categories %}{% if c.tests.all %}
+    <div class="cat-block" data-cat="{{ c.code }}">
+      <div class="label-sm mb-2" style="color:{{ c.color }}">{{ c.name }}</div>
+      <div class="test-grid">
+        {% for t in c.tests.all %}
+        <label class="test-pick" data-search="{{ t.name|lower }} {{ t.code|lower }}{% for p in t.parameters.all %} {{ p.name|lower }}{% endfor %}" style="--c:{{ c.color }}">
+          <input type="checkbox" name="tests" value="{{ t.pk }}" data-name="{{ t.name }}" data-tat="{{ t.turnaround_hours }}" {% if t.pk|stringformat:'s' in selected %}checked{% endif %}>
+          <span><b>{{ t.name }}</b><small>{{ t.parameters.all|length }} value{{ t.parameters.all|length|pluralize }} · {{ t.sample_type }} · ~{{ t.turnaround_hours }}h</small></span>
+          <i class="bi bi-check-circle-fill tick"></i>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}{% endfor %}
+  </section>
+  <aside class="preview-sheet">
+    <div class="label-sm mb-2"><i class="bi bi-basket me-1"></i>Order summary</div>
+    <h3 id="sum-n">No tests selected</h3>
+    <ul class="plain ruled my-3" id="sum-list"></ul>
+    <p class="small muted" id="sum-tat"></p>
+    <div class="field"><label class="form-label" for="priority">Priority</label>
+      <select class="form-select" id="priority" name="priority">{% for v, l in priorities %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+    <div class="field"><label class="form-label" for="clinical_notes">Clinical notes for the lab</label>
+      <textarea class="form-control" id="clinical_notes" name="clinical_notes" rows="2" placeholder="e.g. chest pain 2 h, query ACS"></textarea></div>
+    <input type="hidden" name="next" value="{{ request.GET.next }}">
+    <button class="btn btn-primary w-100" id="sum-btn" disabled><i class="bi bi-send"></i>Send request to lab</button>
+  </aside>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const boxes = [...document.querySelectorAll('input[name="tests"]')], list = document.getElementById('sum-list');
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const sync = () => {
+    const on = boxes.filter(b => b.checked);
+    document.getElementById('sum-n').textContent = on.length ? `${on.length} test${on.length > 1 ? 's' : ''} selected` : 'No tests selected';
+    list.innerHTML = on.map(b => `<li class="d-flex"><span>${esc(b.dataset.name)}</span><span class="ms-auto small muted">~${b.dataset.tat}h</span></li>`).join('');
+    document.getElementById('sum-tat').textContent = on.length ? `Longest expected turnaround: about ${Math.max(...on.map(b => +b.dataset.tat))} hours.` : '';
+    document.getElementById('sum-btn').disabled = !on.length;
+  };
+  boxes.forEach(b => b.addEventListener('change', sync)); sync();
+  let cat = '';
+  const filter = () => {
+    const q = document.getElementById('test-search').value.trim().toLowerCase();
+    document.querySelectorAll('.cat-block').forEach(block => {
+      let any = false;
+      block.querySelectorAll('.test-pick').forEach(t => { const ok = (!cat || block.dataset.cat === cat) && (!q || t.dataset.search.includes(q)); t.hidden = !ok; any = any || ok; });
+      block.hidden = !any;
+    });
+  };
+  document.getElementById('test-search').addEventListener('input', filter);
+  document.querySelectorAll('.chip[data-cat]').forEach(c => c.addEventListener('click', () => {
+    cat = c.dataset.cat; document.querySelectorAll('.chip[data-cat]').forEach(x => x.classList.toggle('on', x === c)); filter();
+  }));
+})();
+</script>
+{% endblock %}

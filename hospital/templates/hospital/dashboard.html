@@ -80,6 +80,16 @@
   </div>
 
   <div class="stack">
+    {% if critical_values %}
+    <section class="panel crit-panel">
+      <div class="panel-head"><h2><i class="bi bi-exclamation-octagon-fill text-danger me-1"></i>Critical results</h2><span class="hint">Not yet reviewed</span></div>
+      <ul class="plain ruled">
+        {% for v in critical_values %}
+        <li><a class="d-flex align-items-center gap-2 text-decoration-none" href="{% url 'patient_labs' v.order.encounter.patient_id %}"><span><b class="text-dark">{{ v.order.encounter.patient.full_name }}</b><br><span class="small muted">{{ v.parameter.name }}</span></span><span class="ms-auto vchip crit">{{ v.display }} {{ v.parameter.unit }}</span></a></li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
     <section class="panel">
       <div class="panel-head"><h2>Start something</h2></div>
       <div class="quick">
