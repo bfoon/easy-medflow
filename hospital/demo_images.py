@@ -221,3 +221,56 @@ def mri_spine(finding='disc', seed=45):
         d.polygon([(110, 300), (220, 290), (220, 362), (110, 350)], fill=140)             # injured vertebra
     img = Image.blend(img.filter(ImageFilter.GaussianBlur(1.6)), Image.effect_noise((w, h), 20).convert('L'), .08).convert('RGB')
     d = ImageDraw.Draw(img); d.text((14, 14), 'MRI · sagittal T2', fill=(220, 220, 220)); _stamp(d, w, h); return _png(img)
+
+
+def xray_hand(kind='ra', seed=51):
+    """PA hand radiograph. kind: 'ra' (periarticular erosions, narrowed joints), 'fracture' (5th metacarpal neck) or 'normal'."""
+    random.seed(seed); w, h = 460, 620
+    img = Image.new('L', (w, h), 10); d = ImageDraw.Draw(img)
+    d.polygon([(120, 620), (110, 420), (60, 300), (90, 270), (150, 360), (160, 120), (200, 110), (210, 300), (230, 80), (270, 80), (270, 300), (300, 110), (340, 120), (320, 320),
+               (370, 180), (410, 200), (350, 420), (330, 620)], fill=55)                       # soft tissue
+    for i in range(8):
+        x, y = 170 + (i % 4) * 34, 470 + (i // 4) * 34; d.ellipse([x, y, x + 30, y + 28], fill=180)          # carpals
+    rays = [(110, 440, 70, 300, 2), (185, 450, 175, 260, 3), (235, 450, 245, 240, 3), (280, 450, 295, 250, 3), (320, 455, 345, 285, 3)]
+    for k, (x0, y0, x1, y1, nph) in enumerate(rays):
+        d.line([(x0, y0), (x1, y1)], fill=190, width=18)                                          # metacarpal
+        if kind == 'fracture' and k == 4:
+            mx, my = x0 + (x1 - x0) * .78, y0 + (y1 - y0) * .78
+            d.line([(mx - 12, my - 4), (mx + 12, my + 6)], fill=25, width=4)                      # neck fracture line
+        px, py = x1, y1
+        for j in range(nph):
+            nx, ny = px + (x1 - x0) * .18, py - 62 + j * 8
+            gap = 3 if kind != 'ra' else 1
+            d.ellipse([px - 11, py - 11, px + 11, py + 11], fill=40 if kind == 'ra' and j == 0 else 60)   # joint space (narrow in RA)
+            d.line([(px, py - gap - 8), (nx, ny)], fill=185, width=14 - j * 2)
+            if kind == 'ra' and j < 2:
+                d.ellipse([px + 4, py - 6, px + 11, py + 1], fill=55)                             # marginal erosion
+            px, py = nx, ny
+    img = Image.blend(img.filter(ImageFilter.GaussianBlur(1.6)), Image.effect_noise((w, h), 12).convert('L'), .06).convert('RGB')
+    d = ImageDraw.Draw(img); d.text((14, 14), 'Hand · PA', fill=(230, 230, 230)); _stamp(d, w, h); return _png(img)
+
+
+def xray_foot(kind='gout', seed=53):
+    """Dorsoplantar foot / ankle radiograph. kind: 'gout' (1st MTP erosion and tophus), 'ankle' (bimalleolar fracture) or 'osteomyelitis'."""
+    random.seed(seed); w, h = 460, 640
+    img = Image.new('L', (w, h), 10); d = ImageDraw.Draw(img)
+    d.polygon([(150, 640), (120, 440), (130, 160), (190, 60), (330, 70), (360, 200), (350, 440), (320, 640)], fill=55)
+    d.rounded_rectangle([170, 470, 300, 640], 40, fill=175)                                      # talus/calcaneus region
+    if kind == 'ankle':
+        d.rectangle([150, 560, 190, 640], fill=180); d.rectangle([290, 560, 325, 640], fill=170)     # malleoli
+        d.line([(150, 590), (190, 600)], fill=25, width=4); d.line([(290, 584), (326, 596)], fill=25, width=4)
+    for i in range(5):
+        x0, x1 = 190 + i * 26, 160 + i * 38
+        fill = 190
+        if kind == 'osteomyelitis' and i == 0:
+            fill = 120
+        d.line([(x0, 460), (x1, 210)], fill=fill, width=20 if i == 0 else 15)                   # metatarsals
+        d.line([(x1, 200), (x1 - 4, 120 + i * 8)], fill=185, width=16 if i == 0 else 10)       # toes
+    if kind == 'gout':
+        d.ellipse([140, 192, 182, 228], fill=90)                                                # soft-tissue tophus
+        d.ellipse([168, 200, 184, 214], fill=30)                                                # punched-out erosion
+    if kind == 'osteomyelitis':
+        for _ in range(14):
+            x, y = random.randint(150, 182), random.randint(200, 260); d.ellipse([x, y, x + 6, y + 5], fill=45)   # bone destruction
+    img = Image.blend(img.filter(ImageFilter.GaussianBlur(1.7)), Image.effect_noise((w, h), 12).convert('L'), .06).convert('RGB')
+    d = ImageDraw.Draw(img); d.text((14, 14), 'Ankle · AP' if kind == 'ankle' else 'Foot · DP', fill=(230, 230, 230)); _stamp(d, w, h); return _png(img)

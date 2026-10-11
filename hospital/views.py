@@ -755,7 +755,11 @@ def patient_lab_data(patient):
                 'images': [{'url': reverse('imaging_file', args=[i.pk]), 'caption': i.caption} for i in o.images.all()]}
                for o in ImagingOrder.objects.filter(encounter__patient=patient, status__in=['acquired', 'reported']).prefetch_related('images').order_by('-created_at')]
     open_enc = patient.encounters.filter(status='open').order_by('-created_at').first()
-    return {'open_encounter': open_enc.pk if open_enc else None, 'lab_new_url': reverse('lab_new'), 'imaging': imaging, 'patient': {'name': patient.full_name, 'sex': patient.sex, 'age': patient.age, 'mrn': patient.mrn},
+    # diagnoses, conditions and the latest vitals: the anatomy layers use them to place findings (e.g. spine level, which hand)
+    dx = [e.diagnosis for e in patient.encounters.exclude(status='cancelled').exclude(diagnosis='').order_by('-created_at')[:25]]
+    dx += [c.name for c in patient.conditions.filter(status='active')]
+    last_vitals = next((e.vitals for e in patient.encounters.exclude(vitals={}).order_by('-created_at')[:1]), {}) or {}
+    return {'dx': dx, 'vitals': last_vitals, 'open_encounter': open_enc.pk if open_enc else None, 'lab_new_url': reverse('lab_new'), 'imaging': imaging, 'patient': {'name': patient.full_name, 'sex': patient.sex, 'age': patient.age, 'mrn': patient.mrn},
             'systems': dict(BODY_SYSTEMS), 'params': list(params.values()), 'orders': list(reversed(order_list))}
 
 

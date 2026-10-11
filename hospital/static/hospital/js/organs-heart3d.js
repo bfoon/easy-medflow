@@ -127,7 +127,7 @@
     const controls = new OrbitControls(camera, canvas);
     controls.target.copy(TARGET); controls.enableDamping = true; controls.dampingFactor = .08;
     controls.enablePan = false; controls.minDistance = 3.2; controls.maxDistance = 13;
-    controls.autoRotate = !still; controls.autoRotateSpeed = .9;
+    controls.autoRotate = false; controls.autoRotateSpeed = .9;   // starts still so labels are easy to read; the spin button turns rotation on
     controls.addEventListener('start', () => { controls.autoRotate = false; box.querySelector('[data-h=spin]').classList.remove('on'); });
     if (controls.autoRotate) box.querySelector('[data-h=spin]').classList.add('on');
 
@@ -413,24 +413,30 @@
       }
       controls.update();
       renderer.render(scene, camera);
-      // pins: project each anchor; fade the ones on the far side so you know to turn the heart
+      // pins: project each anchor; fade the ones on the far side so you know to turn the heart.
+      // Positions are lightly smoothed, and a label only changes state after it has been steady for a moment,
+      // so labels do not flicker as the heart turns or as pins pass each other.
       const w = box.clientWidth, h = box.clientHeight;
       camDir.copy(camera.position);
       for (const p of pins) {
         tmp.copy(p.a.p).applyMatrix4(heart.matrixWorld);
-        const facing = p.a.n.dot(camDir.clone().sub(tmp).normalize()) > .05;
+        const d = p.a.n.dot(camDir.clone().sub(tmp).normalize());
+        p.facing = p.facing === undefined ? d > .05 : (p.facing ? d > -.04 : d > .14);     // dead zone at the edge
         tmp.project(camera);
-        p.el.style.transform = `translate(${((tmp.x + 1) / 2 * w).toFixed(1)}px,${((1 - tmp.y) / 2 * h).toFixed(1)}px)`;
-        p.el.classList.toggle('behind', !facing);
-        p.x = (tmp.x + 1) / 2 * w; p.y = (1 - tmp.y) / 2 * h; p.facing = facing;
+        const x = (tmp.x + 1) / 2 * w, y = (1 - tmp.y) / 2 * h;
+        p.x = p.x === undefined ? x : p.x + (x - p.x) * .45; p.y = p.y === undefined ? y : p.y + (y - p.y) * .45;
+        p.el.style.transform = `translate(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px)`;
+        p.el.classList.toggle('behind', !p.facing);
       }
-      const placed = [];                            // most urgent labels first; any label that would overlap one already shown hides its text
-      for (const p of pins) {
+      const placed = [];                            // most urgent labels claim their space first
+      for (const p of [...pins].sort((a, b) => a.rank - b.rank)) {
         if (p.rank === 2) continue;
-        const rect = [p.x + 10, p.y - 12, p.x + 10 + p.el.querySelector('.tag').offsetWidth, p.y + 10];
-        const clash = !p.facing || placed.some(q => rect[0] < q[2] && rect[2] > q[0] && rect[1] < q[3] && rect[3] > q[1]);
-        p.el.classList.toggle('tag-off', clash);
-        if (!clash) placed.push(rect);
+        p.tw = p.tw || p.el.querySelector('.tag').offsetWidth;
+        const rect = [p.x + 10, p.y - 12, p.x + 10 + p.tw, p.y + 10];
+        const hide = !p.facing || placed.some(q => rect[0] < q[2] + 4 && rect[2] + 4 > q[0] && rect[1] < q[3] + 3 && rect[3] + 3 > q[1]);
+        if (hide !== p.wantHide) { p.wantHide = hide; p.since = now; }
+        if (p.hidden === undefined || (p.hidden !== hide && now - p.since > 350)) { p.hidden = hide; p.el.classList.toggle('tag-off', hide); }
+        if (!p.hidden) placed.push(rect);
       }
     }
     raf = requestAnimationFrame(frame);

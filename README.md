@@ -322,7 +322,8 @@ spinal-fluid results, CT, MRI and EEG; imaging for the featured patient; four mo
 dashboard; inpatient medication charts) without wiping your database. It only runs in demo mode (DEBUG on) and
 does nothing the second time. It also adds eight bone, spine and injury cases (femur fracture after a road
 accident, disc herniation, osteoporotic spine fracture, whiplash, a child's elbow fracture, spinal cord injury,
-knee osteoarthritis, gout) with synthetic X-rays and MRI, results, medicines, admissions and referrals.
+knee osteoarthritis, gout) and hand and foot cases (rheumatoid arthritis, boxer's fracture, ankle fracture,
+diabetic foot infection) with synthetic X-rays and MRI, results, medicines, admissions and referrals.
 
 ## Modules included
 

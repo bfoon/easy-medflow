@@ -187,6 +187,7 @@ def run_all():
             'history visits': population_history(doctor), 'inpatient charts': inpatient_charts(doctor, nurse)}
     res['bone and injury cases'] = bone_cases(doctor, rad, nurse)
     res['specialist logins'] = network_portal(doctor)
+    res['hand and foot cases'] = hand_foot_cases(doctor, rad)
     res['patients placed on map'] = link_patient_locations()
     return res
 
@@ -370,4 +371,77 @@ def network_portal(doctor):
         for r in Referral.objects.filter(specialist=bojang, status='sent')[:2]:
             notify([sp_user], f'New referral {r.number}', f'{r.get_urgency_display()} · {r.get_kind_display()}', f'/referrals/{r.pk}/', 'referral_new')
     Notification.objects.filter(created_at__gte=now - timedelta(minutes=5)).update(emailed_at=now)   # demo: do not send real emails
+    return made
+
+
+def hand_foot_cases(doctor, rad):
+    """Fictional hand and foot cases: rheumatoid arthritis, boxer's fracture, ankle fracture, diabetic foot infection, and a
+    foot X-ray for the gout patient."""
+    from .models import Bed
+    if Encounter.objects.filter(diagnosis__icontains='rheumatoid arthritis of both hands').exists():
+        return 0
+    now = timezone.now()
+    em = Department.objects.filter(name='Emergency').first(); surg = Department.objects.filter(name='Surgery').first() or em
+    med = Department.objects.filter(name='General Medicine').first() or em
+    meds = {m.name: m for m in Medication.objects.all()}
+    def rx(enc, lines):
+        p = Prescription.objects.create(encounter=enc, allergy_reviewed=True, state='signed', signed_by=doctor, signed_at=now - timedelta(hours=2))
+        for i, (name, dose, per, route, freq, days) in enumerate(lines):
+            if name in meds:
+                PrescriptionItem.objects.create(prescription=p, medication=meds[name], dose=dose, units_per_dose=per, route=route, frequency=freq, duration_days=days,
+                                                quantity=PrescriptionItem.calculate_quantity(per, freq, days) or 10, sort_order=i)
+    def admit(enc):
+        bed = Bed.objects.filter(state='available').first()
+        if bed:
+            Admission.objects.create(encounter=enc, bed=bed); bed.state = 'occupied'; bed.save(update_fields=['state'])
+    made = 0
+    # 1. rheumatoid arthritis of both hands
+    p = new_patient('Mariama', 'Sanyang', 'F', 48, 'Brikama')
+    Condition.objects.create(patient=p, name='Rheumatoid arthritis', status='active')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=med, status='open', reason='Painful, swollen finger joints and morning stiffness for 4 months',
+                                 diagnosis='Rheumatoid arthritis of both hands', assessment='Symmetrical swelling of the knuckle (MCP) and middle finger (PIP) joints; stiffness over 1 hour each morning.',
+                                 vitals={'bp': '124/78', 'heart_rate': '84', 'temperature_c': '37.2', 'pain_score': '6'})
+    if LabTest.objects.filter(code='RF').exists():
+        lab_result(e, 'RF', {'RF': 'Positive'}, doctor, hours=30)
+    lab_result(e, 'ESR', {'ESR': 52}, doctor, hours=30); lab_result(e, 'CRP', {'CRP': 24}, doctor, hours=30)
+    lab_result(e, 'CBC', {'HB': 10.9, 'WBC': 9.1, 'PLT': 410, 'RBC': 4.0, 'HCT': 33, 'MCV': 84}, doctor, hours=30)
+    study(e, rad, 'xray', 'Both hands', 'bone', di.xray_hand('ra'), 'Periarticular osteopenia, marginal erosions at the 2nd and 3rd MCP and PIP joints, symmetrical joint-space narrowing.',
+          'Erosive changes consistent with rheumatoid arthritis.', True, hours=28)
+    rx(e, [('Ibuprofen', '400 mg', 1, 'oral', 'TDS', 14), ('Paracetamol', '500 mg', 2, 'oral', 'QDS', 14)])
+    made += 1
+    # 2. boxer's fracture (right 5th metacarpal)
+    p = new_patient('Alieu', 'Sarr', 'M', 22, 'Serrekunda')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=em, status='open', reason='Punched a wall, swollen right hand', diagnosis="Fracture of right 5th metacarpal neck (boxer's fracture)",
+                                 assessment='Swelling and tenderness over the right little-finger knuckle; no rotational deformity.', vitals={'bp': '128/76', 'heart_rate': '88', 'pain_score': '6'})
+    study(e, rad, 'xray', 'Right hand', 'bone', di.xray_hand('fracture'), 'Transverse fracture of the neck of the 5th metacarpal with 30° volar angulation.', "Boxer's fracture, right 5th metacarpal.", True,
+          [{'label': 'Angulation', 'value': '30', 'unit': '°', 'abnormal': True}], hours=3)
+    rx(e, [('Paracetamol', '1 g', 2, 'oral', 'QDS', 5), ('Ibuprofen', '400 mg', 1, 'oral', 'TDS', 5)])
+    made += 1
+    # 3. bimalleolar ankle fracture
+    p = new_patient('Binta', 'Jobe', 'F', 35, 'Bakau')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=surg, status='open', reason='Twisted the left ankle falling down steps; cannot bear weight',
+                                 diagnosis='Bimalleolar fracture of left ankle', assessment='Swollen, deformed left ankle; foot pulses present.', vitals={'bp': '118/72', 'heart_rate': '96', 'pain_score': '8'})
+    study(e, rad, 'xray', 'Left ankle', 'bone', di.xray_foot('ankle'), 'Fractures through the medial and lateral malleoli with widening of the ankle mortise.', 'Unstable bimalleolar ankle fracture.', True, hours=4)
+    rx(e, [('Paracetamol', '1 g', 2, 'oral', 'QDS', 5)])
+    admit(e)
+    made += 1
+    # 4. diabetic foot infection with osteomyelitis
+    p = new_patient('Pa', 'Ceesay', 'M', 63, 'Soma', medical_alerts='Type 2 diabetes')
+    Condition.objects.create(patient=p, name='Type 2 diabetes', status='active')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=med, status='open', reason='Smelly ulcer under the right big toe for 3 weeks',
+                                 diagnosis='Diabetic foot ulcer with osteomyelitis of right 1st metatarsal', assessment='Deep ulcer under the right 1st metatarsal head; probe touches bone; reduced sensation in both feet.',
+                                 vitals={'bp': '146/88', 'heart_rate': '102', 'temperature_c': '38.1'})
+    lab_result(e, 'GLU', {'FBG': 14.2}, doctor, hours=6)
+    lab_result(e, 'CBC', {'HB': 11.6, 'WBC': 15.8, 'PLT': 380, 'RBC': 4.2, 'HCT': 35, 'MCV': 86}, doctor, hours=6)
+    lab_result(e, 'CRP', {'CRP': 96}, doctor, hours=6)
+    study(e, rad, 'xray', 'Right foot', 'bone', di.xray_foot('osteomyelitis'), 'Cortical destruction and periosteal reaction of the right 1st metatarsal head beneath the ulcer.',
+          'Osteomyelitis of the right 1st metatarsal.', True, hours=5)
+    rx(e, [('Ceftriaxone', '2 g', 1, 'iv', 'OD', 14), ('Paracetamol', '1 g', 2, 'oral', 'QDS', 7), ('Metformin', '500 mg', 1, 'oral', 'BD', 30)])
+    admit(e)
+    made += 1
+    # 5. a foot X-ray for the gout patient, if there is one
+    g = Encounter.objects.filter(diagnosis__icontains='gout', status='open').first()
+    if g and not ImagingOrder.objects.filter(encounter=g).exists():
+        study(g, rad, 'xray', 'Right foot', 'bone', di.xray_foot('gout'), 'Soft-tissue swelling and a punched-out erosion with overhanging edge at the right 1st MTP joint.',
+              'Changes of gout at the right first metatarsophalangeal joint.', True, hours=1)
     return made

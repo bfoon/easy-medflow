@@ -986,3 +986,34 @@ class IdentityBeforeAcceptanceTests(SpecialistPortalTests):
         c.post(f'/referrals/{self.r.pk}/status/accepted/')
         c.logout(); c.force_login(self.doc); c.post(f'/referrals/{self.r.pk}/share/'); c.logout(); c.force_login(self.spu)
         self.assertIn(self.patient.last_name, c.get(f'/referrals/{self.r.pk}/').content.decode())
+
+
+class Heart3DTests(Base):
+    def test_insights_page_loads_the_3d_heart(self):
+        html = self.as_('doctor').get(f'/patients/{self.patient.pk}/labs/').content.decode()
+        self.assertIn('<script type="importmap">', html)                         # three.js helpers import 'three' by name
+        self.assertIn('window.MF_THREE', html)
+        self.assertIn('hospital/vendor/three/three.module.min.js', html)
+        order = [html.index(x) for x in ('organs-real.js', 'organs-heart3d.js', 'insights.js')]
+        self.assertEqual(order, sorted(order))                                    # 3D heart replaces the 2D one, before insights.js runs
+        js = open(__import__('os').path.join(__import__('django').conf.settings.BASE_DIR, 'hospital/static/hospital/js/insights.js')).read()
+        self.assertIn('art.mount(', js)                                           # the organ panel starts the 3D view
+
+
+class AnatomyLayerTests(Base):
+    def test_insights_page_loads_anatomy_layers_in_order(self):
+        e = self.encounter(); e.diagnosis = 'Spinal cord injury at T10'; e.vitals = {'heart_rate': '58'}; e.save()
+        html = self.as_('doctor').get(f'/patients/{self.patient.pk}/labs/').content.decode()
+        order = [html.index(x) for x in ('organs-anatomy.js', 'organs-heart3d.js', 'organs-skeleton.js', 'anatomy-layers.js', 'insights.js')]
+        self.assertEqual(order, sorted(order))                 # bone tabs wrap the bone-tissue view; layers set the bone spot before markers draw
+        from hospital.views import patient_lab_data
+        data = patient_lab_data(self.patient)
+        self.assertIn('Spinal cord injury at T10', data['dx']); self.assertEqual(data['vitals']['heart_rate'], '58')
+
+    def test_hand_and_foot_samples_are_added_once(self):
+        from hospital.demo_extras import hand_foot_cases
+        doc = StaffProfile.objects.filter(role='doctor').first().user
+        self.assertEqual(hand_foot_cases(doc, doc), 4)
+        self.assertEqual(hand_foot_cases(doc, doc), 0)
+        self.assertTrue(Encounter.objects.filter(diagnosis__icontains='rheumatoid arthritis of both hands', patient__conditions__name='Rheumatoid arthritis').exists())
+        self.assertEqual(ImagingOrder.objects.filter(region__in=['Both hands', 'Right hand', 'Left ankle', 'Right foot']).count(), 4)

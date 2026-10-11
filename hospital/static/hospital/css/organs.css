@@ -138,3 +138,114 @@
 @media (prefers-reduced-motion:reduce){
   .organ-art .oa,.ox *,.bm-churn,.bm-peri,.bm-think,.bm-urine,.bm-follicle{animation:none!important}
 }
+
+/* ============================================================= 3D heart viewer (organs-heart3d.js) */
+.h3d-wrap{display:flex;flex-direction:column;gap:8px}
+.h3d{position:relative;height:340px;border-radius:14px;overflow:hidden;outline:none;
+  background:radial-gradient(ellipse at 50% 38%,#2b3a46 0%,#16212b 55%,#0b1219 100%);box-shadow:inset 0 0 60px rgba(0,0,0,.45)}
+.h3d:focus-visible{box-shadow:0 0 0 3px #7CC7B5,inset 0 0 60px rgba(0,0,0,.45)}
+.h3d canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+.h3d canvas:active{cursor:grabbing}
+.h3d:fullscreen{height:100vh;border-radius:0}
+.h3d-loading{position:absolute;inset:0;display:grid;place-items:center;color:#c9d6de;font-size:.9rem;gap:6px;transition:opacity .5s}
+.h3d-loading i{font-size:1.6rem;color:#e05a62;animation:heartBeat 1s infinite;display:block;text-align:center}
+.h3d.ready .h3d-loading{opacity:0;pointer-events:none}
+.h3d-hint{position:absolute;left:12px;bottom:10px;font-size:.72rem;color:rgba(255,255,255,.55);pointer-events:none;transition:opacity .4s}
+.h3d.ready:hover .h3d-hint{opacity:.25}
+.h3d-tools{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:6px;z-index:3}
+.h3d-tools button{width:32px;height:32px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(15,25,33,.65);color:#e7eef2;
+  display:grid;place-items:center;backdrop-filter:blur(6px);transition:background .15s}
+.h3d-tools button:hover{background:rgba(255,255,255,.16)}.h3d-tools button.on{background:#0F7B78;border-color:#0F7B78}
+.h3d-pins{position:absolute;inset:0;pointer-events:none;z-index:2}
+.h3d-pin{position:absolute;left:0;top:0;pointer-events:auto;border:0;background:none;padding:0;display:flex;align-items:center;gap:6px;
+  transition:opacity .25s;will-change:transform;margin:-7px 0 0 -7px}
+.h3d-pin .dot{width:14px;height:14px;border-radius:50%;background:#e7eef2;border:3px solid rgba(15,25,33,.8);box-shadow:0 0 0 1px rgba(255,255,255,.4);flex:none}
+.h3d-pin.part .dot{width:10px;height:10px;border-width:2px;margin:2px}
+.h3d-pin .tag{font-size:.7rem;font-weight:700;color:#fff;background:rgba(15,25,33,.78);border:1px solid rgba(255,255,255,.15);border-radius:7px;
+  padding:2px 7px;white-space:nowrap;backdrop-filter:blur(4px)}
+.h3d-pin.issue.crit .dot{background:#ff4d5a}.h3d-pin.issue.abn .dot{background:#f5a524}
+.h3d-pin.issue.crit .tag{background:rgba(180,30,45,.88)}.h3d-pin.issue.abn .tag{background:rgba(160,95,10,.88)}
+.h3d-pin .ring{position:absolute;left:-5px;top:-5px;width:24px;height:24px;border-radius:50%;border:2px solid currentColor;animation:h3dRing 1.6s ease-out infinite;pointer-events:none}
+.h3d-pin.issue.crit{color:#ff4d5a}.h3d-pin.issue.abn{color:#f5a524}
+@keyframes h3dRing{from{transform:scale(.6);opacity:.9}to{transform:scale(1.9);opacity:0}}
+.h3d-pin.behind{opacity:.28}.h3d-pin.behind .ring{display:none}
+.h3d-pin.tag-off .tag{display:none}
+.h3d.no-labels .h3d-pin.part{display:none}
+.h3d-pin.picked .dot{transform:scale(1.35);box-shadow:0 0 0 4px rgba(124,199,181,.6)}
+.h3d-legend{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:.8rem}
+.h3d-legend b{font-size:.74rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-right:4px}
+.h3d-legend button{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);background:#fff;border-radius:99px;padding:3px 10px;font-weight:600}
+.h3d-legend button small{color:var(--muted);font-weight:500}
+.h3d-legend button span,.h3d-legend.ok span{width:9px;height:9px;border-radius:50%;display:inline-block}
+.h3d-legend button.crit span{background:#C8323F}.h3d-legend button.abn span{background:#E0912A}
+.h3d-legend.ok{color:var(--muted)}.h3d-legend.ok span{background:#16A34A;margin-right:6px}
+@media (prefers-reduced-motion: reduce){.h3d-pin .ring,.h3d-loading i{animation:none}}
+/* keep findings labelled; anatomy names appear on hover or tap so the small panel stays readable */
+.h3d{height:400px}
+.h3d-pin.part .tag{opacity:0;transform:translateX(-4px);transition:opacity .15s,transform .15s;pointer-events:none}
+.h3d-pin.part:hover .tag,.h3d-pin.part:focus-visible .tag,.h3d-pin.part.picked .tag{opacity:1;transform:none}
+.h3d:fullscreen .h3d-pin.part .tag{opacity:1;transform:none}
+
+/* ============================================================= body systems layers (anatomy-layers.js) */
+.layer-bar{display:flex;flex-direction:column;gap:6px;margin:4px 0 8px}
+.layer-btns{display:flex;flex-wrap:wrap;gap:5px}
+.lb{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);background:#fff;border-radius:99px;padding:4px 11px;font-size:.8rem;font-weight:700;color:var(--muted);transition:all .15s}
+.lb.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.lb[data-layer="skeleton"].on{background:#8A6D3B;border-color:#8A6D3B}.lb[data-layer="nerves"].on{background:#B7791F;border-color:#B7791F}
+.lb[data-layer="lymph"].on{background:#3F7D3A;border-color:#3F7D3A}.lb[data-layer="circulation"].on{background:#B42532;border-color:#B42532}
+.layer-notes{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:.74rem;color:var(--muted)}
+.layer-notes span::before{content:"● ";color:#C8323F}
+#body.hide-organs .organs .org:not([data-sys="bone"]),#body.hide-organs .organs .gut{display:none}
+#body.see-through .organs .org:not([data-sys="bone"]),#body.see-through .organs .gut{opacity:.4}
+#body.hide-circ #vessels,#body.hide-circ #droplets{display:none}
+#body.pale-blood #vessels path{stroke:#E9A9AE}#body.low-o2 #vessels path{filter:hue-rotate(-20deg) saturate(.6)}
+/* skeleton */
+.layer-skeleton .bn{fill:#F3EBDD;stroke:#B9A27E;stroke-width:1}
+.layer-skeleton .bn.long,.layer-skeleton .bn.rib,.layer-skeleton .bn.meta,.layer-skeleton .bn.phal{fill:none;stroke:#E6D8BF;stroke-linecap:round}
+.layer-skeleton .bn.long{stroke-width:7}.layer-skeleton .bn.long.thin{stroke-width:4}.layer-skeleton .bn.rib{stroke-width:2.6;opacity:.85}
+.layer-skeleton .bn.meta{stroke-width:2.6}.layer-skeleton .bn.phal{stroke-width:2}
+.layer-skeleton .bn.skull{fill:#F6F0E4;opacity:.85}.layer-skeleton .socket{fill:#5b4c3a;opacity:.5}
+.layer-skeleton .bn.vert{fill:#F3EBDD;stroke:#B9A27E;cursor:pointer}
+.layer-skeleton.weak .bn{stroke-dasharray:2 1.6;opacity:.8}
+.layer-skeleton .bn.vert.hit{fill:#ff6b75;stroke:#C8323F;stroke-width:1.6;animation:boneHit 1.4s ease-in-out infinite}
+.layer-skeleton .bn.vert.k-fracture{fill:#C8323F}.layer-skeleton .bn.vert.k-disc{fill:#F59E0B}.layer-skeleton .bn.vert.k-cord{fill:#B91C1C}
+.layer-skeleton .bn.vert.k-strain,.layer-skeleton .bn.vert.k-wear{fill:#F5B971}
+@keyframes boneHit{50%{filter:drop-shadow(0 0 5px #ff3b4e)}}
+.disc-bulge{fill:#F59E0B;stroke:#B45309;animation:boneHit 1.4s infinite}
+.joint-dot{fill:#F3EBDD;stroke:#B9A27E;stroke-width:.6}
+.joint-dot.inflamed{fill:#ff5a67;stroke:#C8323F;animation:jointHot 1.2s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.joint-dot.gout{r:4}
+@keyframes jointHot{50%{transform:scale(1.5);filter:drop-shadow(0 0 3px #ff3b4e)}}
+.layer-skeleton .bn.broken{stroke:#C8323F!important;stroke-dasharray:9 3;animation:boneHit 1.4s infinite}
+.layer-skeleton .bn.healing{stroke:#F5B971!important}
+.layer-skeleton .bn.infected{fill:#7E3A8C;stroke:#4C1D57}
+/* nerves */
+.nerve{fill:none;stroke:#E8B931;stroke-width:1.6;stroke-linecap:round;opacity:.85}
+#nv-cord{stroke-width:3.4}
+.nerve.dead{stroke:#9CA3AF;stroke-dasharray:3 3;opacity:.6}
+.impulse{fill:#FFF3B0;filter:drop-shadow(0 0 3px #FACC15)}.impulse.irr{fill:#FCA5A5;filter:drop-shadow(0 0 3px #EF4444)}
+.lesion circle{fill:#B91C1C}.lesion .pulse{fill:none;stroke:#EF4444;stroke-width:2;animation:spPulse 1.4s ease-out infinite;transform-box:fill-box;transform-origin:center}
+.cord-dead{fill:#9CA3AF;opacity:.5}
+/* lymph */
+.lymph-v{fill:none;stroke:#7FB77E;stroke-width:1.2;stroke-dasharray:2 3;opacity:.8}
+.node{fill:#A7D3A6;stroke:#3F7D3A;stroke-width:1}
+.node.active{fill:#6FBF73;animation:nodeSwell 1.8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes nodeSwell{50%{transform:scale(1.35);filter:drop-shadow(0 0 4px #4ADE80)}}
+.spleen{fill:#8E4A6B;opacity:.75}.spleen.active{fill:#B0477A}
+/* ============================================================= bone pop-out (organs-skeleton.js) */
+.sk-tabs{display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap}
+.sk-tabs button{border:1px solid var(--line);background:#fff;border-radius:99px;padding:3px 12px;font-size:.8rem;font-weight:700;color:var(--muted)}
+.sk-tabs button.on{background:#8A6D3B;color:#fff;border-color:#8A6D3B}
+.oa.sk{max-height:420px}
+.sk-hit{animation:boneHit 1.4s infinite}.sk-hit.k-fracture,.sk-hit.k-cord{fill:#ff8a92}.sk-hit.k-disc{fill:#FCD9A0}
+.sk-disc-bulge{fill:#F59E0B;stroke:#B45309;animation:boneHit 1.4s infinite}
+.sk-lesion{fill:#B91C1C;animation:boneHit 1s infinite}
+.sk-lbl{font:600 10px var(--body);fill:var(--muted)}.sk-lbl.hot{fill:#C8323F;font-weight:800}
+.sk-lead{stroke:#C8323F;stroke-width:1;stroke-dasharray:2 2}
+.sk-joint{fill:#E9DCC2;stroke:#B9A27E}
+.sk-joint.hot{fill:#ff5a67;fill-opacity:.85;stroke:#C8323F;stroke-width:1;animation:jointHot 1.3s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.sk-crack{animation:boneHit 1s infinite}
+.sk-gout{animation:jointHot 1.4s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.sk-crystal{animation:sparkL 1.4s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.sk-infected{stroke:#7E3A8C!important}
+@media (prefers-reduced-motion: reduce){.joint-dot.inflamed,.node.active,.layer-skeleton .bn.vert.hit,.sk-hit,.sk-gout,.sk-crystal{animation:none}}

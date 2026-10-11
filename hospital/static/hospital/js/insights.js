@@ -16,8 +16,8 @@
   const SPOTS = {
     brain: [200, 58], thyroid: [200, 150], lungs: [160, 250], heart: [214, 268], blood: [86, 336],
     liver: [168, 322], stomach: [244, 332], pancreas: [192, 364], kidneys: [240, 404], bladder: [200, 468],
-    reproductive: [200, 497], bone: [150, 640], immune: [252, 212],
-  };
+    reproductive: [200, 497], bone: (window.MF_ANATOMY && window.MF_ANATOMY.boneSpot) || [150, 640], immune: [252, 212],
+  };   // the bone marker sits where the problem is (spine level, hand, foot or long bone): see anatomy-layers.js
   const SEVERITY = {HH: 4, LL: 4, H: 2, L: 2, A: 2, N: 1, '': 0};
   const FLAG_TEXT = {HH: '▲▲ Critical high', LL: '▼▼ Critical low', H: '▲ High', L: '▼ Low', A: 'Abnormal', N: 'Normal'};
   const flagClass = f => (f === 'HH' || f === 'LL') ? 'crit' : (f === 'H' || f === 'L' || f === 'A') ? 'abn' : f === 'N' ? 'ok' : '';
@@ -185,7 +185,8 @@
       for (let i = 0; i < count; i++) {
         const d = document.createElementNS(SVGNS, 'path');
         d.setAttribute('d', 'M0,-5 C3,-1.5 3.6,1.4 0,4.2 C-3.6,1.4 -3,-1.5 0,-5 Z'); d.setAttribute('class', 'drop');
-        d.innerHTML = `<animateMotion dur="${dur}s" repeatCount="indefinite" rotate="auto" begin="-${(i * dur / count + vi * .37).toFixed(2)}s"><mpath href="#${path.id}"/></animateMotion>`;
+        const durHr = (dur * ((window.MF_ANATOMY || {}).flowFactor || 1)).toFixed(2);   // faster pulse, faster flow
+        d.innerHTML = `<animateMotion dur="${durHr}s" repeatCount="indefinite" rotate="auto" begin="-${(i * dur / count + vi * .37).toFixed(2)}s"><mpath href="#${path.id}"/></animateMotion>`;
         box.appendChild(d);
       }
     });
@@ -256,6 +257,7 @@
       const cap = detail.querySelector('.oa-caption');
       const show = el => { const k = el.dataset.part; cap.textContent = art.parts[k] || el.getAttribute('aria-label'); detail.querySelectorAll('.oa-part').forEach(p => p.classList.toggle('picked', p.dataset.part === k)); };
       detail.querySelectorAll('.oa-part').forEach(el => { el.addEventListener('click', () => show(el)); el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); show(el); } }); });
+      if (art.mount) art.mount(detail.querySelector('.organ-art'), text => { cap.textContent = text; });   // e.g. the 3D heart builds itself in the panel
     }
     drawLines(detail);
   }
