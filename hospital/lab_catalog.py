@@ -51,6 +51,7 @@ CATALOG = [
         ('PANC', 'Pancreatic Enzymes', 'pancreas', 'Serum', 'Gold-top SST', 6, [
             N('LIPA', 'Lipase', 'U/L', 13, 60, None, 600, 0), N('AMY', 'Amylase', 'U/L', 30, 110, None, 1000, 0)]),
         ('CRP', 'C-Reactive Protein', 'immune', 'Serum', 'Gold-top SST', 4, [N('CRP', 'CRP', 'mg/L', 0, 5, None, 200, 1)]),
+        ('URIC', 'Uric Acid', 'bone', 'Serum', 'Gold-top SST', 6, [N('URIC', 'Uric acid', 'µmol/L', 200, 430, None, 900, 0, 150, 360)]),
         ('BONE', 'Bone Profile', 'bone', 'Serum', 'Gold-top SST', 24, [
             N('CA', 'Calcium (adjusted)', 'mmol/L', 2.2, 2.6, 1.75, 3.25, 2), N('PHOS', 'Phosphate', 'mmol/L', 0.8, 1.5, 0.3, None, 2),
             N('VITD', 'Vitamin D (25-OH)', 'nmol/L', 50, 125, None, None, 0)]),
@@ -81,6 +82,7 @@ CATALOG = [
         ('STL', 'Stool Microscopy', 'stomach', 'Stool', 'Stool container', 24, [
             C('OVA', 'Ova & parasites', ['None seen', 'Present'], ['Present']), C('FOB', 'Occult blood', ['Negative', 'Positive'], ['Positive']),
             T('NOTE', 'Microscopy findings')]),
+        ('HPYL', 'H. pylori Stool Antigen', 'stomach', 'Stool', 'Stool container', 24, [C('HPYL', 'H. pylori antigen', ['Negative', 'Positive'], ['Positive'])]),
         ('AFB', 'Sputum AFB Smear', 'lungs', 'Sputum', 'Sputum pot', 24, [C('AFB', 'Acid-fast bacilli', ['Negative', 'Scanty', '1+', '2+', '3+'], ['Scanty', '1+', '2+', '3+'])]),
         ('XPERT', 'GeneXpert MTB/RIF', 'lungs', 'Sputum', 'Sputum pot', 4, [
             C('MTB', 'M. tuberculosis', ['Not detected', 'Detected'], ['Detected']), C('RIF', 'Rifampicin resistance', ['Not detected', 'Detected', 'Indeterminate'], ['Detected'])]),
@@ -91,6 +93,7 @@ CATALOG = [
     ('serology', 'Serology & Immunology', '#5A6F7D', [
         ('HIV', 'HIV 1/2 Rapid Test', 'immune', 'Whole blood', 'Finger prick', 1, [C('HIV', 'HIV 1/2 antibody', ['Non-reactive', 'Reactive', 'Indeterminate'], ['Reactive', 'Indeterminate'])]),
         ('HBSAG', 'Hepatitis B Surface Antigen', 'liver', 'Serum', 'Gold-top SST', 1, [C('HBS', 'HBsAg', ['Non-reactive', 'Reactive'], ['Reactive'])]),
+        ('RF', 'Rheumatoid Factor', 'bone', 'Serum', 'Gold-top SST', 24, [C('RF', 'Rheumatoid factor', ['Negative', 'Positive'], ['Positive'])]),
     ]),
     ('blood-gas', 'Blood Gas', '#0F7B78', [
         ('ABG', 'Arterial Blood Gas', 'lungs', 'Arterial blood', 'Heparinised syringe', 1, [

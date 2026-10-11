@@ -420,8 +420,8 @@ class Command(BaseCommand):
              ('Serene Rehabilitation Centre', 'rehab', 'Lamin', '+220 445 9090', 'Physiotherapy, Speech therapy, Occupational therapy')]
         fac = {}
         for name, kind, loc, phone, caps in F:
-            fac[name] = NetworkFacility.objects.create(name=name, kind=kind, location=loc, phone=phone, capabilities=caps,
-                                                       email=name.lower().split()[0] + '@network.example')
+            fac[name], _ = NetworkFacility.objects.get_or_create(name=name, defaults=dict(kind=kind, location=loc, phone=phone, capabilities=caps,
+                                                                                       email=name.lower().split()[0] + '@network.example'))  # seed_network may have added it already
         S = [('Kotu Heart Centre', 'Aminata Bojang', 'Interventional cardiology', 4.9, 142, True, 'Coronary angiography and stenting; 15 years in acute coronary care.'),
              ('Kotu Heart Centre', 'Pa Modou Saine', 'Cardiology', 4.6, 88, True, 'Heart failure and echocardiography.'),
              ('Kotu Heart Centre', 'Fatoumata Kinteh', 'Cardiothoracic surgery', 4.7, 41, False, 'Valve and bypass surgery.'),
@@ -442,16 +442,16 @@ class Command(BaseCommand):
         specs = []
         day0 = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
         for fname, name, spec, rating, reviews, tele, bio in S:
-            sp = Specialist.objects.create(facility=fac[fname], name=name, speciality=spec, rating=rating, reviews=reviews, telehealth=tele, bio=bio,
-                                           languages='English, Wolof, Mandinka', consult_fee=random.choice([0, 500, 750, 1000]))
+            sp, _ = Specialist.objects.get_or_create(facility=fac[fname], name=name, defaults=dict(speciality=spec, rating=rating, reviews=reviews, telehealth=tele, bio=bio,
+                                                     languages='English, Wolof, Mandinka', consult_fee=random.choice([0, 500, 750, 1000])))
             specs.append(sp)
             for d in range(1, 15):
                 day = day0 + timedelta(days=d)
                 if day.weekday() >= 5 or random.random() < .25:
                     continue
                 for h in sorted(random.sample([9, 9.5, 10, 10.5, 11, 14, 14.5, 15, 15.5, 16], random.randint(2, 6))):
-                    SpecialistSlot.objects.create(specialist=sp, start=day + timedelta(hours=h),
-                                                  mode='video' if tele and random.random() < .3 else 'in_person')
+                    SpecialistSlot.objects.get_or_create(specialist=sp, start=day + timedelta(hours=h),
+                                                         defaults={'mode': 'video' if tele and random.random() < .3 else 'in_person'})
         partner = get_user_model().objects.create_user('partner.kotu', password=opts['password'], first_name='Kotu', last_name='Heart Centre')
         StaffProfile.objects.create(user=partner, role='partner', facility=fac['Kotu Heart Centre'])
 

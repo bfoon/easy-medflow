@@ -1,5 +1,6 @@
 {% extends 'hospital/base.html' %}{% load static medflow %}
 {% block title %}Lab insights · {{ p.full_name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/organs.css' %}" rel="stylesheet">{% endblock %}
 {% block topbar %}
 <header class="topbar">
   <div><h1>Lab insights</h1><p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %}{% if pending %} · <span class="tag amber">{{ pending|length }} test{{ pending|length|pluralize }} pending</span>{% endif %}</p></div>
@@ -69,25 +70,39 @@
         </g>
         <g id="droplets"></g>
         <g class="organs real-organs">
-          <g class="org" data-sys="brain"><path d="M164,70 C160,44 182,28 200,30 C220,28 242,44 238,70 C240,88 224,98 200,96 C178,98 162,88 164,70Z" fill="url(#g-brain)" filter="url(#bm-grain)"/>
+          <g class="org" data-sys="bone"><g class="skeleton">
+            <path d="M150,176 C170,182 188,178 198,172 M250,176 C230,182 212,178 202,172" class="long" style="stroke-width:5"/>
+            <rect x="194" y="112" width="12" height="7" rx="2" class="vert"/><rect x="194" y="121" width="12" height="7" rx="2" class="vert"/><rect x="194" y="130" width="12" height="7" rx="2" class="vert"/><rect x="194" y="139" width="12" height="7" rx="2" class="vert"/><rect x="194" y="148" width="12" height="7" rx="2" class="vert"/><rect x="194" y="157" width="12" height="7" rx="2" class="vert"/><rect x="194" y="166" width="12" height="7" rx="2" class="vert"/>
+            <rect x="193" y="300" width="14" height="8" rx="2.4" class="vert"/><rect x="193" y="311" width="14" height="8" rx="2.4" class="vert"/><rect x="193" y="322" width="14" height="8" rx="2.4" class="vert"/><rect x="193" y="333" width="14" height="8" rx="2.4" class="vert"/><rect x="193" y="344" width="14" height="8" rx="2.4" class="vert"/><rect x="193" y="355" width="14" height="8" rx="2.4" class="vert"/><rect x="193" y="366" width="14" height="8" rx="2.4" class="vert"/><rect x="193" y="377" width="14" height="8" rx="2.4" class="vert"/><rect x="193" y="388" width="14" height="8" rx="2.4" class="vert"/><rect x="193" y="399" width="14" height="8" rx="2.4" class="vert"/><rect x="193" y="410" width="14" height="8" rx="2.4" class="vert"/><rect x="193" y="421" width="14" height="8" rx="2.4" class="vert"/><rect x="193" y="432" width="14" height="8" rx="2.4" class="vert"/>
+            <path d="M156,448 C150,428 172,422 186,438 C192,450 208,450 214,438 C228,422 250,428 244,448 C240,470 222,482 200,484 C178,482 160,470 156,448Z" class="pelvis"/>
+            <ellipse cx="180" cy="462" rx="6" ry="8" class="pelvis" style="fill:#fff"/><ellipse cx="220" cy="462" rx="6" ry="8" class="pelvis" style="fill:#fff"/>
+            <path d="M104,214 C98,250 92,290 88,330 M296,214 C302,250 308,290 312,330 M86,344 C80,390 72,440 64,484 M314,344 C320,390 328,440 336,484" class="long" style="stroke-width:6"/>
+            <circle cx="87" cy="337" r="6" class="joint"/><circle cx="313" cy="337" r="6" class="joint"/>
+            <path d="M166,476 C160,530 154,590 151,626 M234,476 C240,530 246,590 249,626 M150,656 C149,690 148,730 146,764 M250,656 C251,690 252,730 254,764" class="long"/>
+            <circle cx="150" cy="640" r="12" class="joint"/><circle cx="250" cy="640" r="12" class="joint"/>
+            <circle cx="164" cy="474" r="7" class="joint"/><circle cx="236" cy="474" r="7" class="joint"/></g></g>
+          <g class="org" data-sys="brain"><path d="M164,70 C160,44 182,28 200,30 C220,28 242,44 238,70 C240,88 224,98 200,96 C178,98 162,88 164,70Z" fill="url(#g-brain)" filter="url(#bm-grain)" class="bm-think"/>
             <path d="M200,32 C197,50 203,72 200,95" class="gyri-mid"/><path d="M172,52 C180,48 186,54 182,60 C190,58 194,64 188,70 M228,52 C220,48 214,54 218,60 C210,58 206,64 212,70 M170,74 C178,72 182,80 176,86 M230,74 C222,72 218,80 224,86" class="gyri"/></g>
-          <g class="org" data-sys="thyroid"><path d="M184,146 C180,140 190,138 196,146 L204,146 C210,138 220,140 216,146 C220,156 210,160 204,154 L196,154 C190,160 180,156 184,146Z" fill="#C99BD9" stroke="#9C6BB5" stroke-width="1"/></g>
+          <g class="org" data-sys="thyroid"><path d="M184,146 C180,140 190,138 196,146 L204,146 C210,138 220,140 216,146 C220,156 210,160 204,154 L196,154 C190,160 180,156 184,146Z" fill="#B5555A" stroke="#7C2A32" stroke-width="1"/></g>
           <g class="org breathe" data-sys="lungs"><path fill="url(#g-lung)" filter="url(#bm-grain)" d="M191,194 C168,186 150,204 148,240 C146,280 152,304 168,309 C183,313 192,302 192,286 Z"/><path fill="url(#g-lung)" filter="url(#bm-grain)" d="M209,194 C232,186 250,204 252,240 C254,280 248,304 232,309 C218,313 208,302 208,286 C214,276 220,268 222,258 C214,250 209,240 209,228Z"/>
             <path d="M152,248 C166,244 180,250 192,246 M154,276 C168,272 180,276 192,272 M216,238 C230,246 240,252 250,262" class="fissure-b"/><path d="M200,180 L200,196 M200,196 C194,204 186,210 178,222 M200,196 C206,204 214,210 222,222" class="airway-b"/></g>
           <g class="org beat" data-sys="heart"><path fill="url(#g-heart)" filter="url(#bm-grain)" d="M214,250 C205,238 186,242 188,260 C190,278 214,294 216,297 C218,294 240,278 242,260 C244,242 224,238 214,250 Z"/>
             <path d="M206,250 C204,236 214,228 226,232" stroke="#C2343E" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M202,262 C206,272 212,282 216,292 M222,256 C226,266 230,274 234,280" class="coronary-b"/><ellipse cx="202" cy="256" rx="8" ry="4" fill="#fff" opacity=".18" transform="rotate(-30 202 256)"/></g>
           <g class="org" data-sys="liver"><path fill="url(#g-liver)" filter="url(#bm-grain)" d="M146,320 C144,302 178,296 216,304 C228,307 228,320 214,326 C198,336 176,350 158,348 C147,346 144,334 146,320 Z"/><path d="M196,304 C192,320 186,334 180,346" class="lobe-b"/><path d="M196,334 C192,344 198,352 205,350 C210,348 208,338 204,334Z" fill="#5E8A3A"/></g>
-          <g class="org" data-sys="stomach"><path fill="url(#g-stomach)" filter="url(#bm-grain)" d="M226,312 C246,304 262,318 257,338 C252,358 233,366 220,359 C211,353 215,341 224,337 C232,333 230,324 226,312 Z"/><path d="M230,322 C240,326 246,334 244,344" class="rugae"/></g>
+          <g class="org" data-sys="stomach">
+            <path d="M166,384 C160,404 168,426 186,432 C200,438 214,434 230,430 C244,426 246,406 238,390" class="gut-ring" fill="none" stroke="url(#g-gut)" stroke-width="12" stroke-linecap="round" opacity=".85"/>
+            <path d="M178,398 C186,392 196,400 204,394 C212,388 222,398 226,406 C218,414 206,410 198,416 C190,420 182,412 178,404" fill="none" stroke="#E7B3A0" stroke-width="7" stroke-linecap="round" opacity=".8"/>
+            <path d="M178,398 C186,392 196,400 204,394 C212,388 222,398 226,406 C218,414 206,410 198,416 C190,420 182,412 178,404" class="bm-peri" stroke-width="4"/>
+            <path d="M166,384 C160,404 168,426 186,432 C200,438 214,434 230,430 C244,426 246,406 238,390" class="bm-peri slow" stroke-width="6"/>
+            <g class="bm-churn"><path fill="url(#g-stomach)" filter="url(#bm-grain)" d="M226,312 C246,304 262,318 257,338 C252,358 233,366 220,359 C211,353 215,341 224,337 C232,333 230,324 226,312 Z"/><path d="M230,322 C240,326 246,334 244,344" class="rugae"/></g></g>
           <g class="org" data-sys="pancreas"><path fill="url(#g-panc)" filter="url(#bm-grain)" d="M186,360 C200,353 224,354 242,349 C250,349 250,359 240,362 C224,366 205,372 189,372 C181,371 180,364 186,360 Z"/></g>
-          <g class="gut" aria-hidden="true"><path d="M164,382 C160,402 168,424 186,430 C200,436 214,432 230,428 C244,424 246,404 238,388" fill="none" stroke="url(#g-gut)" stroke-width="12" stroke-linecap="round" opacity=".75"/>
-            <path d="M178,398 C186,392 196,400 204,394 C212,388 222,398 226,406 C218,414 206,410 198,416 C190,420 182,412 178,404" fill="none" stroke="#E7B3A0" stroke-width="7" stroke-linecap="round" opacity=".7"/></g>
           <g class="org" data-sys="kidneys"><path fill="url(#g-kidney)" filter="url(#bm-grain)" d="M168,368 C156,368 154,392 158,402 C162,412 174,410 176,400 C172,394 172,386 176,380 C176,372 172,368 168,368Z"/><path fill="url(#g-kidney)" filter="url(#bm-grain)" d="M232,368 C244,368 246,392 242,402 C238,412 226,410 224,400 C228,394 228,386 224,380 C224,372 228,368 232,368Z"/>
             <path d="M172,386 L180,388 M228,386 L220,388" stroke="#F0D38A" stroke-width="3"/></g>
-          <g class="org" data-sys="bladder"><path fill="url(#g-bladder)" d="M184,462 C184,452 216,452 216,462 C216,478 206,484 200,484 C194,484 184,478 184,462Z"/></g>
-          <g class="org" data-sys="reproductive"><ellipse cx="200" cy="496" rx="11" ry="6" fill="#E8A0BF"/></g>
+          <g class="org" data-sys="bladder"><path fill="#F3D3C6" d="M184,462 C184,452 216,452 216,462 C216,478 206,484 200,484 C194,484 184,478 184,462Z"/><path fill="url(#g-bladder)" class="bm-urine" d="M186,468 C192,466 208,466 214,468 C212,478 205,482 200,482 C195,482 188,478 186,468Z"/></g>
+          <g class="org" data-sys="reproductive">{% if p.sex == 'M' %}<path d="M190,488 C190,480 210,480 210,488 C211,498 205,503 200,503 C195,503 189,498 190,488Z" fill="#D59A84"/><path d="M200,484 L200,508" stroke="#F3D9A6" stroke-width="2"/>
+            {% else %}<path d="M192,486 C192,480 208,480 208,486 C209,496 204,504 200,506 C196,504 191,496 192,486Z" fill="#E39CB0"/><path d="M193,484 C186,480 180,480 176,484 M207,484 C214,480 220,480 224,484" stroke="#E39CB0" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <ellipse cx="175" cy="488" rx="4" ry="3" fill="#F2D0BE" class="bm-follicle"/><ellipse cx="225" cy="488" rx="4" ry="3" fill="#F2D0BE"/>{% endif %}</g>
           <g class="org" data-sys="immune"><circle cx="150" cy="212" r="5" fill="#9FB8C9"/><circle cx="250" cy="212" r="5" fill="#9FB8C9"/><circle cx="186" cy="160" r="4" fill="#9FB8C9"/><circle cx="214" cy="160" r="4" fill="#9FB8C9"/><circle cx="180" cy="484" r="4" fill="#9FB8C9"/><circle cx="220" cy="484" r="4" fill="#9FB8C9"/></g>
-          <g class="org" data-sys="bone"><path d="M160,500 C156,540 152,590 151,626 M240,500 C244,540 248,590 249,626 M150,656 C149,690 148,730 146,764 M250,656 C251,690 252,730 254,764" stroke="#E8E1CF" stroke-width="9" stroke-linecap="round" fill="none" opacity=".85"/>
-            <circle cx="150" cy="640" r="12" fill="none" stroke="#C9C2B0" stroke-width="4"/><circle cx="250" cy="640" r="12" fill="none" stroke="#C9C2B0" stroke-width="4"/></g>
         </g>
         <g id="markers"></g>
       </svg>
@@ -112,4 +127,4 @@
 </div>
 {{ data|json_script:"lab-data" }}
 {% endblock %}
-{% block scripts %}<script src="{% asset 'hospital/js/knowledge.js' %}"></script><script src="{% asset 'hospital/js/organs.js' %}"></script><script src="{% asset 'hospital/js/organs-real.js' %}"></script><script src="{% asset 'hospital/js/insights.js' %}"></script>{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/knowledge.js' %}"></script><script src="{% asset 'hospital/js/organs.js' %}"></script><script src="{% asset 'hospital/js/organs-real.js' %}"></script><script src="{% asset 'hospital/js/organs-anatomy.js' %}"></script><script src="{% asset 'hospital/js/insights.js' %}"></script>{% endblock %}

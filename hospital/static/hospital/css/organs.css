@@ -1,0 +1,140 @@
+/* Organ illustrations (organs-anatomy.js) and body-map motion. Loaded on the lab insights page after medflow.css. */
+
+/* one orchestrated entrance when an organ opens */
+.organ-art .oa{animation:oxIn .55s cubic-bezier(.2,.8,.2,1) both}
+@keyframes oxIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+.ox .oa-part:hover,.ox .oa-part:focus{filter:drop-shadow(0 0 5px rgba(15,123,120,.65)) brightness(1.04)}
+
+/* ---------------------------------------------------------------- stomach & gut */
+.ox-churn{transform-box:fill-box;transform-origin:40% 60%;animation:oxChurn 5s ease-in-out infinite}
+@keyframes oxChurn{0%,100%{transform:scale(1)}30%{transform:scale(1.025,.975)}60%{transform:scale(.98,1.02)}}
+.ox-rugae{fill:none;stroke:#B9634A;stroke-width:1.5;stroke-linecap:round;opacity:.55;stroke-dasharray:6 5;animation:oxDash 2.4s linear infinite}
+@keyframes oxDash{to{stroke-dashoffset:-22}}
+.ox-peri{fill:none;stroke:#FFE3D6;stroke-linecap:round;stroke-dasharray:16 54;opacity:.75;animation:oxPeri 3.2s linear infinite}
+.ox-peri.slow{animation-duration:7s;stroke:#F8D2BC}
+@keyframes oxPeri{to{stroke-dashoffset:-70}}
+.ox-pylorus{fill:#B9634A;transform-box:fill-box;transform-origin:center;animation:oxSqueeze 2.5s ease-in-out infinite}
+@keyframes oxSqueeze{50%{transform:scaleY(.6)}}
+.ox-bolus{fill:#A8743F;stroke:#7A5028;stroke-width:.6;opacity:.85}
+.ox-stool{fill:#8A5A2E;opacity:.8}
+.ox-nutrient{fill:#F2C14E}
+.ox-villus{transform-box:fill-box;transform-origin:50% 100%;animation:oxSway 3s ease-in-out infinite}
+@keyframes oxSway{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg)}}
+.ox-gast{fill:#C8323F;opacity:.45;animation:oxPulse 1.6s ease-in-out infinite}
+.ox-hp{fill:none;stroke:#2E7D32;stroke-width:1.6;stroke-linecap:round;animation:oxWiggle 1s ease-in-out infinite}
+@keyframes oxWiggle{50%{transform:translate(1.5px,-1px)}}
+.ox-worm{fill:none;stroke:#F3EAD2;stroke-width:2.6;stroke-linecap:round;filter:drop-shadow(0 0 1px #6B5A3A)}
+.ox-bleed{fill:#C8323F;animation:oxPulse 1.2s ease-in-out infinite;filter:url(#ox-glow)}
+.ox-blooddrop{fill:#C8323F}
+@keyframes oxPulse{0%,100%{opacity:.35}50%{opacity:.95}}
+
+/* ---------------------------------------------------------------- bladder & urine */
+.ox-fill{animation:oxFill 8s ease-in-out infinite}
+@keyframes oxFill{0%,100%{transform:translateY(30px)}60%{transform:translateY(-6px)}}
+.ox-urine{fill:var(--urine,#F2D46A);opacity:.92;animation:oxWave 2.4s linear infinite}
+.ox-bladder.cloudy .ox-urine{opacity:.75;filter:saturate(.6) brightness(1.05)}
+@keyframes oxWave{to{transform:translateX(-30px)}}
+.ox-udrop{fill:#E8B730}
+.ox-sphincter{fill:none;stroke:#B9706A;stroke-width:2;transform-box:fill-box;transform-origin:center;animation:oxSqueeze 3s ease-in-out infinite}
+.ox-rod{fill:#5E8A2E;transform:translate(var(--x),var(--y));animation:oxRod 1.4s ease-in-out infinite}
+@keyframes oxRod{50%{transform:translate(calc(var(--x) + 3px),calc(var(--y) - 2px)) rotate(25deg)}}
+.ox-uwbc{fill:#F4F1FA;stroke:#9B8FC9;stroke-width:1.2}
+.ox-urbc{fill:#C8323F;opacity:.8}
+.ox-foam{fill:#FFFDF6;stroke:#E2D7B4;stroke-width:.6;opacity:.9}
+
+/* ---------------------------------------------------------------- reproductive */
+.ox-endo{fill:#F8D2DC;transition:fill .4s}
+.ox-uterus.preg .ox-endo{fill:#EDA9BA}
+.ox-follicle{fill:#FFF3D6;stroke:#E9C46A;stroke-width:1.4;transform-box:fill-box;transform-origin:center;animation:oxGrow 4s ease-in-out infinite}
+@keyframes oxGrow{0%,100%{transform:scale(.8)}50%{transform:scale(1.2)}}
+.ox-sac{transform-box:fill-box;transform-origin:center;animation:oxFloat 4s ease-in-out infinite}
+@keyframes oxFloat{50%{transform:translateY(-1.5px) scale(1.03)}}
+.ox-fetal-heart{fill:#C8323F;animation:oxFlicker .45s ease-in-out infinite}
+@keyframes oxFlicker{50%{opacity:.2}}
+.ox-ure{fill:none;stroke:#F3D9A6;stroke-width:6;stroke-linecap:round;transition:stroke-width .4s}
+.ox-prostate.big .ox-ure{stroke-width:2.4}
+.ox-pr-box{transform-box:fill-box;transform-origin:center;transition:transform .5s}
+.ox-prostate.big .ox-pr-box{transform:scale(1.2);animation:orgAlert 1.8s infinite}
+.ox-psa{fill:#C97F66}
+
+/* ---------------------------------------------------------------- bones */
+.ox-ca{fill:#F2C14E;filter:drop-shadow(0 0 2px #F2C14E)}
+.ox-bone.weak .ox-ca{opacity:.55}
+.ox-marrow-out{fill:#C8323F}
+.ox-blast{fill:#3E8FB0;animation:oxPulse 2.4s ease-in-out infinite}
+.ox-bone.active .ox-blast{animation-duration:.9s;fill:#2A7FA8}
+.ox-clast{animation:oxClast 9s ease-in-out infinite}
+@keyframes oxClast{0%,100%{transform:translate(140px,103px)}50%{transform:translate(226px,103px)}}
+.ox-bone.weak .ox-clast{animation-duration:5s}
+.ox-lamella{fill:none;stroke:#D2B98C;stroke-width:2.2;animation:oxLam 3.6s ease-in-out infinite}
+@keyframes oxLam{50%{stroke:#BFA06A}}
+.ox-bone.weak .ox-lamella{stroke-dasharray:4 3}
+.ox-urate{stroke:#FFFFFF;stroke-width:1.4;stroke-linecap:round;filter:drop-shadow(0 0 2px #7FD3F7);animation:oxPulse 1.4s ease-in-out infinite}
+.ox-synov{fill:#C8323F;opacity:.18;animation:oxSynov 1.8s ease-in-out infinite}
+@keyframes oxSynov{50%{opacity:.38}}
+
+/* ---------------------------------------------------------------- brain */
+.ox-lobe{opacity:.32;transition:opacity .2s}
+.ox-brain .oa-part:hover .ox-lobe,.ox-brain .oa-part.picked .ox-lobe{opacity:.7}
+.ox-gyrus{fill:none;stroke:#9E5269;stroke-width:2.2;stroke-linecap:round;opacity:.55}
+.ox-gyrus-hi{fill:none;stroke:#FDE3E8;stroke-width:2.4;stroke-linecap:round;opacity:.55}
+.ox-sulcus{fill:none;stroke:#8E4660;stroke-width:2.6;stroke-linecap:round;opacity:.75}
+.ox-folia{fill:none;stroke:#8E4660;stroke-width:1.2;opacity:.6}
+.ox-impulse{fill:#FFF59D;filter:url(#ox-glow)}
+.ox-mening{fill:none;stroke:#C99BD9;stroke-width:3;stroke-dasharray:5 5;opacity:.8}
+.ox-csf{fill:#64B5F6;opacity:.8}
+.ox-brain.inflamed .ox-mening{stroke:var(--red,#C8323F);animation:vesselGlow 1.4s infinite}
+.ox-brain.inflamed .ox-csf{fill:#E0E0E0}
+.ox-swell{transform-box:fill-box;transform-origin:center}
+.ox-brain.inflamed .ox-swell{animation:oxSwell 2.2s ease-in-out infinite}
+@keyframes oxSwell{50%{transform:scale(1.015)}}
+
+/* ---------------------------------------------------------------- thyroid */
+.ox-gland{transform-box:fill-box;transform-origin:center;transition:transform .5s}
+.ox-thy.goitre .ox-gland{transform:scale(1.12)}
+.ox-thy.fast .ox-gland{animation:orgAlert 1.6s infinite}
+.ox-t4{fill:#E9A23B}
+.ox-tsh{fill:#8A4A8F}
+
+/* ---------------------------------------------------------------- pancreas */
+.ox-islet{fill:#F2994A;opacity:.85;animation:oxPulse 2.4s ease-in-out infinite}
+.ox-panc.sugar .ox-islet{animation-duration:.9s;fill:#E8642C}
+.ox-pan-box{transform-box:fill-box;transform-origin:center}
+.ox-panc.inflamed .ox-pan-box{animation:orgAlert 1.4s infinite}
+.ox-panc.inflamed .ox-pan-box path:first-child{filter:url(#ox-grain) hue-rotate(-18deg) saturate(1.4)}
+.ox-enz{fill:#7CB342}
+.ox-ins{fill:#FFFFFF;stroke:#3E5BA8;stroke-width:.8}
+.ox-leak{fill:#C8323F;opacity:.7}
+
+/* ---------------------------------------------------------------- immune */
+.ox-gc{fill:#B9CCE3;transform-box:fill-box;transform-origin:center;animation:oxGc 3s ease-in-out infinite}
+.ox-node.active .ox-gc{fill:#7FA3D1;animation-duration:1.2s}
+@keyframes oxGc{50%{transform:scale(1.35)}}
+.ox-node.active .ox-node-box{transform-box:fill-box;transform-origin:center;animation:oxSwell 2s ease-in-out infinite}
+.ox-node.depleted .ox-gc{opacity:.35}
+.ox-lymph{fill:#7E57C2;animation:oxWiggle 1.2s ease-in-out infinite}
+.ox-lymph-out{fill:#7E57C2}
+.ox-germ circle{fill:#7CB342}.ox-germ path{stroke:#558B2F;stroke-width:1.6}
+.ox-ab{fill:none;stroke:#3E5BA8;stroke-width:1.6;stroke-linecap:round}
+.ox-mac{animation:oxMac 8s ease-in-out infinite}
+@keyframes oxMac{0%,100%{transform:translate(206px,110px)}50%{transform:translate(160px,74px)}}
+
+/* ---------------------------------------------------------------- body map motion */
+.real-organs .skeleton path,.real-organs .skeleton ellipse,.real-organs .skeleton rect{stroke:#D9CFB8;fill:none;stroke-linecap:round}
+.real-organs .skeleton .vert{fill:#ECE5D3;stroke:#CFC3A6;stroke-width:.8}
+.real-organs .skeleton .pelvis{fill:#EFE8D6;stroke:#CFC3A6;stroke-width:1.2}
+.real-organs .skeleton .long{stroke:#E8E1CF;stroke-width:8}
+.real-organs .skeleton .joint{fill:#F3EEDF;stroke:#C9C2B0;stroke-width:2}
+.bm-churn{transform-box:fill-box;transform-origin:40% 60%;animation:oxChurn 5s ease-in-out infinite}
+.bm-peri{fill:none;stroke:#FFE6DA;stroke-linecap:round;stroke-dasharray:10 34;opacity:.85;animation:oxPeri 3.6s linear infinite}
+.bm-peri.slow{animation-duration:7s}
+.bm-think{animation:bmThink 4s ease-in-out infinite}
+@keyframes bmThink{50%{filter:url(#bm-grain) drop-shadow(0 0 4px rgba(255,235,59,.55))}}
+.bm-urine{animation:bmUrine 6s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 100%}
+@keyframes bmUrine{50%{transform:scaleY(1.12)}}
+.bm-follicle{transform-box:fill-box;transform-origin:center;animation:oxGrow 4s ease-in-out infinite}
+.org.untested .bm-churn,.org.untested .bm-peri,.org.untested .bm-think,.org.untested .bm-urine{animation:none}
+
+@media (prefers-reduced-motion:reduce){
+  .organ-art .oa,.ox *,.bm-churn,.bm-peri,.bm-think,.bm-urine,.bm-follicle{animation:none!important}
+}
