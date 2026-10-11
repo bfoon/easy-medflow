@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
 
-from .models import (Condition, Location, MedicationAdministration, QueueTicket, Allergy, Invoice, Payment, Admission, Bed, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingOrder, StockRequest, LabRequest, PrescriptionItem, LabParameter, LabResultValue, Admission, Allergy, Bed, Department, Encounter, FormDefinition, FormSubmission, LabOrder, LabTest,
+from .models import (AuditEvent, Notification, Condition, Location, MedicationAdministration, QueueTicket, Allergy, Invoice, Payment, Admission, Bed, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingOrder, StockRequest, LabRequest, PrescriptionItem, LabParameter, LabResultValue, Admission, Allergy, Bed, Department, Encounter, FormDefinition, FormSubmission, LabOrder, LabTest,
                      Medication, Patient, Prescription, QueueTicket, Referral, Signature, StaffProfile, StockBatch,
                      WorkflowDefinition, WorkflowRun)
 from .services import availability, prescription_warnings
@@ -413,7 +413,7 @@ class NetworkTests(Base):
     def test_booking_holds_the_slot_and_prevents_double_booking(self):
         self.refer()
         r = Referral.objects.get()
-        self.assertEqual((r.slot, r.status, r.destination, r.shared), (self.slot, 'sent', 'Heart Centre', True))
+        self.assertEqual((r.slot, r.status, r.destination, r.shared), (self.slot, 'sent', 'Heart Centre', False))   # shared only after acceptance + send
         self.client.logout(); self.refer()                          # same slot again
         self.assertEqual(Referral.objects.count(), 1)
 
@@ -431,10 +431,17 @@ class NetworkTests(Base):
     def test_partner_sees_only_their_shared_referrals(self):
         self.refer(); r = Referral.objects.get()
         c = self.as_('partner')
-        self.assertRedirects(c.get('/'), '/network/inbox/')
-        self.assertContains(c.get('/network/inbox/'), self.patient.full_name)
+        self.assertRedirects(c.get('/'), '/referrals/?box=in')
+        inbox = c.get('/referrals/?box=in')
+        self.assertContains(inbox, f'{self.patient.first_name} {self.patient.last_name[0]}.'); self.assertNotContains(inbox, self.patient.last_name)   # initials until shared
+        self.assertRedirects(c.get('/network/inbox/'), '/referrals/?box=in')                   # old address still works
         self.assertEqual(c.get(f'/patients/{self.patient.pk}/').status_code, 403)        # no access to the hospital chart
         self.assertEqual(c.get('/labs/').status_code, 403)
+        self.assertEqual(c.get(f'/referrals/{r.pk}/summary/').status_code, 403)                  # not before accepting
+        c.post(f'/referrals/{r.pk}/status/accepted/')
+        self.assertEqual(c.get(f'/referrals/{r.pk}/summary/').status_code, 403)                  # nor before the hospital sends it
+        self.client.logout(); self.as_('doctor').post(f'/referrals/{r.pk}/share/')
+        self.client.logout(); c = self.as_('partner')
         self.assertContains(c.get(f'/referrals/{r.pk}/summary/'), 'Shared patient record')
         self.client.logout(); c = self.as_('outsider')
         self.assertEqual(c.get(f'/referrals/{r.pk}/').status_code, 403)                  # another facility cannot see it
@@ -465,7 +472,7 @@ class NetworkTests(Base):
 
     def test_declining_releases_the_slot(self):
         self.refer(); r = Referral.objects.get()
-        self.as_('partner').post(f'/referrals/{r.pk}/status/declined/')
+        self.as_('partner').post(f'/referrals/{r.pk}/status/declined/', {'reason': 'No capacity'})
         r.refresh_from_db(); self.assertIsNone(r.slot)
 
 
@@ -859,3 +866,123 @@ class SearchNegationTests(Base):
         self.assertEqual(search_patients(u, q='fracture')['total'], 0)
         ImagingOrder.objects.create(encounter=e, modality='xray', region='Femur', body_system='bone', status='reported', impression='Displaced femoral fracture.')
         self.assertEqual(search_patients(u, q='fracture')['total'], 1)
+
+
+from django.test import override_settings
+
+
+@override_settings(NOTIFY_EMAIL_SYNC=True, EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+class SpecialistPortalTests(Base):
+    def setUp(self):
+        from django.utils import timezone as tz
+        self.fac = NetworkFacility.objects.create(name='Heart Centre', kind='clinic')
+        self.sp = Specialist.objects.create(facility=self.fac, name='Ada Heart', speciality='Cardiology', rating=4.8, reviews=20)
+        self.other = Specialist.objects.create(facility=self.fac, name='Bo Other', speciality='Cardiology')
+        U = get_user_model()
+        self.spu = U.objects.create_user('ada', password=PW, email='ada@example.com'); StaffProfile.objects.create(user=self.spu, role='specialist', specialist=self.sp)
+        self.doc = StaffProfile.objects.filter(role='doctor').first().user
+        self.doc.email = 'doc@example.com'; self.doc.save()
+        self.enc = self.encounter()
+        self.client.force_login(self.doc)
+        self.client.post('/referrals/new/', {'encounter': self.enc.pk, 'kind': 'consultation', 'facility': self.fac.pk, 'specialist': self.sp.pk, 'urgency': 'urgent',
+                                             'reason': 'Chest pain', 'consent_to_share': 'on', 'send_now': 'on'})
+        self.r = Referral.objects.get(); self.client.logout()
+
+    def test_full_flow_accept_share_complete_lock(self):
+        from django.core import mail
+        self.assertEqual((self.r.created_by, self.r.direction), (self.doc, 'out'))
+        self.assertEqual(Notification.objects.filter(user=self.spu).count(), 1)                    # specialist told about the new request
+        c = self.client; c.force_login(self.spu)
+        self.assertRedirects(c.get('/'), '/specialist/')
+        self.assertContains(c.get('/referrals/'), self.r.number)
+        self.assertEqual(c.get(f'/patients/{self.patient.pk}/').status_code, 403)                  # no access to hospital charts
+        with self.captureOnCommitCallbacks(execute=True):           # emails are sent after the database change is saved
+            d = c.post(f'/referrals/{self.r.pk}/status/accepted/', HTTP_ACCEPT='application/json').json()
+        self.assertTrue(d['ok'])
+        self.assertTrue(Notification.objects.filter(user=self.doc, kind='referral_accepted').exists())
+        sent = [m for m in mail.outbox if 'doc@example.com' in m.to][-1]
+        self.assertIn('accepted', sent.subject); self.assertNotIn(self.patient.last_name, sent.body)   # emails carry no patient details
+        self.assertEqual(c.get(f'/referrals/{self.r.pk}/summary/').status_code, 403)              # not until the hospital sends it
+        c.logout(); c.force_login(self.doc); c.post(f'/referrals/{self.r.pk}/share/'); c.logout(); c.force_login(self.spu)
+        self.assertContains(c.get(f'/referrals/{self.r.pk}/summary/'), self.patient.last_name)
+        c.post(f'/referrals/{self.r.pk}/status/completed/')
+        self.r.refresh_from_db(); self.assertIsNotNone(self.r.locked_at)
+        self.assertRedirects(c.get(f'/referrals/{self.r.pk}/summary/'), f'/referrals/{self.r.pk}/learning/')   # locked
+        learn = c.get(f'/referrals/{self.r.pk}/learning/')
+        self.assertContains(learn, 'De-identified case')
+        for secret in (self.patient.first_name, self.patient.last_name, self.patient.mrn):
+            self.assertNotContains(learn, secret)
+        self.assertContains(c.get('/network/learning/'), 'Case 1')
+
+    def test_specialist_cannot_see_other_specialists_referrals(self):
+        Referral.objects.filter(pk=self.r.pk).update(specialist=self.other)
+        self.client.force_login(self.spu)
+        self.assertEqual(self.client.get(f'/referrals/{self.r.pk}/').status_code, 403)
+
+    def test_decline_needs_reason_and_live_inbox(self):
+        c = self.client; c.force_login(self.spu)
+        d = c.get('/api/referrals/inbox/').json()
+        self.assertEqual(d['pending'], 1); self.assertIn(self.r.number, d['html'])
+        self.assertEqual(c.post(f'/referrals/{self.r.pk}/status/declined/', HTTP_ACCEPT='application/json').status_code, 400)
+        c.post(f'/referrals/{self.r.pk}/status/declined/', {'reason': 'On leave'}, HTTP_ACCEPT='application/json')
+        self.r.refresh_from_db(); self.assertEqual((self.r.status, self.r.decline_reason), ('declined', 'On leave'))
+
+    def test_presence_slots_and_bell(self):
+        c = self.client; c.force_login(self.spu)
+        c.post('/specialist/status/', {'presence': 'procedure', 'presence_note': 'In theatre until 14:00', 'where': 'Theatre 2'})
+        self.sp.refresh_from_db(); self.assertEqual(self.sp.presence, 'procedure')
+        c.post('/specialist/slots/', {'action': 'generate', 'weekday': ['0', '1', '2', '3', '4'], 'start': '09:00', 'end': '10:00', 'minutes': '30', 'weeks': '2'})
+        self.assertGreaterEqual(self.sp.slots.count(), 2 * 5 * 2 - 2)                             # 2 per weekday, 5 weekdays, 2 weeks (today's may be past)
+        n = self.sp.slots.count()
+        c.post('/specialist/slots/', {'action': 'delete', 'slot': [self.sp.slots.first().pk]})
+        self.assertEqual(self.sp.slots.count(), n - 1)
+        b = c.get('/api/notifications/').json()
+        self.assertEqual(b['unread'], 1); c.post('/notifications/read/', {})
+        self.assertEqual(c.get('/api/notifications/').json()['unread'], 0)
+        c.logout(); c.force_login(self.doc)
+        self.assertContains(c.get(f'/network/specialists/{self.sp.pk}/'), 'In theatre until 14:00')
+
+
+class NetworkLookupTests(Base):
+    def setUp(self):
+        self.fac = NetworkFacility.objects.create(name='Kotu Clinic')
+        U = get_user_model(); u = U.objects.create_user('kotu', password=PW); StaffProfile.objects.create(user=u, role='partner', facility=self.fac)
+
+    def test_lookup_needs_number_and_birth_date_and_is_logged(self):
+        c = self.as_('kotu')
+        r = c.post('/network/lookup/', {'mrn': self.patient.mrn, 'dob': '1999-01-01', 'reason': 'Emergency care'})
+        self.assertContains(r, 'No shared record matches'); self.assertNotContains(r, self.patient.last_name)
+        r = c.post('/network/lookup/', {'mrn': self.patient.mrn, 'dob': self.patient.dob.isoformat(), 'reason': 'Emergency care'})
+        self.assertContains(r, self.patient.last_name)
+        self.assertTrue(AuditEvent.objects.filter(action='network_lookup', target=f'patient:{self.patient.pk}').exists())
+        self.client.logout()
+        self.assertContains(self.as_('doctor').get(f'/patients/{self.patient.pk}/'), 'Kotu Clinic')     # shown on the record
+
+    def test_opted_out_patients_are_not_found(self):
+        self.patient.network_sharing = False; self.patient.save()
+        r = self.as_('kotu').post('/network/lookup/', {'mrn': self.patient.mrn, 'dob': self.patient.dob.isoformat(), 'reason': 'Emergency care'})
+        self.assertContains(r, 'No shared record matches')
+
+    @override_settings(NOTIFY_EMAIL_SYNC=True, EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_partner_refers_in_and_hospital_accepts(self):
+        c = self.as_('kotu')
+        c.post('/network/lookup/', {'mrn': self.patient.mrn, 'dob': self.patient.dob.isoformat(), 'reason': 'Referral'})
+        c.post(f'/network/lookup/{self.patient.pk}/refer-in/', {'reason': 'Diabetes care', 'urgency': 'urgent'})
+        r = Referral.objects.get(direction='in')
+        self.assertEqual((r.from_facility, r.status), (self.fac, 'sent'))
+        self.client.logout(); d = self.as_('doctor')
+        self.assertContains(d.get('/referrals/?box=in'), r.number)
+        d.post(f'/referrals/{r.pk}/status/accepted/')
+        kotu = get_user_model().objects.get(username='kotu')
+        self.assertTrue(Notification.objects.filter(user=kotu, kind='referral_accepted').exists())
+
+
+class IdentityBeforeAcceptanceTests(SpecialistPortalTests):
+    def test_specialist_sees_initials_until_record_is_shared(self):
+        c = self.client; c.force_login(self.spu)
+        page = c.get('/referrals/').content.decode()
+        self.assertIn(f'{self.patient.first_name} {self.patient.last_name[0]}.', page); self.assertNotIn(self.patient.last_name, page)
+        self.assertNotIn(self.patient.last_name, c.get(f'/referrals/{self.r.pk}/').content.decode())
+        c.post(f'/referrals/{self.r.pk}/status/accepted/')
+        c.logout(); c.force_login(self.doc); c.post(f'/referrals/{self.r.pk}/share/'); c.logout(); c.force_login(self.spu)
+        self.assertIn(self.patient.last_name, c.get(f'/referrals/{self.r.pk}/').content.decode())

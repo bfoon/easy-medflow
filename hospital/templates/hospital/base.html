@@ -22,9 +22,13 @@
       <span><b>E-MedFlow</b><small>Hospital management</small></span>
     </a>
     <nav>
-      {% if nav_role == 'partner' %}
-      <div class="nav-group"><span>Referral network</span>
-        <a class="nav-link {% nav_active '/network/inbox/' '/referrals/' %}" href="{% url 'network_inbox' %}"><i class="bi bi-inbox"></i>Referral inbox</a>
+      {% if nav_role == 'partner' or nav_role == 'specialist' %}
+      <div class="nav-group"><span>{% if nav_role == 'specialist' %}Specialist portal{% else %}Referral network{% endif %}</span>
+        {% if nav_role == 'specialist' %}<a class="nav-link {% nav_active '/specialist/' %}" href="{% url 'specialist_portal' %}"><i class="bi bi-person-badge"></i>My portal</a>{% endif %}
+        <a class="nav-link {% nav_active '/referrals/' '/network/inbox/' %}" href="{% url 'referrals' %}"><i class="bi bi-inbox"></i>{% if nav_role == 'specialist' %}Requests{% else %}Referrals{% endif %}</a>
+        {% if nav_role == 'specialist' %}<a class="nav-link {% nav_active '/specialist/slots/' %}" href="{% url 'specialist_slots' %}"><i class="bi bi-calendar-week"></i>My slots</a>{% endif %}
+        <a class="nav-link {% nav_active '/network/lookup/' %}" href="{% url 'network_lookup' %}"><i class="bi bi-search-heart"></i>Record lookup</a>
+        <a class="nav-link {% nav_active '/network/learning/' %}" href="{% url 'network_learning' %}"><i class="bi bi-mortarboard"></i>Learning</a>
       </div>
       {% else %}
       <div class="nav-group">
@@ -52,7 +56,7 @@
       {% endif %}
     </nav>
     <div class="rail-foot">
-      {% if nav_role != 'partner' %}<a class="rail-pulse" href="{% url 'dashboard' %}" title="Hospital pulse: rises as the waiting room fills">
+      {% if nav_role != 'partner' and nav_role != 'specialist' %}<a class="rail-pulse" href="{% url 'dashboard' %}" title="Hospital pulse: rises as the waiting room fills">
         <i class="bi bi-heart-pulse-fill heart"></i><span><b data-pulse-bpm>–</b> bpm · <span data-pulse-mood>…</span></span>
       </a>{% endif %}
       <div class="who">
@@ -66,7 +70,15 @@
   <main class="main">{% endif %}{% if embed %}<main class="embed-main">{% else %}
     <div class="utility">
       <button class="btn btn-ghost menu-btn" aria-label="Open menu"><i class="bi bi-list"></i></button>
-      {% if nav_role != 'partner' %}<button class="search-trigger" data-palette type="button"><i class="bi bi-search"></i><span>Find a patient, diagnosis or medicine…</span><kbd>Ctrl K</kbd></button>{% endif %}
+      {% if nav_role != 'partner' and nav_role != 'specialist' %}<button class="search-trigger" data-palette type="button"><i class="bi bi-search"></i><span>Find a patient, diagnosis or medicine…</span><kbd>Ctrl K</kbd></button>{% endif %}
+      <div class="bell-wrap ms-auto">
+        <button class="bell" id="bell" type="button" aria-label="Notifications" aria-expanded="false"><i class="bi bi-bell"></i><span class="bell-n" id="bell-n" hidden>0</span></button>
+        <div class="bell-pop" id="bell-pop" hidden role="dialog" aria-label="Notifications">
+          <header><b>Notifications</b><button class="linklike small ms-auto" id="bell-all" type="button">Mark all read</button></header>
+          <div id="bell-list" class="bell-list"><div class="empty small">Loading…</div></div>
+          <footer><label class="small d-flex gap-2 align-items-center"><input type="checkbox" class="form-check-input m-0" id="bell-email"> Also email me <span class="muted" id="bell-noemail" hidden>(add an email to your account first)</span></label></footer>
+        </div>
+      </div>
       <span class="clock"><i class="bi bi-clock me-1"></i><span data-clock="short"></span></span>
     </div>{% endif %}
     {% block topbar %}
@@ -108,7 +120,7 @@
 
 <script>
   window.MEDFLOW = {
-    pulse: "{% url 'api_pulse' %}", search: "{% url 'api_search' %}", rxCheck: "{% url 'api_rx_check' %}",
+    pulse: "{% url 'api_pulse' %}", search: "{% url 'api_search' %}", notifications: "{% url 'api_notifications' %}", notificationsRead: "{% url 'notifications_read' %}", notificationsEmail: "{% url 'notifications_email' %}", rxCheck: "{% url 'api_rx_check' %}",
     patientNew: "{% url 'patient_new' %}", ticketNew: "{% url 'ticket_new' %}", encounterNew: "{% url 'encounter_new' %}",
     rxNew: "{% url 'prescription_new' %}", display: "{% url 'queue_display' %}"
   };

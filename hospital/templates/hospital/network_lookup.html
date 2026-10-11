@@ -1,0 +1,40 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Record lookup{% endblock %}
+{% block heading %}Network record lookup{% endblock %}
+{% block subheading %}<p class="sub">Any facility on the E-MedFlow platform can view a patient's shared record with their <b>patient number and date of birth</b>. Every lookup is logged and shown on the patient's record. Patients can opt out.</p>{% endblock %}
+{% block content %}
+<form method="post" class="panel lookup-form">{% csrf_token %}
+  <div class="d-flex gap-2 flex-wrap align-items-end">
+    <label class="flex-fill">Patient number<input class="form-control form-control-lg" name="mrn" required placeholder="e.g. MF-3BB667BF38" autocomplete="off"></label>
+    <label>Date of birth<input class="form-control form-control-lg" type="date" name="dob" required></label>
+    <label>Reason<select class="form-select form-select-lg" name="reason" required><option value="">Choose…</option>{% for x in reasons %}<option {% if reason == x %}selected{% endif %}>{{ x }}</option>{% endfor %}</select></label>
+    <button class="btn btn-primary btn-lg"><i class="bi bi-search-heart"></i>Look up</button>
+  </div>
+</form>
+{% if p %}
+<section class="wristband mt-3 {% if allergies %}alerting{% endif %}">
+  <span class="avatar xl {{ p.sex }}">{{ p.initials }}</span>
+  <div><h1>{{ p.full_name }}</h1><div class="facts"><span>{{ p.mrn }}</span><span>{{ p.get_sex_display }}{% if p.age is not None %}, <b>{{ p.age }}</b> yrs{% endif %}</span>{% if p.blood_group %}<span>Blood <b>{{ p.blood_group }}</b></span>{% endif %}<span class="tag indigo"><i class="bi bi-shield-check"></i>Viewed for: {{ reason }} · logged</span></div></div>
+</section>
+<div class="allergy-strip {% if not allergies %}none{% endif %}"><i class="bi bi-exclamation-triangle-fill"></i>{% if allergies %}<b>Allergies</b>{% for a in allergies %}<span class="tag">{{ a.substance }} · {{ a.severity }}</span>{% endfor %}{% else %}<b>No allergies documented.</b>{% endif %}</div>
+{% if p.medical_alerts %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div><b>Medical alert.</b> {{ p.medical_alerts }}</div></div>{% endif %}
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel"><div class="panel-head"><h2>Recent visits</h2></div><ul class="plain ruled">{% for e in visits %}<li><b>{{ e.diagnosis|default:e.reason }}</b> <span class="small muted">· {{ e.created_at|date:'j M Y' }}{% if e.department %} · {{ e.department }}{% endif %}</span></li>{% empty %}<li class="small muted">None.</li>{% endfor %}</ul></section>
+    <section class="panel flush"><div class="panel-head"><h2>Recent results</h2></div><div class="scroll-y"><table class="mini-table"><tbody>
+      {% for v in values %}<tr class="{% if v.is_critical %}row-crit{% elif v.is_abnormal %}row-abn{% endif %}"><td>{{ v.parameter.name }}<div class="small muted">{{ v.order.test.name }}</div></td><td><b>{{ v.display }}</b> {{ v.parameter.unit }} {% include 'hospital/_flag.html' with flag=v.flag %}</td><td class="small muted">{{ v.order.resulted_at|date:'j M Y' }}</td></tr>{% empty %}<tr><td class="empty">No results.</td></tr>{% endfor %}</tbody></table></div></section>
+    <section class="panel"><div class="panel-head"><h2>Imaging reports</h2></div><ul class="plain ruled">{% for o in imaging %}<li><b>{{ o.get_modality_display }} · {{ o.region }}</b> <span class="small muted">{{ o.reported_at|date:'j M Y' }}</span><div>{{ o.impression }}</div></li>{% empty %}<li class="small muted">None.</li>{% endfor %}</ul></section>
+  </div>
+  <div class="stack">
+    <section class="panel"><div class="panel-head"><h2>Conditions</h2></div><ul class="plain ruled">{% for c in conditions %}<li>{{ c.name }}</li>{% empty %}<li class="small muted">None recorded.</li>{% endfor %}</ul></section>
+    <section class="panel"><div class="panel-head"><h2>Medicines</h2></div><ol class="rx-items">{% for i in meds %}<li><span class="med">{{ i.medication|med_icon:i.route }}{{ i.medication }}</span><span class="dir">{{ i.directions }}</span></li>{% empty %}<li class="muted">None.</li>{% endfor %}</ol></section>
+    {% if can_refer_in %}<section class="panel"><div class="panel-head"><h2>Refer to the hospital</h2></div>
+      <form method="post" action="{% url 'network_refer_in' p.pk %}">{% csrf_token %}
+        <select class="form-select mb-2" name="department" aria-label="Department"><option value="">Any department</option>{% for d in departments %}<option value="{{ d.pk }}">{{ d.name }}</option>{% endfor %}</select>
+        <select class="form-select mb-2" name="urgency" aria-label="Urgency"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="emergency">Emergency</option></select>
+        <textarea class="form-control mb-2" name="reason" rows="3" required placeholder="Reason for referral"></textarea>
+        <button class="btn btn-primary w-100"><i class="bi bi-send"></i>Send referral</button></form></section>{% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

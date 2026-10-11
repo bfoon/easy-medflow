@@ -128,8 +128,10 @@ ACTION_LABELS = {
 
 @login_required
 def dashboard(request):
+    if my_specialist(request.user):
+        return redirect('specialist_portal')
     if partner_facility(request.user):
-        return redirect('network_inbox')
+        return redirect(reverse('referrals') + '?box=in')
     authorize(request)
     snap = hospital_snapshot()
     today = timezone.localdate()
@@ -262,6 +264,7 @@ def patient_chart(request, pk):
         'imaging': ImagingOrder.objects.filter(encounter__patient=p).exclude(status='cancelled').prefetch_related('images').order_by('-created_at')[:30],
         **similar_context(p, encounters),
         'billing': billing_context(p, encounters),
+        'network_log': AuditEvent.objects.filter(action='network_lookup', target=f'patient:{p.pk}').select_related('actor').order_by('-occurred_at')[:8],
     })
 
 
@@ -436,20 +439,26 @@ def api_queue(request):
 # ---------------------------------------------------------------- referrals
 
 REFERRAL_FLOW = {'draft': ['sent', 'cancelled'], 'sent': ['accepted', 'declined', 'cancelled'],
-                 'accepted': ['transferred', 'cancelled'], 'transferred': ['completed'], 'declined': [], 'completed': [], 'cancelled': []}
+                 'accepted': ['transferred', 'completed', 'cancelled'], 'transferred': ['completed'], 'declined': [], 'completed': [], 'cancelled': []}
 REFERRAL_STAGES = ['draft', 'sent', 'accepted', 'transferred', 'completed']
 
 
 @login_required
 def referrals(request):
-    authorize(request)
-    rows = list(Referral.objects.select_related('encounter__patient', 'specialist', 'slot').annotate(open_tasks=Count('tasks', filter=Q(tasks__status='open'))).order_by('-created_at')[:150])
+    """Referral inbox (coming to you: accept or decline) and outbox (sent by you)."""
+    box = request.GET.get('box') or 'in'
+    inbox, outbox = _box_rows(request, 'in'), _box_rows(request, 'out')
+    rows = list((inbox if box == 'in' else outbox)[:200])
     for r in rows:
         r.next_states = REFERRAL_FLOW.get(r.status, [])
         idx = REFERRAL_STAGES.index(r.status) if r.status in REFERRAL_STAGES else -1
         r.track = [{'name': s, 'state': 'done' if idx > i else 'current' if idx == i else 'todo'} for i, s in enumerate(REFERRAL_STAGES)]
-    counts = {u: sum(1 for r in rows if r.urgency == u and r.status not in ('completed', 'cancelled', 'declined')) for u in ('emergency', 'urgent', 'routine')}
-    return render(request, 'hospital/referrals.html', {'rows': rows, 'counts': counts})
+    pending = inbox.filter(status='sent').count()
+    return render(request, 'hospital/referrals.html', {
+        'rows': rows, 'box': box, 'pending': pending, 'in_count': inbox.count(), 'out_count': outbox.count(),
+        'can_send': not is_network_user(request.user) or bool(partner_facility(request.user)), 'network': is_network_user(request.user),
+        'is_specialist': bool(my_specialist(request.user)),
+        'counts': {u: sum(1 for r in rows if r.urgency == u and r.status not in ('completed', 'cancelled', 'declined')) for u in ('emergency', 'urgent', 'routine')}})
 
 
 @login_required
@@ -1387,14 +1396,23 @@ def partner_facility(user):
 
 
 def referral_side(request, ref):
-    """'sender' for hospital staff, 'receiver' for the partner facility it was sent to. Anyone else is refused."""
-    fac = partner_facility(request.user)
-    if fac:
-        if ref.facility_id == fac.pk and ref.status != 'draft':
+    """'sender' or 'receiver' for this user on this referral. Anyone not involved is refused.
+
+    Outbound (this hospital refers out): our staff are the sender; the specialist and/or partner facility receive.
+    Inbound (a partner facility refers in): that facility is the sender; our staff receive."""
+    sp, fac = my_specialist(request.user), partner_facility(request.user)
+    if sp:
+        if ref.direction == 'out' and ref.specialist_id == sp.pk and ref.status != 'draft':
             return 'receiver'
-        raise PermissionDenied('This referral was not sent to your facility.')
+        raise PermissionDenied('This referral was not sent to you.')
+    if fac:
+        if ref.direction == 'out' and ref.facility_id == fac.pk and ref.status != 'draft':
+            return 'receiver'
+        if ref.direction == 'in' and ref.from_facility_id == fac.pk:
+            return 'sender'
+        raise PermissionDenied('This referral does not involve your facility.')
     authorize(request)
-    return 'sender'
+    return 'receiver' if ref.direction == 'in' else 'sender'
 
 
 def next_free_slots(specialists, days=14):
@@ -1491,7 +1509,12 @@ def referral_new(request):
                 r.speciality = r.specialist.speciality
             if form.cleaned_data.get('send_now'):
                 r.status, r.sent_at = 'sent', timezone.now()
+            r.created_by = request.user
             r.save()
+            if r.status == 'sent':
+                from .notify import notify, referral_receivers
+                notify(referral_receivers(r), f'New referral {r.number}', f'{r.get_urgency_display()} · {r.get_kind_display()} from {request.user.get_full_name() or request.user.username}',
+                       reverse('referral_detail', args=[r.pk]), 'referral_new')
             if r.kind == 'operation':
                 tests = {t.code: t for t in LabTest.objects.filter(code__in=[c for *_, c in PREOP_CHECKLIST if c])}
                 for side, kind, title, code in PREOP_CHECKLIST:
@@ -1511,7 +1534,7 @@ def referral_detail(request, pk):
     rank = {'open': 0, 'done': 1, 'cancelled': 2}   # open work first, overdue and soonest-due at the top
     tasks = sorted(r.tasks.select_related('lab_test', 'form', 'created_by', 'completed_by'),
                    key=lambda t: (rank[t.status], not t.overdue, t.due or date.max, t.pk))
-    actions = [s for s in REFERRAL_FLOW.get(r.status, []) if (s in ('accepted', 'declined') and side == 'receiver') or (s not in ('accepted', 'declined') and side == 'sender')]
+    actions = [s for s in REFERRAL_FLOW.get(r.status, []) if s == 'completed' or (s in ('accepted', 'declined') and side == 'receiver') or (s not in ('accepted', 'declined') and side == 'sender')]
     stages = ['draft', 'sent', 'accepted', 'transferred', 'completed']
     idx = stages.index(r.status) if r.status in stages else -1
     return render(request, 'hospital/referral_detail.html', {
@@ -1525,27 +1548,57 @@ def referral_detail(request, pk):
 @login_required
 @require_POST
 def referral_status(request, pk, state):
+    from .notify import notify, referral_receivers, referral_senders
     with transaction.atomic():
-        r = get_object_or_404(Referral.objects.select_for_update(), pk=pk)
+        r = get_object_or_404(Referral.objects.select_for_update(of=('self',)).select_related('encounter__patient', 'specialist', 'facility'), pk=pk)
         side = referral_side(request, r)
         allowed = REFERRAL_FLOW.get(r.status, [])
-        if state not in allowed or (state in ('accepted', 'declined')) != (side == 'receiver'):
-            return HttpResponseBadRequest('That step is not available to you')
-        if state == 'sent' and r.facility_id and not r.consent_to_share:
-            messages.error(request, 'Record the patient\'s consent to share their records before sending to a network facility.')
-            return redirect('referral_detail', pk=pk)
+        receiver_steps, both = ('accepted', 'declined'), ('completed',)
+        ok = state in allowed and (state in both or (state in receiver_steps) == (side == 'receiver'))
+        err = None
+        if not ok:
+            err = 'That step is not available to you.'
+        elif state == 'sent' and r.facility_id and not r.consent_to_share:
+            err = "Record the patient's consent to share their records before sending to a network facility."
+        elif state == 'declined' and not request.POST.get('reason', '').strip():
+            err = 'Give a reason for declining, so the referrer can find another option.'
+        if err:
+            if _wants_json(request):
+                return JsonResponse({'ok': False, 'error': err}, status=400)
+            if not ok:
+                return HttpResponseBadRequest(err)
+            messages.error(request, err); return redirect('referral_detail', pk=pk)
         r.status = state
+        now = timezone.now()
         if state == 'sent':
-            r.sent_at = timezone.now()
+            r.sent_at = now
         if state == 'accepted':
             r.accepted_by = request.user.get_full_name() or request.user.username
+        if state == 'declined':
+            r.decline_reason = request.POST.get('reason', '').strip()[:300]
         if state == 'completed':
-            r.completed_at = timezone.now()
-        if state in ('declined', 'cancelled') and r.slot_id:
-            r.slot = None   # release the booked slot for other patients
+            r.completed_at = now; r.locked_at = now          # the work is done: identifiable data lock for the receiver
+        if state in ('declined', 'cancelled'):
+            r.locked_at = r.locked_at or now
+            if r.slot_id:
+                r.slot = None                                 # release the booked slot for other patients
+            if r.direction == 'in' and r.encounter.status == 'open':
+                Encounter.objects.filter(pk=r.encounter_id).update(status='cancelled')
         r.save()
         audit(request, 'referral_update', f'referral:{r.pk}', {'status': state, 'side': side})
-    messages.success(request, f'Referral marked {r.get_status_display().lower()}.')
+        url = reverse('referral_detail', args=[r.pk])
+        who = request.user.get_full_name() or request.user.username
+        if state == 'sent':
+            notify(referral_receivers(r), f'New referral {r.number}', f'{r.get_urgency_display()} · {r.get_kind_display()} from {who}', url, 'referral_new')
+        elif state in ('accepted', 'declined'):
+            notify(referral_senders(r), f'Referral {r.number} {state}', (f'Accepted by {who}. You can now send the patient record.' if state == 'accepted'
+                   else f'Declined by {who}: {r.decline_reason}'), url, f'referral_{state}', exclude=request.user)
+        elif state in ('completed', 'cancelled', 'transferred'):
+            notify(referral_senders(r) + referral_receivers(r), f'Referral {r.number} {r.get_status_display().lower()}',
+                   'Case closed: identifiable data are now locked; de-identified data remain for learning.' if state == 'completed' else '', url, 'referral_update', exclude=request.user)
+    if _wants_json(request):
+        return JsonResponse({'ok': True, 'status': r.status, 'label': r.get_status_display()})
+    messages.success(request, f'Referral marked {r.get_status_display().lower()}.' + (' Patient-identifiable data are now locked.' if state == 'completed' else ''))
     return redirect('referral_detail', pk=pk)
 
 
@@ -1582,6 +1635,9 @@ def referral_task_add(request, pk):
                                 lab_test=LabTest.objects.filter(pk=request.POST.get('lab_test') or 0).first(),
                                 form=FormDefinition.objects.filter(pk=request.POST.get('form') or 0, published=True).first())
     audit(request, 'referral_task', f'referral:{r.pk}', {'side': side, 'kind': kind})
+    from .notify import notify, referral_receivers, referral_senders
+    notify(referral_receivers(r) if side == 'sender' else referral_senders(r), f'New request on {r.number}: {title[:80]}', 'Asked by the ' + ('referring hospital.' if side == 'sender' else 'receiving side.'),
+           reverse('referral_detail', args=[r.pk]), 'task_new', exclude=request.user)
     messages.success(request, 'Request sent to the ' + ('receiving facility.' if side == 'sender' else 'referring hospital.'))
     return redirect('referral_detail', pk=pk)
 
@@ -1613,17 +1669,27 @@ def referral_task_update(request, pk, action):
         return HttpResponseBadRequest('Not allowed')
     t.save()
     audit(request, 'referral_task', f'referral_task:{t.pk}', {'action': action, 'side': side})
+    if action == 'done':
+        from .notify import notify, referral_receivers, referral_senders
+        notify(referral_senders(t.referral) if side == 'receiver' else referral_receivers(t.referral), f'Done on {t.referral.number}: {t.title[:80]}', t.response[:200],
+               reverse('referral_detail', args=[t.referral_id]), 'task_done', exclude=request.user)
     messages.success(request, 'Request updated.')
     return redirect('referral_detail', pk=t.referral_id)
 
 
 @login_required
 def referral_summary(request, pk):
-    """The patient record shared with the receiving facility: only with consent, only once sent."""
+    """The identifiable patient record for the receiver: only after acceptance, after the referrer sent it, until the case closes."""
     r = get_object_or_404(Referral.objects.select_related('encounter__patient', 'facility', 'specialist', 'slot'), pk=pk)
     side = referral_side(request, r)
-    if side == 'receiver' and not r.shared:
-        raise PermissionDenied('The patient has not consented to sharing their records with your facility.')
+    if side == 'receiver' and r.direction == 'out':
+        if r.locked_at:
+            messages.info(request, 'This case is closed. Identifiable data are locked; the de-identified case is shown for learning.')
+            return redirect('referral_learning', pk=r.pk)
+        if not r.shared:
+            raise PermissionDenied('The patient record is shared after you accept the referral and the referring hospital sends it.')
+    if side == 'sender' and r.direction == 'in' and not r.encounter.patient.network_sharing:
+        raise PermissionDenied('This patient has opted out of network sharing.')
     p = r.encounter.patient
     audit(request, 'view_shared_record', f'referral:{r.pk}', {'side': side})
     values = (LabResultValue.objects.filter(order__encounter__patient=p, order__status__in=['resulted', 'verified'])
@@ -1637,16 +1703,7 @@ def referral_summary(request, pk):
 
 @login_required
 def network_inbox(request):
-    """Home page for partner facilities: referrals sent to them, with open preparation requests."""
-    fac = partner_facility(request.user)
-    if not fac:
-        return redirect('referrals')
-    rows = list(Referral.objects.filter(facility=fac).exclude(status='draft').select_related('encounter__patient', 'specialist', 'slot')
-                .annotate(open_for_me=Count('tasks', filter=Q(tasks__status='open', tasks__assigned_to_side='receiver')),
-                          open_for_them=Count('tasks', filter=Q(tasks__status='open', tasks__assigned_to_side='sender'))).order_by('-sent_at'))
-    return render(request, 'hospital/network_inbox.html', {'fac': fac, 'rows': rows,
-                                                           'new': [r for r in rows if r.status == 'sent'], 'active': [r for r in rows if r.status in ('accepted', 'transferred')],
-                                                           'closed': [r for r in rows if r.status in ('completed', 'declined', 'cancelled')][:20]})
+    return redirect(reverse('referrals') + '?box=in')
 
 
 # ---------------------------------------------------------------- bed detail
@@ -2288,3 +2345,298 @@ def locations(request):
         'geo': [{'id': l.pk, 'name': str(l), 'lat': float(l.latitude), 'lon': float(l.longitude), 'kind': l.kind, 'n': l.n} for l in locs]})
     resp['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     return resp
+
+
+def my_specialist(user):
+    p = getattr(user, 'hospital_staff', None)
+    return p.specialist if p and p.active and p.role == 'specialist' and p.specialist_id else None
+
+
+def is_network_user(user):
+    """Partner facilities and specialists: they see only their referrals, the network lookup and their portal."""
+    return bool(partner_facility(user) or my_specialist(user))
+
+
+def _wants_json(request):
+    return 'application/json' in request.headers.get('Accept', '')
+
+
+@login_required
+@require_POST
+def referral_share(request, pk):
+    """The referrer sends the patient record, only after the receiver has accepted and with the patient's consent."""
+    from .notify import notify, referral_receivers
+    r = get_object_or_404(Referral.objects.select_related('encounter__patient'), pk=pk)
+    if referral_side(request, r) != 'sender' or r.direction != 'out':
+        raise PermissionDenied('Only the referring hospital can send the record.')
+    authorize(request, 'clinical')
+    if r.status not in ('accepted', 'transferred'):
+        messages.error(request, 'The record can be sent once the specialist or facility has accepted the referral.')
+    elif not (r.consent_to_share or request.POST.get('consent') == 'on'):
+        messages.error(request, "Record the patient's consent before sending their record.")
+    else:
+        r.consent_to_share = True; r.shared_at = timezone.now(); r.save(update_fields=['consent_to_share', 'shared_at', 'updated_at'])
+        audit(request, 'referral_record_shared', f'referral:{r.pk}')
+        notify(referral_receivers(r), f'Patient record received · {r.number}', 'The referring hospital has shared the patient record for this referral.',
+               reverse('referral_summary', args=[r.pk]), 'record_shared')
+        messages.success(request, 'Patient record sent. It locks automatically when the case is completed.')
+    return redirect('referral_detail', pk=pk)
+
+
+@login_required
+def referral_learning(request, pk):
+    """A closed case without identity: what the receiver keeps for learning."""
+    r = get_object_or_404(Referral.objects.select_related('encounter__patient', 'specialist', 'facility'), pk=pk)
+    side = referral_side(request, r)
+    from .clinical import deidentified_context
+    ctx = deidentified_context(r.encounter)
+    ctx['lab_results'] = ctx['lab_results'][-40:]
+    audit(request, 'view_learning_case', f'referral:{r.pk}', {'side': side})
+    return render(request, 'hospital/referral_learning.html', {'r': r, 'c': ctx, 'side': side, 'outcome': r.encounter.get_outcome_display() or '—'})
+
+
+def _box_rows(request, box):
+    """Referrals in this user's inbox ('in') or outbox ('out')."""
+    sp, fac = my_specialist(request.user), partner_facility(request.user)
+    qs = Referral.objects.select_related('encounter__patient', 'specialist', 'facility', 'from_facility', 'slot', 'created_by').annotate(
+        open_tasks=Count('tasks', filter=Q(tasks__status='open'))).order_by('-created_at')
+    if sp:
+        qs = qs.filter(direction='out', specialist=sp).exclude(status='draft') if box == 'in' else qs.none()
+    elif fac:
+        qs = qs.filter(direction='out', facility=fac).exclude(status='draft') if box == 'in' else qs.filter(direction='in', from_facility=fac)
+    else:
+        authorize(request)
+        qs = qs.filter(direction='in') if box == 'in' else qs.filter(direction='out')
+    return qs
+
+
+@login_required
+def api_referral_inbox(request):
+    """Live inbox: rows rendered on the server, so the page can refresh them without reloading."""
+    from django.template.loader import render_to_string
+    inbox = _box_rows(request, 'in')
+    rows = list(inbox[:200])
+    for r in rows:
+        r.next_states = REFERRAL_FLOW.get(r.status, [])
+    latest = rows[0].pk if rows else 0
+    return JsonResponse({'pending': inbox.filter(status='sent').count(), 'latest': latest, 'count': len(rows),
+                         'html': render_to_string('hospital/_referral_rows.html', {'rows': rows, 'box': 'in', 'network': is_network_user(request.user)}, request=request)})
+
+
+# ---------------------------------------------------------------- notifications (bell)
+
+@login_required
+def api_notifications(request):
+    qs = request.user.notifications.all()
+    items = [{'id': n.pk, 'title': n.title, 'body': n.body, 'url': n.url, 'kind': n.kind, 'read': bool(n.read_at),
+              'when': timezone.localtime(n.created_at).strftime('%d %b %H:%M')} for n in qs[:15]]
+    prof = getattr(request.user, 'hospital_staff', None)
+    return JsonResponse({'unread': qs.filter(read_at__isnull=True).count(), 'items': items,
+                         'email': bool(prof and prof.email_notifications), 'has_email': bool(request.user.email)})
+
+
+@login_required
+@require_POST
+def notifications_read(request):
+    qs = request.user.notifications.filter(read_at__isnull=True)
+    if request.POST.get('id'):
+        qs = qs.filter(pk=request.POST['id'])
+    n = qs.update(read_at=timezone.now())
+    return JsonResponse({'ok': True, 'marked': n})
+
+
+@login_required
+@require_POST
+def notifications_email(request):
+    prof = getattr(request.user, 'hospital_staff', None)
+    if prof:
+        prof.email_notifications = request.POST.get('on') == '1'; prof.save(update_fields=['email_notifications'])
+    return JsonResponse({'ok': True, 'email': bool(prof and prof.email_notifications)})
+
+
+# ---------------------------------------------------------------- network record lookup
+
+@login_required
+def network_lookup(request):
+    """Any facility or specialist on the platform can look up a patient's record with the patient number AND date of
+    birth, giving a reason. Every lookup is logged and shown on the patient's record. Patients can opt out."""
+    sp, fac = my_specialist(request.user), partner_facility(request.user)
+    if not (sp or fac):
+        authorize(request)
+    from datetime import date as _date
+    ctx = {'reasons': ['Emergency care', 'Continuing care', 'Referral', 'Second opinion'], 'p': None}
+    if request.method == 'POST':
+        mrn, dob, reason = request.POST.get('mrn', '').strip(), request.POST.get('dob', ''), request.POST.get('reason', '')
+        recent = AuditEvent.objects.filter(actor=request.user, action='network_lookup', occurred_at__gte=timezone.now() - timedelta(hours=1)).count()
+        p = None
+        try:
+            p = Patient.objects.filter(mrn__iexact=mrn, dob=_date.fromisoformat(dob)).first()
+        except ValueError:
+            pass
+        if recent >= 30:
+            messages.error(request, 'Too many lookups in the last hour. Please try again later.')
+        elif reason not in ctx['reasons']:
+            messages.error(request, 'Choose a reason for this lookup.')
+        elif not p or not p.network_sharing:   # same message either way: do not reveal whether a record exists
+            audit(request, 'network_lookup_failed', 'patient', {'mrn': mrn[:20]})
+            messages.error(request, 'No shared record matches that patient number and date of birth.')
+        else:
+            who = str(fac or (sp.facility if sp else '')) or 'E-MedFlow hospital'
+            AuditEvent.objects.create(actor=request.user, action='network_lookup', target=f'patient:{p.pk}', details={'reason': reason, 'facility': who})
+            values = (LabResultValue.objects.filter(order__encounter__patient=p, order__status__in=['resulted', 'verified'])
+                      .select_related('parameter', 'order__test').order_by('-order__resulted_at')[:30])
+            ctx.update({'p': p, 'reason': reason, 'allergies': p.allergies.filter(status='active'), 'conditions': p.conditions.filter(status='active'), 'values': values,
+                        'meds': PrescriptionItem.objects.filter(prescription__encounter__patient=p).exclude(prescription__state='cancelled').select_related('medication').order_by('-prescription__created_at')[:12],
+                        'imaging': ImagingOrder.objects.filter(encounter__patient=p, status='reported').order_by('-reported_at')[:6],
+                        'visits': p.encounters.exclude(status='cancelled').order_by('-created_at')[:8], 'departments': Department.objects.order_by('name'),
+                        'can_refer_in': bool(fac)})
+    return render(request, 'hospital/network_lookup.html', ctx)
+
+
+@login_required
+@require_POST
+def network_refer_in(request, pk):
+    """A partner facility refers a patient (found through the network lookup) to this hospital."""
+    from .notify import notify, referral_receivers
+    fac = partner_facility(request.user)
+    if not fac:
+        raise PermissionDenied('Only partner facilities can refer patients in.')
+    p = get_object_or_404(Patient, pk=pk, network_sharing=True)
+    if not AuditEvent.objects.filter(actor=request.user, action='network_lookup', target=f'patient:{p.pk}', occurred_at__gte=timezone.now() - timedelta(hours=2)).exists():
+        raise PermissionDenied('Look the patient up first.')
+    reason = request.POST.get('reason', '').strip()
+    if not reason:
+        messages.error(request, 'Write the reason for referral.'); return redirect('network_lookup')
+    dept = Department.objects.filter(pk=request.POST.get('department') or 0).first()
+    with transaction.atomic():
+        enc = Encounter.objects.create(patient=p, department=dept, reason=f'Referral from {fac.name}', status='open')
+        r = Referral.objects.create(encounter=enc, direction='in', from_facility=fac, created_by=request.user, destination='E-MedFlow hospital',
+                                    speciality=dept.name if dept else '', reason=reason[:4000], urgency=request.POST.get('urgency') if request.POST.get('urgency') in ('routine', 'urgent', 'emergency') else 'routine',
+                                    kind='consultation', status='sent', sent_at=timezone.now(), consent_to_share=True, contact=fac.phone)
+        audit(request, 'referral_in', f'referral:{r.pk}')
+        notify(referral_receivers(r), f'Incoming referral {r.number} from {fac.name}', f'{r.get_urgency_display()} · {p.first_name} {p.last_name[:1]}.', reverse('referral_detail', args=[r.pk]), 'referral_new')
+    messages.success(request, f'Referral {r.number} sent to the hospital. You will be notified when it is accepted.')
+    return redirect(reverse('referrals') + '?box=out')
+
+
+# ---------------------------------------------------------------- specialist portal
+
+def _need_specialist(request):
+    sp = my_specialist(request.user)
+    if not sp:
+        raise PermissionDenied('This page is for specialists.')
+    return sp
+
+
+@login_required
+def specialist_portal(request):
+    sp = _need_specialist(request)
+    now = timezone.now()
+    mine = Referral.objects.filter(direction='out', specialist=sp).exclude(status='draft').select_related('encounter__patient', 'slot', 'created_by')
+    upcoming = list(sp.slots.filter(start__gte=now, referral__isnull=False).select_related('referral__encounter__patient')[:10])
+    return render(request, 'hospital/specialist_portal.html', {
+        'sp': sp, 'pending': mine.filter(status='sent').order_by('-sent_at'), 'active': mine.filter(status__in=['accepted', 'transferred']).order_by('-sent_at'),
+        'upcoming': upcoming, 'free_14': sp.slots.filter(start__gte=now, start__lte=now + timedelta(days=14), referral__isnull=True).count(),
+        'done': mine.filter(status='completed').count(), 'presence': Specialist.PRESENCE})
+
+
+@login_required
+@require_POST
+def specialist_presence(request):
+    sp = _need_specialist(request)
+    if request.POST.get('presence') in dict(Specialist.PRESENCE):
+        sp.presence = request.POST['presence']
+    sp.presence_note = request.POST.get('presence_note', sp.presence_note)[:160]
+    sp.where = request.POST.get('where', sp.where)[:160]
+    sp.presence_at = timezone.now()
+    sp.save(update_fields=['presence', 'presence_note', 'where', 'presence_at', 'updated_at'])
+    if _wants_json(request):
+        return JsonResponse({'ok': True, 'presence': sp.get_presence_display()})
+    messages.success(request, f'Status updated: {sp.get_presence_display()}. Referring doctors see this in the specialist directory.')
+    return redirect('specialist_portal')
+
+
+@login_required
+def specialist_slots(request):
+    """Set up appointment slots: a weekly pattern for the coming weeks, or remove free slots."""
+    sp = _need_specialist(request)
+    from datetime import datetime as _dt, time as _time
+    if request.method == 'POST':
+        if request.POST.get('action') == 'delete':
+            n, _ = sp.slots.filter(pk__in=request.POST.getlist('slot'), referral__isnull=True, start__gte=timezone.now()).delete()
+            messages.success(request, f'{n} free slot{"s" if n != 1 else ""} removed. Booked slots are kept.')
+        else:
+            try:
+                days = {int(d) for d in request.POST.getlist('weekday') if d.isdigit() and int(d) < 7}
+                t0, t1 = _time.fromisoformat(request.POST['start']), _time.fromisoformat(request.POST['end'])
+                mins = max(10, min(240, int(request.POST.get('minutes') or 30)))
+                weeks = max(1, min(12, int(request.POST.get('weeks') or 4)))
+                mode = request.POST.get('mode') if request.POST.get('mode') in ('in_person', 'video') else 'in_person'
+                if not days or t1 <= t0:
+                    raise ValueError
+            except (ValueError, KeyError):
+                messages.error(request, 'Choose at least one weekday and a start time before the end time.')
+                return redirect('specialist_slots')
+            made, today = 0, timezone.localdate()
+            for i in range(weeks * 7):
+                d = today + timedelta(days=i)
+                if d.weekday() not in days:
+                    continue
+                t = timezone.make_aware(_dt.combine(d, t0))
+                end = timezone.make_aware(_dt.combine(d, t1))
+                while t + timedelta(minutes=mins) <= end:
+                    if t > timezone.now():
+                        _, created = SpecialistSlot.objects.get_or_create(specialist=sp, start=t, defaults={'minutes': mins, 'mode': mode})
+                        made += created
+                    t += timedelta(minutes=mins)
+            messages.success(request, f'{made} new slot{"s" if made != 1 else ""} added. Existing slots were kept.')
+        return redirect('specialist_slots')
+    now = timezone.now()
+    slots = list(sp.slots.filter(start__gte=now, start__lte=now + timedelta(days=28)).select_related('referral__encounter__patient'))
+    days = []
+    for s_ in slots:
+        d = timezone.localtime(s_.start).date()
+        if not days or days[-1]['date'] != d:
+            days.append({'date': d, 'slots': []})
+        days[-1]['slots'].append(s_)
+    return render(request, 'hospital/specialist_slots.html', {'sp': sp, 'days': days, 'free': sum(1 for x in slots if not x.is_booked), 'booked': sum(1 for x in slots if x.is_booked),
+                                                              'weekdays': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']})
+
+
+@login_required
+def network_learning(request):
+    """Closed cases without identity, for the specialist's or facility's learning; with simple totals."""
+    sp, fac = my_specialist(request.user), partner_facility(request.user)
+    if not (sp or fac):
+        raise PermissionDenied('This page is for specialists and partner facilities.')
+    from .categories import INFO
+    from .services import _age_band
+    qs = Referral.objects.filter(direction='out', locked_at__isnull=False, status='completed').select_related('encounter__patient')
+    qs = qs.filter(specialist=sp) if sp else qs.filter(facility=fac)
+    rows, by_cat, outcomes = [], {}, {}
+    for r in qs.order_by('-completed_at')[:200]:
+        e = r.encounter
+        cat = INFO.get(e.category) if e.category else None
+        rows.append({'r': r, 'age': _age_band(e.patient, e.created_at.date()), 'sex': e.patient.get_sex_display(), 'dx': e.diagnosis or r.speciality,
+                     'cat': cat, 'outcome': e.get_outcome_display() or '—', 'month': timezone.localtime(r.completed_at or r.updated_at).strftime('%b %Y')})
+        if cat:
+            by_cat[cat['label']] = by_cat.get(cat['label'], 0) + 1
+        o = e.get_outcome_display() or 'Not recorded'
+        outcomes[o] = outcomes.get(o, 0) + 1
+    return render(request, 'hospital/network_learning.html', {'rows': rows, 'by_cat': sorted(by_cat.items(), key=lambda x: -x[1]), 'outcomes': sorted(outcomes.items(), key=lambda x: -x[1]),
+                                                             'who': sp.display_name if sp else fac.name})
+
+
+
+@login_required
+@require_POST
+def patient_network_toggle(request, pk):
+    """The patient's choice: allow facilities on the E-MedFlow network to look up their record, or not."""
+    authorize(request)
+    if role_of(request.user) not in ('reception', 'doctor', 'nurse', 'admin'):
+        raise PermissionDenied('Reception or clinical staff only.')
+    p = get_object_or_404(Patient, pk=pk)
+    p.network_sharing = not p.network_sharing; p.save(update_fields=['network_sharing', 'updated_at'])
+    audit(request, 'network_sharing', f'patient:{p.pk}', {'on': p.network_sharing})
+    messages.success(request, 'Record shared on the E-MedFlow network.' if p.network_sharing else 'Record no longer shared on the network. Referrals with consent still work.')
+    return redirect('patient_chart', pk=pk)

@@ -1,12 +1,12 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}{{ r.number }}{% endblock %}
 {% block heading %}Referral {{ r.number }}{% endblock %}
-{% block subheading %}<p class="sub">{% if side == 'sender' %}<a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a>{% else %}{{ p.full_name }}{% endif %} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %} → <b>{{ r.destination }}</b>{% if r.specialist %} · {{ r.specialist.display_name }}{% endif %}
+{% block subheading %}<p class="sub">{% if side == 'sender' and r.direction == 'out' %}<a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a>{% elif side == 'receiver' and r.direction == 'out' and not r.shared %}{{ p.first_name }} {{ p.last_name|first }}.{% else %}{{ p.full_name }}{% endif %} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %} → <b>{{ r.destination }}</b>{% if r.specialist %} · {{ r.specialist.display_name }}{% endif %}
   · <span class="tag {{ r.urgency|tone }}">{{ r.get_urgency_display }}</span> <span class="tag ink">{{ r.get_kind_display }}</span>{% if side == 'receiver' %} <span class="tag indigo">You are the receiving facility</span>{% endif %}</p>{% endblock %}
 {% block actions %}
   {% if side == 'sender' %}<a class="btn btn-ghost" href="{% url 'referrals' %}"><i class="bi bi-arrow-left"></i>Referrals</a>{% else %}<a class="btn btn-ghost" href="{% url 'network_inbox' %}"><i class="bi bi-arrow-left"></i>Inbox</a>{% endif %}
   {% if r.shared or side == 'sender' %}<a class="btn btn-ghost" href="{% url 'referral_summary' r.pk %}"><i class="bi bi-folder2-open"></i>{% if side == 'sender' %}Shared record (preview){% else %}Patient record{% endif %}</a>{% endif %}
-  {% for s in actions %}<form method="post" action="{% url 'referral_status' r.pk s %}" {% if s == 'cancelled' or s == 'declined' %}data-confirm="Mark this referral {{ s }}?"{% endif %}>{% csrf_token %}<button class="btn {% if s == 'cancelled' or s == 'declined' %}btn-danger-soft{% elif forloop.first %}btn-primary{% else %}btn-ghost{% endif %}">{% if s == 'sent' %}Send{% elif s == 'accepted' %}Accept referral{% elif s == 'declined' %}Decline{% elif s == 'transferred' %}Patient transferred{% elif s == 'completed' %}Complete{% else %}Cancel{% endif %}</button></form>{% endfor %}
+  {% for s in actions %}{% if s == 'declined' %}<details class="complete-pop"><summary class="btn btn-danger-soft">Decline</summary><form method="post" action="{% url 'referral_status' r.pk 'declined' %}" class="pop-card">{% csrf_token %}<label class="form-label small" for="dr">Reason (the referrer will see it)</label><textarea class="form-control form-control-sm mb-2" id="dr" name="reason" rows="2" required placeholder="e.g. No theatre capacity this week; please try Banjul Regional"></textarea><button class="btn btn-sm btn-danger-soft w-100">Decline referral</button></form></details>{% else %}<form method="post" action="{% url 'referral_status' r.pk s %}" {% if s == 'cancelled' %}data-confirm="Cancel this referral?"{% elif s == 'completed' %}data-confirm="Complete this case? The patient's identifiable record will be locked for the receiver; de-identified data stay available for learning."{% endif %}>{% csrf_token %}<button class="btn {% if s == 'cancelled' or s == 'declined' %}btn-danger-soft{% elif forloop.first %}btn-primary{% else %}btn-ghost{% endif %}">{% if s == 'sent' %}Send{% elif s == 'accepted' %}Accept referral{% elif s == 'declined' %}Decline{% elif s == 'transferred' %}Patient transferred{% elif s == 'completed' %}Complete &amp; lock{% else %}Cancel{% endif %}</button></form>{% endif %}{% endfor %}
 {% endblock %}
 {% block content %}
 <div class="track big mb-3">{% for t in track %}<span class="st {{ t.state }}"><i></i>{{ t.name }}</span>{% endfor %}</div>
@@ -35,7 +35,29 @@
       </section>
     </div>
   </div>
-  <aside class="panel align-self-start">
+  <aside class="stack align-self-start">
+  <section class="panel record-panel {% if r.locked_at %}locked{% elif r.shared %}shared{% endif %}">
+    <div class="panel-head"><h2><i class="bi {% if r.locked_at %}bi-lock-fill{% elif r.shared %}bi-folder-check{% else %}bi-folder{% endif %} me-1"></i>Patient record</h2></div>
+    {% if r.locked_at %}
+      <p class="small mb-2">Case closed {{ r.locked_at|date:'j M Y' }}. Identifiable data are <b>locked</b>{% if side == 'receiver' %} for you{% endif %}. A de-identified version stays available for learning.</p>
+      <a class="btn btn-sm btn-ghost w-100" href="{% url 'referral_learning' r.pk %}"><i class="bi bi-mortarboard"></i>Open de-identified case</a>
+    {% elif side == 'sender' and r.direction == 'out' %}
+      {% if r.status == 'sent' or r.status == 'draft' %}<p class="small mb-0">You can send the record once the {% if r.specialist %}specialist{% else %}facility{% endif %} accepts. You will be notified.</p>
+      {% elif r.shared %}<p class="small mb-2">Shared {{ r.shared_at|date:'j M H:i' }}. It locks automatically when the case is completed.</p><a class="btn btn-sm btn-ghost w-100" href="{% url 'referral_summary' r.pk %}">Preview what they see</a>
+      {% elif r.status == 'accepted' or r.status == 'transferred' %}
+        <p class="small">Accepted{% if r.accepted_by %} by {{ r.accepted_by }}{% endif %}. Send the patient record so they can prepare.</p>
+        <form method="post" action="{% url 'referral_share' r.pk %}">{% csrf_token %}
+          {% if not r.consent_to_share %}<label class="small d-flex gap-2 mb-2"><input type="checkbox" class="form-check-input m-0" name="consent" required> The patient agrees to share their record with {{ r.specialist.display_name|default:r.destination }}</label>{% endif %}
+          <button class="btn btn-primary w-100"><i class="bi bi-send-check"></i>Send patient record</button></form>
+      {% endif %}
+    {% elif side == 'receiver' and r.direction == 'out' %}
+      {% if r.status == 'sent' %}<p class="small mb-0">Accept the referral to receive the patient record.</p>
+      {% elif r.shared %}<p class="small mb-2">Shared with you {{ r.shared_at|date:'j M H:i' }}. Every view is logged; it locks when the case is completed.</p><a class="btn btn-sm btn-primary w-100" href="{% url 'referral_summary' r.pk %}"><i class="bi bi-folder2-open"></i>Open patient record</a>
+      {% else %}<p class="small mb-0">Waiting for the referring hospital to send the record. You will be notified.</p>{% endif %}
+    {% else %}<a class="btn btn-sm btn-ghost w-100" href="{% url 'referral_summary' r.pk %}">Open patient record</a>{% endif %}
+    {% if r.decline_reason %}<p class="small text-danger mt-2 mb-0"><i class="bi bi-x-circle"></i> Declined: {{ r.decline_reason }}</p>{% endif %}
+  </section>
+  <section class="panel">
     <div class="panel-head"><h2>{% if side == 'sender' %}Ask the receiving facility{% else %}Ask the referring hospital{% endif %}</h2></div>
     <p class="small muted">{% if side == 'sender' %}e.g. book theatre, reserve an ICU bed, arrange an interpreter.{% else %}e.g. order a test, complete a form, send results, start fasting.{% endif %}</p>
     {% if r.status not in 'draft declined cancelled completed' or side == 'sender' and r.status == 'draft' %}
@@ -49,6 +71,7 @@
       <button class="btn btn-ink w-100"><i class="bi bi-send"></i>Send request</button>
     </form>
     {% else %}<p class="small muted mb-0">Requests can be added while the referral is active.</p>{% endif %}
+  </section>
   </aside>
 </div>
 {% endblock %}

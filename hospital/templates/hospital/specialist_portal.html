@@ -1,0 +1,40 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}My portal{% endblock %}
+{% block heading %}{{ sp.display_name }}{% endblock %}
+{% block subheading %}<p class="sub">{{ sp.speciality }} · {{ sp.facility }}</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'specialist_slots' %}"><i class="bi bi-calendar-week"></i>My slots</a><a class="btn btn-primary" href="{% url 'referrals' %}"><i class="bi bi-inbox"></i>Requests{% if pending %} · {{ pending|length }} new{% endif %}</a>{% endblock %}
+{% block content %}
+<section class="panel presence-panel p-{{ sp.presence }}">
+  <form method="post" action="{% url 'specialist_presence' %}" id="presence-form">{% csrf_token %}
+    <div class="label-sm mb-2">Your status · referring doctors see this live in the specialist directory</div>
+    <div class="presence-pick">{% for v, l in presence %}<label class="pp p-{{ v }}"><input type="radio" name="presence" value="{{ v }}" {% if sp.presence == v %}checked{% endif %}><span><i></i>{{ l }}</span></label>{% endfor %}</div>
+    <div class="d-flex gap-2 flex-wrap mt-3">
+      <input class="form-control" style="flex:1;min-width:220px" name="presence_note" value="{{ sp.presence_note }}" placeholder="Note, e.g. In theatre until 14:00" aria-label="Status note">
+      <input class="form-control" style="flex:1;min-width:220px" name="where" value="{{ sp.where }}" placeholder="Where, e.g. Kotu Heart Centre, room 3 / teleconsult" aria-label="Where you are">
+      <button class="btn btn-ink">Update</button>
+    </div>
+    {% if sp.presence_at %}<p class="small muted mt-2 mb-0">Last updated {{ sp.presence_at|ago }} ago.</p>{% endif %}
+  </form>
+</section>
+<div class="kpis my-3" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <a class="kpi {% if pending %}abn{% endif %}" href="{% url 'referrals' %}"><b>{{ pending|length }}</b><span>new requests</span></a>
+  <div class="kpi"><b>{{ active|length }}</b><span>active cases</span></div>
+  <a class="kpi" href="{% url 'specialist_slots' %}"><b>{{ free_14 }}</b><span>free slots, next 14 days</span></a>
+  <a class="kpi" href="{% url 'network_learning' %}"><b>{{ done }}</b><span>closed cases (learning)</span></a>
+</div>
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel flush"><div class="panel-head"><h2>New requests</h2></div>
+      {% for r in pending %}<a class="sp-row" href="{% url 'referral_detail' r.pk %}"><span class="avatar {{ r.encounter.patient.sex }}">{{ r.encounter.patient.initials }}</span><span class="flex-fill"><b>{{ r.encounter.patient.first_name }} {{ r.encounter.patient.last_name|first }}.</b> <span class="small muted">{{ r.number }}</span><br><span class="small">{{ r.get_kind_display }} · {{ r.reason|truncatechars:90 }}</span></span><span class="tag {{ r.urgency|tone }}">{{ r.get_urgency_display }}</span>{% if r.slot %}<span class="small"><i class="bi bi-calendar-check"></i> {{ r.slot.start|date:'D j M H:i' }}</span>{% endif %}</a>
+      {% empty %}<div class="empty small">No new requests.</div>{% endfor %}</section>
+    <section class="panel flush"><div class="panel-head"><h2>Active cases</h2></div>
+      {% for r in active %}<a class="sp-row" href="{% url 'referral_detail' r.pk %}"><span class="avatar {{ r.encounter.patient.sex }}">{{ r.encounter.patient.initials }}</span><span class="flex-fill"><b>{% if r.shared %}{{ r.encounter.patient.full_name }}{% else %}{{ r.encounter.patient.first_name }} {{ r.encounter.patient.last_name|first }}.{% endif %}</b> <span class="small muted">{{ r.number }}</span><br><span class="small">{{ r.encounter.diagnosis|default:r.reason|truncatechars:80 }}</span></span>{% if r.shared %}<span class="tag teal"><i class="bi bi-folder-check"></i>Record received</span>{% else %}<span class="tag">Awaiting record</span>{% endif %}</a>
+      {% empty %}<div class="empty small">No active cases.</div>{% endfor %}</section>
+  </div>
+  <section class="panel align-self-start"><div class="panel-head"><h2>Booked appointments</h2></div>
+    <ul class="plain ruled">{% for s in upcoming %}<li><b>{{ s.start|date:'D j M, H:i' }}</b> <span class="small muted">{{ s.get_mode_display }}</span><br><a class="small" href="{% url 'referral_detail' s.referral.pk %}">{{ s.referral.number }} · {{ s.referral.encounter.patient.first_name }} {{ s.referral.encounter.patient.last_name|first }}.</a></li>{% empty %}<li class="small muted">Nothing booked yet.</li>{% endfor %}</ul></section>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+document.querySelectorAll('#presence-form [name="presence"]').forEach(r => r.addEventListener('change', () => document.getElementById('presence-form').requestSubmit()));
+</script>{% endblock %}

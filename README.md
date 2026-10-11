@@ -200,6 +200,38 @@ fasting, theatre, anaesthetic review) timed to the planned date.
 They see only referrals sent to them, never drafts, and the patient record only with consent; nothing else in the
 hospital is visible to them. Demo login: `partner.kotu`.
 
+## Referral inbox, outbox and notifications
+
+**Referrals** has two tabs. **Inbox**: referrals coming to you, with Accept / Decline (a reason is required) that
+work in place; the inbox refreshes itself every 15 seconds and announces new referrals. **Outbox**: referrals you
+sent. "You" depends on who signs in: hospital staff (inbox = referrals from network facilities), a partner facility
+(inbox = referrals to it, outbox = referrals it sent to the hospital) or a specialist (requests to them).
+
+**The bell** (top bar) shows notifications for new referrals, acceptance or decline, a record being shared,
+preparation requests and closed cases, refreshed every 20 seconds. Staff with an email address also get them by
+email (turn off in the bell). Emails contain only a title and a link, never patient details. Configure SMTP in `.env`
+(`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL`, `SITE_URL`); in
+development emails are printed to the web log.
+
+**Patient data on referrals.** Until the receiver accepts *and* the referring doctor presses **Send patient record**
+(with the patient's consent), specialists and partner facilities see only the first name and initial, sex and age.
+When the case is completed the record **locks** for the receiver; a de-identified version (no name, number, contact
+or real dates) stays available under **Learning**.
+
+## Specialist portal
+
+Specialists sign in with the `specialist` role linked to their directory entry (demo: `dr.bojang`, `dr.kceesay`).
+They set their **live status** (Available, Busy, In theatre, On call, Away, Off duty) with a note and where they are,
+shown in the specialist directory; manage **appointment slots** (a weekly pattern for up to 12 weeks, remove free
+slots; booked slots are never changed); handle **requests**; and see closed cases in **Learning**.
+
+## Network record lookup
+
+Partner facilities and specialists can look up a patient's shared record with the **patient number and date of
+birth**, choosing a reason. A failed lookup never reveals whether a patient exists; lookups are rate-limited and
+logged, and every lookup appears in **Network access** on the patient's record, where the patient's choice to opt
+out of network sharing is also set. Partner facilities can refer a looked-up patient to the hospital.
+
 ## Beds
 
 Click any bed on the bed board for its page: the current patient with length of stay, vitals, medicines and pending

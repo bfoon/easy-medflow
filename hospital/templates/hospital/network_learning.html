@@ -1,0 +1,15 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Learning{% endblock %}
+{% block heading %}Learning from closed cases{% endblock %}
+{% block subheading %}<p class="sub">{{ who }} · cases you received, after they closed. No names, record numbers or exact dates.</p>{% endblock %}
+{% block content %}
+<div class="grid g-main">
+  <section class="panel flush"><div class="scroll-y tall"><table class="mini-table"><thead><tr><th>Case</th><th>Patient</th><th>Diagnosis</th><th>Outcome</th><th>Closed</th></tr></thead><tbody>
+  {% for x in rows %}<tr><td><a href="{% url 'referral_learning' x.r.pk %}">Case {{ forloop.revcounter }}</a></td><td>{{ x.sex }}, {{ x.age }}</td><td>{% if x.cat %}<i class="cat-dot" style="background:{{ x.cat.color }}"></i>{% endif %}{{ x.dx|truncatechars:60 }}</td><td>{{ x.outcome }}</td><td class="small muted">{{ x.month }}</td></tr>
+  {% empty %}<tr><td colspan="5" class="empty">No closed cases yet. Cases appear here, without identity, once they are completed.</td></tr>{% endfor %}</tbody></table></div></section>
+  <aside class="stack align-self-start">
+    <section class="panel"><div class="panel-head"><h2>By category</h2></div>{% for k, n in by_cat %}<div class="d-flex small mb-1"><span>{{ k }}</span><b class="ms-auto">{{ n }}</b></div>{% empty %}<p class="small muted mb-0">—</p>{% endfor %}</section>
+    <section class="panel"><div class="panel-head"><h2>Outcomes</h2></div>{% for k, n in outcomes %}<div class="d-flex small mb-1"><span>{{ k }}</span><b class="ms-auto">{{ n }}</b></div>{% empty %}<p class="small muted mb-0">—</p>{% endfor %}</section>
+  </aside>
+</div>
+{% endblock %}

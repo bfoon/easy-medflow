@@ -1,0 +1,27 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Case for learning · {{ r.number }}{% endblock %}
+{% block heading %}De-identified case{% endblock %}
+{% block subheading %}<p class="sub">Referral {{ r.number }} is closed. The patient's identity, record number, contact details and real dates are removed; days are counted from the visit. Use it for learning and audit.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'referral_detail' r.pk %}"><i class="bi bi-arrow-left"></i>Referral</a>{% if side == 'receiver' %}<a class="btn btn-ghost" href="{% url 'network_learning' %}"><i class="bi bi-mortarboard"></i>All my cases</a>{% endif %}{% endblock %}
+{% block content %}
+<section class="anon-head panel">
+  <span class="avatar xl anon"><i class="bi bi-person"></i></span>
+  <div><h2 class="mb-1">{{ c.patient.sex|default:'—' }} · {{ c.patient.age_band }} years</h2>
+    <div class="muted">{{ c.visit.diagnosis|default:r.speciality }} · Outcome: <b>{{ outcome }}</b>{% if c.patient.blood_group %} · Blood {{ c.patient.blood_group }}{% endif %}</div></div>
+  <span class="tag ms-auto"><i class="bi bi-lock"></i>Identity locked</span>
+</section>
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel"><div class="panel-head"><h2>Reason for referral</h2></div><p class="mb-0">{{ r.reason|linebreaksbr }}</p><p class="small muted mt-2 mb-0">Names in free text are your responsibility to avoid; the record itself is removed.</p></section>
+    <section class="panel flush"><div class="panel-head"><h2>Results</h2></div>
+      <div class="scroll-y"><table class="mini-table"><thead><tr><th>Test</th><th>Result</th><th>Reference</th><th>Day</th></tr></thead><tbody>
+      {% for v in c.lab_results %}<tr><td>{{ v.test }}</td><td><b>{{ v.value }}</b> {{ v.unit }} {% include 'hospital/_flag.html' with flag=v.flag %}</td><td class="small muted">{{ v.reference|default:'' }}</td><td class="small muted">{% if v.day is not None %}Day {{ v.day }}{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="4" class="empty">No results.</td></tr>{% endfor %}</tbody></table></div></section>
+    <section class="panel"><div class="panel-head"><h2>Imaging</h2></div><ul class="plain ruled">{% for i in c.imaging %}<li><b>{{ i.study }}</b>{% if i.abnormal %} <span class="tag red">Abnormal</span>{% endif %}<div>{{ i.impression }}</div></li>{% empty %}<li class="small muted">None.</li>{% endfor %}</ul></section>
+  </div>
+  <div class="stack">
+    <section class="panel"><div class="panel-head"><h2>Conditions &amp; allergies</h2></div><div>{% for x in c.conditions %}<span class="tag me-1 mb-1">{{ x }}</span>{% endfor %}{% for a in c.allergies %}<span class="tag red me-1 mb-1">{{ a.substance }}</span>{% endfor %}{% if not c.conditions and not c.allergies %}<span class="small muted">None recorded.</span>{% endif %}</div></section>
+    <section class="panel"><div class="panel-head"><h2>Medicines</h2></div><ol class="rx-items">{% for m in c.medicines %}<li><span class="med">{{ m.medicine }}</span><span class="dir">{{ m.directions }}</span></li>{% empty %}<li class="muted">None.</li>{% endfor %}</ol></section>
+  </div>
+</div>
+{% endblock %}

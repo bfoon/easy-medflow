@@ -16,12 +16,15 @@ class Department(Tracked):
     def __str__(self): return self.name
 
 class StaffProfile(Tracked):
-    ROLE=[(x,x.replace('_',' ').title()) for x in ['admin','doctor','nurse','reception','lab','radiology','pharmacy','finance','management','partner']]
+    ROLE=[(x,x.replace('_',' ').title()) for x in ['admin','doctor','nurse','reception','lab','radiology','pharmacy','finance','management','partner','specialist']]
     user=models.OneToOneField(settings.AUTH_USER_MODEL,on_delete=models.CASCADE,related_name='hospital_staff')
     role=models.CharField(max_length=20,choices=ROLE)
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     license_number=models.CharField(max_length=100,blank=True)
     active=models.BooleanField(default=True)
+    specialist=models.ForeignKey('Specialist',null=True,blank=True,on_delete=models.SET_NULL,related_name='accounts',
+                                 help_text='Specialist role only: the specialist this login belongs to')
+    email_notifications=models.BooleanField(default=True,help_text='Also send notifications by email')
     facility=models.ForeignKey('NetworkFacility',null=True,blank=True,on_delete=models.SET_NULL,related_name='staff',
                                help_text='Partner role only: the network facility this account belongs to')
     lab_view=models.CharField(max_length=10,choices=[('body','Body map'),('clean','Charts & lists')],default='body',help_text='Preferred way to review lab results')
@@ -53,6 +56,8 @@ class Patient(Tracked):
     email=models.EmailField(blank=True,help_text='Optional, for sending queue tickets and receipts')
     address=models.TextField(blank=True,verbose_name='Street / compound')
     location=models.ForeignKey('Location',null=True,blank=True,on_delete=models.SET_NULL,related_name='patients',verbose_name='Town or area')
+    network_sharing=models.BooleanField(default=True,verbose_name='Share record across the E-MedFlow network',
+                                        help_text='Other facilities on the platform may look up this record with the patient number and date of birth')
     emergency_contact=models.CharField(max_length=200,blank=True)
     blood_group=models.CharField(max_length=5,blank=True)
     medical_alerts=models.TextField(blank=True,help_text='Human-reviewed high-priority alerts; do not replace structured allergy data')
@@ -501,6 +506,11 @@ class Specialist(Tracked):
     consult_fee=models.PositiveIntegerField(default=0,help_text='In local currency, 0 if not applicable')
     telehealth=models.BooleanField(default=False)
     active=models.BooleanField(default=True)
+    PRESENCE=[('available','Available'),('busy','Busy'),('procedure','In theatre / procedure'),('on_call','On call'),('away','Away'),('off','Off duty')]
+    presence=models.CharField(max_length=12,choices=PRESENCE,default='available')
+    presence_note=models.CharField(max_length=160,blank=True,help_text='e.g. In theatre until 14:00')
+    where=models.CharField(max_length=160,blank=True,help_text='e.g. Kotu Heart Centre, clinic room 3; or teleconsult only')
+    presence_at=models.DateTimeField(null=True,blank=True)
     class Meta: ordering=['-rating','name']
     @property
     def display_name(self):return f'{self.title} {self.name}'.strip()
@@ -538,12 +548,19 @@ class Referral(Tracked):
     slot=models.OneToOneField(SpecialistSlot,on_delete=models.SET_NULL,null=True,blank=True,related_name='referral')
     consent_to_share=models.BooleanField(default=False,help_text='Patient agreed that their records may be shared with the receiving facility')
     planned_date=models.DateField(null=True,blank=True,help_text='Planned operation or admission date')
+    direction=models.CharField(max_length=3,choices=[('out','Sent by this hospital'),('in','Received from a network facility')],default='out')
+    from_facility=models.ForeignKey(NetworkFacility,on_delete=models.SET_NULL,null=True,blank=True,related_name='referrals_sent')
+    created_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='referrals_created')
+    decline_reason=models.CharField(max_length=300,blank=True)
+    shared_at=models.DateTimeField(null=True,blank=True,help_text='When the referrer sent the patient record (only after acceptance)')
+    locked_at=models.DateTimeField(null=True,blank=True,help_text='When the case closed; the receiver then sees de-identified data only')
     @property
     def number(self):return f'RF-{self.pk:06d}'
     @property
     def shared(self):
-        """The receiving facility may see the patient's records only with consent, once the referral has been sent."""
-        return bool(self.facility_id and self.consent_to_share and self.status in ('sent','accepted','transferred','completed'))
+        """The receiver sees the patient's identifiable record only after accepting, once the referrer has sent it with the
+        patient's consent, and only until the case is closed (then it is locked and only de-identified data remain)."""
+        return bool(self.consent_to_share and self.shared_at and not self.locked_at and self.status in ('accepted','transferred'))
     def __str__(self):return f'{self.encounter.patient.mrn} -> {self.destination}'
 
 class ReferralTask(Tracked):
@@ -724,3 +741,15 @@ class MedicationAdministration(Tracked):
     given_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='+')
     note=models.CharField(max_length=200,blank=True)
     class Meta: ordering=['scheduled_for']; unique_together=[('item','scheduled_for')]
+
+
+class Notification(Tracked):
+    """An in-app notification (the bell), optionally also emailed."""
+    user=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.CASCADE,related_name='notifications')
+    kind=models.CharField(max_length=30,default='info')
+    title=models.CharField(max_length=200)
+    body=models.CharField(max_length=400,blank=True)
+    url=models.CharField(max_length=300,blank=True)
+    read_at=models.DateTimeField(null=True,blank=True)
+    emailed_at=models.DateTimeField(null=True,blank=True)
+    class Meta: ordering=['-created_at']; indexes=[models.Index(fields=['user','read_at'])]

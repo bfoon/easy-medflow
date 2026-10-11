@@ -186,6 +186,7 @@ def run_all():
     res = {'brain cases': brain_cases(doctor, rad), 'featured imaging': featured_imaging(doctor, rad),
             'history visits': population_history(doctor), 'inpatient charts': inpatient_charts(doctor, nurse)}
     res['bone and injury cases'] = bone_cases(doctor, rad, nurse)
+    res['specialist logins'] = network_portal(doctor)
     res['patients placed on map'] = link_patient_locations()
     return res
 
@@ -314,4 +315,59 @@ def bone_cases(doctor, rad, nurse):
                                       diagnosis=random.choice(mix), status='completed', completed_at=when + timedelta(hours=1),
                                       outcome=random.choices(['resolved', 'improved', 'no_change', 'worsened'], weights=[45, 40, 12, 3])[0])
         Encounter.objects.filter(pk=pe.pk).update(created_at=when)
+    return made
+
+
+def network_portal(doctor):
+    """Specialist logins, live statuses, an incoming referral, a closed (locked) case and some notifications."""
+    from django.contrib.auth import get_user_model
+    from .models import NetworkFacility, Notification, Referral, Specialist, StaffProfile
+    from .notify import notify
+    U = get_user_model()
+    if U.objects.filter(username='dr.bojang').exists() or not Specialist.objects.exists():
+        return 0
+    now = timezone.now()
+    notes = {'available': ['Clinic open', 'Free this afternoon', ''], 'busy': ['Clinic running 40 min late', 'Ward round until 11:00'],
+             'procedure': ['In theatre until 14:00', 'Cath lab: back around 15:30'], 'on_call': ['On call tonight for emergencies'], 'away': ['At a conference until Friday']}
+    for sp in Specialist.objects.all():
+        state = random.choices(list(notes), weights=[45, 25, 12, 10, 8])[0]
+        sp.presence, sp.presence_note, sp.presence_at = state, random.choice(notes[state]), now - timedelta(minutes=random.randint(3, 240))
+        sp.where = 'Teleconsult only' if state == 'away' else f'{sp.facility.name}, clinic room {random.randint(1, 6)}'
+        sp.save(update_fields=['presence', 'presence_note', 'presence_at', 'where'])
+    made = 0
+    for username, name, email in (('dr.bojang', 'Aminata Bojang', 'a.bojang@kotuheart.network.example'), ('dr.kceesay', 'Kebba Ceesay', 'k.ceesay@riverside.network.example')):
+        sp = Specialist.objects.filter(name=name).first()
+        if not sp:
+            continue
+        u = U.objects.create_user(username, password='medflow-demo-2026', email=email, first_name=name.split()[0], last_name=name.split()[-1])
+        StaffProfile.objects.create(user=u, role='specialist', specialist=sp)
+        made += 1
+    Referral.objects.filter(created_by__isnull=True, direction='out').update(created_by=doctor)
+    # the featured cardiology referral: accepted, record already sent
+    for r in Referral.objects.filter(status__in=['accepted', 'transferred'], consent_to_share=True, shared_at__isnull=True):
+        r.shared_at = (r.sent_at or now) + timedelta(minutes=20); r.save(update_fields=['shared_at'])
+    bojang = Specialist.objects.filter(name='Aminata Bojang').first()
+    # a closed case for the learning library
+    done = Referral.objects.filter(specialist=bojang, status='sent').exclude(encounter__patient__first_name='Babucarr').first() if bojang else None
+    if done:
+        done.status, done.accepted_by, done.consent_to_share = 'completed', 'Dr Aminata Bojang', True
+        done.shared_at, done.completed_at, done.locked_at = now - timedelta(days=6), now - timedelta(days=2), now - timedelta(days=2)
+        done.save()
+        Encounter.objects.filter(pk=done.encounter_id).update(outcome='improved', diagnosis=done.encounter.diagnosis or 'Stable angina, medical management')
+    # an incoming referral waiting in the hospital inbox
+    kotu = NetworkFacility.objects.filter(name='Kotu Heart Centre').first()
+    p = Patient.objects.filter(encounters__isnull=False).exclude(first_name='Babucarr').order_by('?').first()
+    if kotu and p:
+        enc = Encounter.objects.create(patient=p, department=Department.objects.filter(name='General Medicine').first(), reason=f'Referral from {kotu.name}', status='open')
+        partner = StaffProfile.objects.filter(role='partner', facility=kotu).select_related('user').first()
+        r = Referral.objects.create(encounter=enc, direction='in', from_facility=kotu, created_by=partner.user if partner else None, destination='E-MedFlow hospital',
+                                    speciality='General Medicine', urgency='urgent', kind='consultation', status='sent', sent_at=now - timedelta(minutes=25), consent_to_share=True,
+                                    reason='Seen in our cardiac clinic: echo normal, chest pain non-cardiac. Poorly controlled diabetes (HbA1c 9.4%). Please take over diabetes care and review medicines.')
+        notify([u for u in U.objects.filter(hospital_staff__role__in=['doctor', 'admin'])], f'Incoming referral {r.number} from {kotu.name}', 'Urgent · General Medicine',
+               f'/referrals/{r.pk}/', 'referral_new')
+    sp_user = U.objects.filter(username='dr.bojang').first()
+    if sp_user:
+        for r in Referral.objects.filter(specialist=bojang, status='sent')[:2]:
+            notify([sp_user], f'New referral {r.number}', f'{r.get_urgency_display()} · {r.get_kind_display()}', f'/referrals/{r.pk}/', 'referral_new')
+    Notification.objects.filter(created_at__gte=now - timedelta(minutes=5)).update(emailed_at=now)   # demo: do not send real emails
     return made

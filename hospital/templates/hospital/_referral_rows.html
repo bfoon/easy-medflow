@@ -1,0 +1,22 @@
+{% load medflow %}{% for r in rows %}
+<article class="ref-row st-{{ r.status }}" data-ref="{{ r.pk }}">
+  <span class="avatar {{ r.encounter.patient.sex }}">{{ r.encounter.patient.initials }}</span>
+  <div class="flex-fill min-w-0">
+    <div class="d-flex flex-wrap gap-2 align-items-baseline"><a class="ref-name" href="{% url 'referral_detail' r.pk %}">{% if network and box == 'in' and not r.shared %}{{ r.encounter.patient.first_name }} {{ r.encounter.patient.last_name|first }}. <span class="small muted fw-normal">{{ r.encounter.patient.get_sex_display }}{% if r.encounter.patient.age is not None %}, {{ r.encounter.patient.age }} yrs{% endif %}</span>{% else %}{{ r.encounter.patient.full_name }}{% endif %}</a><span class="small muted">{{ r.number }}</span>
+      <span class="tag {{ r.urgency|tone }}">{{ r.get_urgency_display }}</span>{% if r.kind == 'operation' %}<span class="tag ink">Operation</span>{% endif %}<span class="tag {{ r.status|tone }}">{{ r.get_status_display }}</span>
+      {% if r.locked_at %}<span class="tag" title="Identifiable data locked"><i class="bi bi-lock"></i>Locked</span>{% elif r.shared %}<span class="tag teal"><i class="bi bi-folder-check"></i>Record shared</span>{% endif %}</div>
+    <div class="small">{% if box == 'in' %}{% if r.direction == 'in' %}From <b>{{ r.from_facility }}</b>{% else %}From <b>E-MedFlow hospital</b>{% if r.created_by %} · {{ r.created_by|display_name }}{% endif %}{% endif %}{% else %}To <b>{{ r.destination }}</b>{% if r.specialist %} · {{ r.specialist.display_name }}{% endif %}{% endif %}
+      {% if r.slot %} · <i class="bi bi-calendar-check"></i> {{ r.slot.start|date:'D j M H:i' }}{% endif %} · sent {{ r.sent_at|default:r.created_at|ago }} ago</div>
+    <div class="small muted text-truncate">{{ r.reason|truncatechars:140 }}</div>
+    {% if r.status == 'declined' and r.decline_reason %}<div class="small text-danger"><i class="bi bi-x-circle"></i> Declined: {{ r.decline_reason }}</div>{% endif %}
+  </div>
+  <div class="ref-acts">
+    {% if box == 'in' and r.status == 'sent' %}
+      <button class="btn btn-sm btn-primary" data-act="accepted" data-url="{% url 'referral_status' r.pk 'accepted' %}"><i class="bi bi-check2"></i>Accept</button>
+      <button class="btn btn-sm btn-ghost" data-act="declined" data-url="{% url 'referral_status' r.pk 'declined' %}"><i class="bi bi-x"></i>Decline</button>
+    {% endif %}
+    {% if r.open_tasks %}<span class="tag amber">{{ r.open_tasks }} open request{{ r.open_tasks|pluralize }}</span>{% endif %}
+    <a class="btn btn-sm btn-ghost" href="{% url 'referral_detail' r.pk %}">Open</a>
+  </div>
+</article>
+{% empty %}<div class="panel empty"><i class="bi bi-inbox"></i>{% if box == 'in' %}No referrals in your inbox.{% else %}No referrals sent yet.{% endif %}</div>{% endfor %}

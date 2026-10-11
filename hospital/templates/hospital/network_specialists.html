@@ -31,7 +31,7 @@
     {% for s in rows %}
     <a class="sp-row" href="{% url 'specialist_detail' s.pk %}{% if encounter %}?encounter={{ encounter }}{% endif %}">
       <span class="sp-avatar">{{ s.initials }}</span>
-      <span class="flex-fill"><b>{{ s.display_name }}</b>{% if s.telehealth %} <span class="tag indigo"><i class="bi bi-camera-video"></i>Video</span>{% endif %}<br><span class="small muted">{{ s.speciality }} · {{ s.facility }}</span></span>
+      <span class="flex-fill"><b>{{ s.display_name }}</b> <span class="presence p-{{ s.presence }}" title="{{ s.presence_note }}{% if s.where %} · {{ s.where }}{% endif %}"><i></i>{{ s.get_presence_display }}</span>{% if s.telehealth %} <span class="tag indigo"><i class="bi bi-camera-video"></i>Video</span>{% endif %}<br><span class="small muted">{{ s.speciality }} · {{ s.facility }}</span></span>
       <span class="stars hide-sm">{{ s.rating|stars }}<br><span class="small muted">{{ s.rating }} ({{ s.reviews }})</span></span>
       <span class="sp-next">{% if s.next_slot %}<b>{{ s.next_slot.start|date:'D j M' }}</b><br><span class="small muted">{{ s.next_slot.start|date:'H:i' }} · {{ s.free_count }} free</span>{% else %}<span class="small muted">Fully booked</span>{% endif %}</span>
       <i class="bi bi-chevron-right chev"></i>

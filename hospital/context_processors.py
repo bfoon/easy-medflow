@@ -15,7 +15,7 @@ def medflow(request):
             'queue': QueueTicket.objects.filter(status='waiting').count(),
             'labs': LabRequest.objects.filter(orders__status__in=['ordered', 'collected', 'processing', 'resulted']).distinct().count(),
             'pharmacy': Prescription.objects.filter(state__in=['draft', 'signed']).count(),
-            'referrals': Referral.objects.filter(Q(status='sent') | Q(status='accepted')).count(),
+            'referrals': Referral.objects.filter(direction='in', status='sent').count(),   # new referrals waiting in our inbox
             'studio': WorkflowRun.objects.filter(status='open').count(),
             'imaging': ImagingOrder.objects.filter(status__in=['requested', 'acquired']).count(),
             'bills': Invoice.objects.filter(status='draft').count(),

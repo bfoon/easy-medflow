@@ -1,29 +1,45 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}Referrals{% endblock %}
 {% block heading %}Referrals{% endblock %}
-{% block subheading %}<p class="sub">Track each transfer of care from draft to completion.</p>{% endblock %}
-{% block actions %}<a class="btn btn-ghost" href="{% url 'network_specialists' %}"><i class="bi bi-person-badge"></i>Find a specialist</a><button class="btn btn-primary" data-drawer="{% url 'referral_new' %}" data-title="Create referral"><i class="bi bi-signpost-split"></i>Create referral</button>{% endblock %}
-{% block content %}
-<div class="urg-sum mb-4">
-  {% for u, n in counts.items %}<div class="urgency-{{ u }}"><b data-count="{{ n }}">{{ n }}</b><span>{{ u }} · open</span></div>{% endfor %}
-</div>
-<section class="panel">
-  <div class="panel-head"><h2>All referrals</h2><input class="form-control form-control-sm ms-auto" style="max-width:260px" placeholder="Filter by patient or destination" data-filter=".ref-card" aria-label="Filter referrals"></div>
-  {% for r in rows %}
-  <article class="ref-card urgency-{{ r.urgency }}">
-    <div class="d-flex flex-wrap gap-2 align-items-center">
-      <a class="dest" href="{% url 'referral_detail' r.pk %}">{{ r.destination }}</a>{% if r.specialist %}<span class="small">· {{ r.specialist.display_name }}</span>{% endif %}{% if r.slot %}<span class="tag teal"><i class="bi bi-calendar-check"></i>{{ r.slot.start|date:'D j M H:i' }}</span>{% endif %}{% if r.kind == 'operation' %}<span class="tag ink">Operation</span>{% endif %}{% if r.speciality %}<span class="muted">· {{ r.speciality }}</span>{% endif %}
-      <span class="tag {{ r.urgency|tone }}">{{ r.get_urgency_display }}</span>
-      {% if r.status in 'declined cancelled' %}<span class="tag {{ r.status|tone }}">{{ r.get_status_display }}</span>{% endif %}
-      <span class="ms-auto small muted">{{ r.created_at|date:'j M Y' }}</span>
-    </div>
-    <div class="small mt-1"><a href="{% url 'patient_chart' r.encounter.patient_id %}">{{ r.encounter.patient.full_name }}</a> · {{ r.reason|truncatechars:140 }}</div>
-    {% if r.status not in 'declined cancelled' %}
-    <div class="track">{% for s in r.track %}<span class="st {{ s.state }}"><i></i>{{ s.name }}</span>{% endfor %}</div>
-    {% endif %}
-    {% if r.contact or r.accepted_by %}<div class="small muted">{% if r.contact %}<i class="bi bi-telephone"></i> {{ r.contact }}{% endif %}{% if r.accepted_by %} · Accepted by {{ r.accepted_by }}{% endif %}</div>{% endif %}
-    <div class="acts"><a class="btn btn-sm btn-ink" href="{% url 'referral_detail' r.pk %}">Open referral{% if r.open_tasks %} · {{ r.open_tasks }} open request{{ r.open_tasks|pluralize }}{% endif %}</a></div>
-  </article>
-  {% empty %}<div class="empty"><i class="bi bi-signpost-split"></i>No referrals yet. Create one from a patient's open visit.</div>{% endfor %}
-</section>
+{% block subheading %}<p class="sub">{% if is_specialist %}Requests sent to you. Accept to receive the patient record.{% elif network %}Referrals between your facility and the hospital.{% else %}Inbox: referrals coming to this hospital. Outbox: referrals you have sent to specialists and facilities.{% endif %}</p>{% endblock %}
+{% block actions %}
+  {% if not network %}<a class="btn btn-ghost" href="{% url 'network_specialists' %}"><i class="bi bi-person-badge"></i>Find a specialist</a><button class="btn btn-primary" data-drawer="{% url 'referral_new' %}" data-title="Create referral"><i class="bi bi-send"></i>New referral</button>
+  {% elif not is_specialist %}<a class="btn btn-primary" href="{% url 'network_lookup' %}"><i class="bi bi-search"></i>Look up a patient to refer</a>{% endif %}
 {% endblock %}
+{% block content %}
+<div class="boxtabs" role="tablist">
+  <a class="boxtab {% if box == 'in' %}on{% endif %}" href="?box=in" role="tab"><i class="bi bi-inbox"></i>Inbox <span class="n">{{ in_count }}</span>{% if pending %}<span class="pending" id="pending-badge">{{ pending }} new</span>{% else %}<span class="pending" id="pending-badge" hidden></span>{% endif %}</a>
+  {% if not is_specialist %}<a class="boxtab {% if box == 'out' %}on{% endif %}" href="?box=out" role="tab"><i class="bi bi-send"></i>Outbox <span class="n">{{ out_count }}</span></a>{% endif %}
+  {% if box == 'in' %}<span class="live ms-auto" title="Updates automatically"><i></i>Live</span>{% endif %}
+</div>
+<div id="ref-rows" data-live="{% if box == 'in' %}{% url 'api_referral_inbox' %}{% endif %}">{% include 'hospital/_referral_rows.html' %}</div>
+{% endblock %}
+{% block scripts %}<script>
+(() => {
+  const box = document.getElementById('ref-rows'), live = box.dataset.live, badge = document.getElementById('pending-badge');
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.content || (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+  let latest = +(box.querySelector('[data-ref]')?.dataset.ref || 0);
+  // Accept / decline in place, without reloading
+  box.addEventListener('click', async e => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    e.preventDefault();
+    const body = new URLSearchParams();
+    if (b.dataset.act === 'declined') {
+      const reason = prompt('Reason for declining (the referrer will see this):'); if (!reason) return; body.set('reason', reason);
+    }
+    b.disabled = true;
+    const r = await fetch(b.dataset.url, {method: 'POST', headers: {'X-CSRFToken': csrf, 'Accept': 'application/json'}, body, credentials: 'same-origin'});
+    const d = await r.json().catch(() => ({}));
+    if (d.ok) { mfToast(`Referral ${d.label.toLowerCase()}.`); refresh(); } else { mfToast(d.error || 'Could not update the referral.', 'warning'); b.disabled = false; }
+  });
+  async function refresh() {
+    if (!live) return;
+    const d = await fetch(live, {credentials: 'same-origin'}).then(r => r.json()).catch(() => null); if (!d) return;
+    if (d.latest > latest && latest) mfToast('New referral received.');
+    latest = Math.max(latest, d.latest);
+    box.innerHTML = d.html;
+    badge.hidden = !d.pending; badge.textContent = `${d.pending} new`;
+  }
+  if (live) setInterval(() => { if (!document.hidden) refresh(); }, 15000);
+})();
+</script>{% endblock %}

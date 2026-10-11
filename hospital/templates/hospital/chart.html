@@ -157,6 +157,13 @@
       {% if billing.encounter %}<a class="btn btn-sm btn-ink w-100 mt-2" href="{% url 'invoice_for_encounter' billing.encounter.pk %}"><i class="bi bi-receipt"></i>{% if billing.encounter.status == 'open' %}Bill current visit{% else %}Bill last visit{% endif %}</a>{% endif %}
     </section>
     {% include 'hospital/_similar.html' with patient_id=p.pk %}
+    <section class="panel network-access">
+      <div class="panel-head"><h2><i class="bi bi-diagram-3 me-1" style="color:var(--teal)"></i>Network access</h2>
+        <form method="post" action="{% url 'patient_network_toggle' p.pk %}" class="ms-auto" data-confirm="{% if p.network_sharing %}Stop sharing this record with other facilities on the E-MedFlow network?{% else %}Allow facilities on the E-MedFlow network to look up this record?{% endif %}">{% csrf_token %}
+          <button class="tag {% if p.network_sharing %}teal{% else %}red{% endif %}" style="border:0;cursor:pointer">{% if p.network_sharing %}<i class="bi bi-share"></i>Shared on network{% else %}<i class="bi bi-slash-circle"></i>Not shared{% endif %}</button></form></div>
+      <ul class="plain ruled small">{% for ev in network_log %}<li><b>{{ ev.details.facility|default:'Network facility' }}</b> · {{ ev.actor|display_name }} · {{ ev.details.reason }}<br><span class="muted">{{ ev.occurred_at|date:'j M Y H:i' }}</span></li>
+        {% empty %}<li class="muted">No outside facility has looked up this record.</li>{% endfor %}</ul>
+    </section>
     <section class="panel">
       <div class="panel-head"><h2>Latest vitals</h2>{% if vitals_at %}<span class="hint">{{ vitals_at|date:'j M, H:i' }}</span>{% endif %}</div>
       {% if vitals %}<div class="vitals">{% for label, unit, val in vitals %}<div class="vital"><span>{{ label }}</span><b>{{ val }}</b><small>{{ unit }}</small></div>{% endfor %}</div>

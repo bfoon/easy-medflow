@@ -5,7 +5,8 @@
 <section class="sp-hero">
   <span class="sp-avatar xl">{{ s.initials }}</span>
   <div class="flex-fill">
-    <h1>{{ s.display_name }}</h1>
+    <h1>{{ s.display_name }} <span class="presence big p-{{ s.presence }}"><i></i>{{ s.get_presence_display }}</span></h1>
+    {% if s.presence_note or s.where %}<div class="small mt-1"><i class="bi bi-broadcast"></i> {{ s.presence_note }}{% if s.presence_note and s.where %} · {% endif %}{% if s.where %}<i class="bi bi-geo-alt"></i> {{ s.where }}{% endif %}{% if s.presence_at %} <span class="muted">· updated {{ s.presence_at|ago }} ago</span>{% endif %}</div>{% endif %}
     <div class="facts"><span><b>{{ s.speciality }}</b></span><span><i class="bi bi-hospital"></i> {{ s.facility }}{% if s.facility.location %}, {{ s.facility.location }}{% endif %}</span>{% if s.languages %}<span><i class="bi bi-translate"></i> {{ s.languages }}</span>{% endif %}{% if s.consult_fee %}<span>Fee {{ s.consult_fee }}</span>{% endif %}</div>
     <div class="stars big">{{ s.rating|stars }} <b>{{ s.rating }}</b> <span class="muted">· {{ s.reviews }} reviews from referring clinicians</span></div>
     {% if s.bio %}<p class="mt-2 mb-0">{{ s.bio }}</p>{% endif %}

@@ -323,6 +323,33 @@
   }
 
 
+
+  /* ---------------------------------------------------------------- notifications bell */
+  const bell = $('#bell');
+  if (bell && URLS.notifications) {
+    const pop = $('#bell-pop'), list = $('#bell-list'), badge = $('#bell-n'), emailBox = $('#bell-email');
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    const post = (url, data) => fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'X-CSRFToken': csrf}, body: new URLSearchParams(data)});
+    const ICON = {referral_new: 'bi-inbox-fill', referral_accepted: 'bi-check-circle-fill', referral_declined: 'bi-x-circle-fill', record_shared: 'bi-folder-check',
+                  task_new: 'bi-list-check', task_done: 'bi-check2-square', referral_update: 'bi-arrow-repeat'};
+    let lastUnread = -1;
+    const load = async () => {
+      const d = await fetch(URLS.notifications, {credentials: 'same-origin'}).then(r => r.json()).catch(() => null); if (!d) return;
+      badge.hidden = !d.unread; badge.textContent = d.unread > 99 ? '99+' : d.unread;
+      if (lastUnread >= 0 && d.unread > lastUnread && d.items[0]) { mfToast(d.items[0].title); bell.classList.add('ring'); setTimeout(() => bell.classList.remove('ring'), 1200); }
+      lastUnread = d.unread;
+      emailBox.checked = d.email && d.has_email; emailBox.disabled = !d.has_email; $('#bell-noemail').hidden = d.has_email;
+      list.innerHTML = d.items.length ? d.items.map(n => `<a class="bell-item ${n.read ? '' : 'unread'}" href="${esc(n.url || '#')}" data-id="${n.id}">
+        <i class="bi ${ICON[n.kind] || 'bi-bell'}"></i><span><b>${esc(n.title)}</b>${n.body ? `<small>${esc(n.body)}</small>` : ''}<em>${esc(n.when)}</em></span></a>`).join('')
+        : '<div class="empty small">You are all caught up.</div>';
+    };
+    bell.addEventListener('click', e => { e.stopPropagation(); pop.hidden = !pop.hidden; bell.setAttribute('aria-expanded', String(!pop.hidden)); if (!pop.hidden) load(); });
+    document.addEventListener('click', e => { if (!pop.hidden && !e.target.closest('.bell-wrap')) { pop.hidden = true; bell.setAttribute('aria-expanded', 'false'); } });
+    list.addEventListener('click', e => { const a = e.target.closest('.bell-item'); if (a) post(URLS.notificationsRead, {id: a.dataset.id}); });
+    $('#bell-all').addEventListener('click', async () => { await post(URLS.notificationsRead, {}); load(); });
+    emailBox.addEventListener('change', () => post(URLS.notificationsEmail, {on: emailBox.checked ? '1' : '0'}).then(() => mfToast(emailBox.checked ? 'Email notifications on.' : 'Email notifications off.')));
+    load(); setInterval(() => { if (!document.hidden) load(); }, 20000);
+  }
   /* ---------------------------------------------------------------- slide-out panel (stay on the page) */
   const drawer = $('#drawer'), frame = $('#drawer-frame'), backdrop = $('#drawer-backdrop');
   function openDrawer(url, title) {

@@ -107,3 +107,13 @@ MAPTILER_KEY = env('MAPTILER_KEY', default='')
 MAP_TILE_URL = env('MAP_TILE_URL', default='')
 MAP_TILE_ATTRIBUTION = env('MAP_TILE_ATTRIBUTION', default='')
 MAP_TILE_NAME = env('MAP_TILE_NAME', default='Custom map')
+
+# Email (notifications). Development prints emails to the web log; set these in .env to send real email.
+EMAIL_BACKEND = env('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = env('EMAIL_HOST', default='')
+EMAIL_PORT = env.int('EMAIL_PORT', default=587)
+EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
+EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='E-MedFlow <no-reply@e-medflow.local>')
+SITE_URL = env('SITE_URL', default='http://localhost:8000')   # used for links in emails

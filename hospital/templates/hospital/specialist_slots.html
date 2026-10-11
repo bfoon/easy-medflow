@@ -1,0 +1,31 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}My slots{% endblock %}
+{% block heading %}My appointment slots{% endblock %}
+{% block subheading %}<p class="sub">Referring doctors book these when they refer to you. {{ free }} free and {{ booked }} booked in the next 4 weeks.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'specialist_portal' %}"><i class="bi bi-arrow-left"></i>Portal</a>{% endblock %}
+{% block content %}
+<div class="grid g-main">
+  <section class="panel">
+    <div class="panel-head"><h2>Next 4 weeks</h2><span class="hint">Tick free slots to remove them</span></div>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="delete">
+      <div class="cal">{% for d in days %}<div class="cal-day"><div class="cal-date"><b>{{ d.date|date:'D' }}</b><span>{{ d.date|date:'j M' }}</span></div><div class="cal-slots">
+        {% for s in d.slots %}{% if s.is_booked %}<a class="slot booked-mine" href="{% url 'referral_detail' s.referral.pk %}" title="Booked: {{ s.referral.number }}">{{ s.start|date:'H:i' }}</a>
+        {% else %}<label class="slot sel"><input type="checkbox" name="slot" value="{{ s.pk }}">{{ s.start|date:'H:i' }}{% if s.mode == 'video' %} <i class="bi bi-camera-video"></i>{% endif %}</label>{% endif %}{% endfor %}</div></div>
+      {% empty %}<p class="muted">No slots yet. Create a weekly pattern on the right.</p>{% endfor %}</div>
+      {% if days %}<button class="btn btn-sm btn-ghost mt-3" data-confirm="Remove the ticked free slots?"><i class="bi bi-trash"></i>Remove ticked slots</button>{% endif %}
+    </form>
+  </section>
+  <aside class="panel align-self-start">
+    <div class="panel-head"><h2>Add slots</h2></div>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="generate">
+      <div class="label-sm mb-1">Days</div>
+      <div class="dept-pick mb-2">{% for w in weekdays %}<label><input type="checkbox" name="weekday" value="{{ forloop.counter0 }}"><span>{{ w }}</span></label>{% endfor %}</div>
+      <div class="d-flex gap-2"><label class="small">From<input type="time" class="form-control form-control-sm" name="start" value="09:00" required></label><label class="small">To<input type="time" class="form-control form-control-sm" name="end" value="12:00" required></label></div>
+      <div class="d-flex gap-2 mt-2"><label class="small">Minutes each<input type="number" class="form-control form-control-sm" name="minutes" value="30" min="10" max="240"></label><label class="small">For weeks<input type="number" class="form-control form-control-sm" name="weeks" value="4" min="1" max="12"></label></div>
+      <label class="small mt-2 d-block">Type<select class="form-select form-select-sm" name="mode"><option value="in_person">In person</option><option value="video">Video call</option></select></label>
+      <button class="btn btn-primary w-100 mt-3"><i class="bi bi-calendar-plus"></i>Add slots</button>
+      <p class="form-text mb-0 mt-2">Existing and booked slots are never changed.</p>
+    </form>
+  </aside>
+</div>
+{% endblock %}
