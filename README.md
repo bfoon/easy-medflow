@@ -1,4 +1,4 @@
-# MedFlow HMS — Django / Bootstrap / PostgreSQL / Redis / Docker
+# E-MedFlow HMS — Django / Bootstrap / PostgreSQL / Redis / Docker
 
 An extendable **hospital-management MVP / developer starter**, not a certified electronic health record, medical device, or production-ready clinical decision support system. Treat all data as sensitive; do not process real patient information until a qualified security, privacy, and clinical team signs off.
 
@@ -7,7 +7,7 @@ An extendable **hospital-management MVP / developer starter**, not a certified e
 ```bash
 docker compose up -d --build
 docker compose ps          # db, redis, web and worker should all be running
-docker compose logs -f web # wait for "MedFlow is starting at http://localhost:8000"
+docker compose logs -f web # wait for "E-MedFlow is starting at http://localhost:8000"
 ```
 
 Open http://localhost:8000 and sign in as `admin` / `medflow-admin-2026`. No `.env` file is needed.
@@ -16,7 +16,7 @@ Open http://localhost:8000 and sign in as `admin` / `medflow-admin-2026`. No `.e
 | --- | --- | --- |
 | `db` | PostgreSQL 16 (database `medflow`, user `medflow`, password `medflow-dev-password`) | `localhost:5433` |
 | `redis` | Redis 7, message broker for background jobs | internal only |
-| `web` | MedFlow (Django dev server, auto-reloads when you edit code) | http://localhost:8000 |
+| `web` | E-MedFlow (Django dev server, auto-reloads when you edit code) | http://localhost:8000 |
 | `worker` | Celery worker for background jobs | internal only |
 
 On first start `web` applies migrations, loads the standard configuration and lab catalogue, adds fictional demo data
@@ -39,7 +39,7 @@ These credentials are for local use only. For real patients use the production s
 | Message | Cause and fix |
 | --- | --- |
 | `failed to resolve host 'db'` / `Could not reach the database at db:5432` | The `db` container is not running, or this container is not part of the compose stack. Run `docker compose ps -a` and `docker compose logs db`. Start everything with `docker compose up -d`, and run commands with `docker compose exec web python manage.py …`. In PyCharm use a **Docker Compose** interpreter with service `web`, not a plain Docker interpreter. |
-| `Bind for 127.0.0.1:8000 failed: port is already allocated` | Another program (often a PyCharm run configuration) or an older MedFlow stack uses port 8000. Stop it, or start with `$env:MEDFLOW_PORT=8080; docker compose up -d`. |
+| `Bind for 127.0.0.1:8000 failed: port is already allocated` | Another program (often a PyCharm run configuration) or an older E-MedFlow stack uses port 8000. Stop it, or start with `$env:MEDFLOW_PORT=8080; docker compose up -d`. |
 | Running Django directly in PyCharm against the Docker database | Set `POSTGRES_HOST=localhost`, `POSTGRES_PORT=5433`, `POSTGRES_PASSWORD=medflow-dev-password`, `DJANGO_DEBUG=True`. Or use `USE_SQLITE=True` for a local file database. |
 
 | Buttons do nothing, the side panel shows at the bottom of the page, or animations are missing after an update | The browser is using old CSS/JavaScript from its cache. From this version every CSS/JS link carries a content fingerprint, so this cannot recur; press **Ctrl+F5** once after installing it. |
@@ -129,6 +129,24 @@ its own allergy and stock check. The prescriber signs once; the pharmacy dispens
 earliest-expiring stock first, and nothing is dispensed if any line is short.
 
 Port 8000 already in use? Start with `MEDFLOW_PORT=8080 docker compose up -d` (PowerShell: `$env:MEDFLOW_PORT=8080; docker compose up -d`).
+
+## Find patients
+
+**Find patients** (menu, or Ctrl+K from anywhere) searches the whole record with one box: name, patient number,
+phone, diagnosis, long-term condition, allergy, medicine, lab test, scan finding or town. Every word must match, so
+`malaria brikama`, `femoral fracture` or `ebrima touray` narrow the list. Scan findings only match when positive
+("no fracture" does not match `fracture`). Each result shows why it matched, the bed or queue number, the latest
+diagnosis with its category, allergies and unreviewed abnormal results, with buttons for the record, results,
+prescribing and history.
+
+Narrow further with one click:
+- **Disease categories** (filed automatically from every diagnosis and condition, loosely following ICD-10
+  chapters): Infections & tropical, Bones joints & spine, Injuries & trauma, Brain & nerves, Heart & circulation,
+  Lungs & breathing, Kidney & urinary, Stomach liver & gut, Diabetes thyroid & metabolism, Blood & anaemia,
+  Pregnancy & women's health, Mental health, Skin, Eyes ears nose & throat, Cancer. Keywords live in
+  `hospital/categories.py`.
+- **Situations**: admitted now, in the queue, open visit, unreviewed abnormal results, has allergies, my patients.
+- **Department, age group, sex, town, seen within, sort.** Every search is a link you can bookmark or share.
 
 ## Working from the patient page
 
@@ -250,7 +268,7 @@ antibiotic use, waiting times, admissions and chronic disease control, with plai
 the indicators. Anonymous counts and rates only; choose 30 days to 1 year.
 
 **Real maps.** The health maps are real OpenStreetMap maps built with Folium (bubbles sized by patients, colour by
-share, a popup with an *Explore* link, a heat-map layer and a scale bar). Leaflet is served by MedFlow itself; only the
+share, a popup with an *Explore* link, a heat-map layer and a scale bar). Leaflet is served by E-MedFlow itself; only the
 map tiles need internet. Map tiles are requested with only the site's address as Referer, as OpenStreetMap's
 tile policy requires; the layer box offers Esri street map (default), Esri satellite and OpenStreetMap, none needing a key. Set
 `MAPTILER_KEY` (free key from maptiler.com) to make MapTiler the main map, or `MAP_TILE_URL` and
@@ -270,7 +288,9 @@ treatments used with how often patients improved, tests ordered and malaria posi
 `docker compose exec web python manage.py seed_demo_extras` adds the newer fictional content (brain cases with
 spinal-fluid results, CT, MRI and EEG; imaging for the featured patient; four months of visits for the health
 dashboard; inpatient medication charts) without wiping your database. It only runs in demo mode (DEBUG on) and
-does nothing the second time.
+does nothing the second time. It also adds eight bone, spine and injury cases (femur fracture after a road
+accident, disc herniation, osteoporotic spine fracture, whiplash, a child's elbow fracture, spinal cord injury,
+knee osteoarthritis, gout) with synthetic X-rays and MRI, results, medicines, admissions and referrals.
 
 ## Modules included
 

@@ -10,5 +10,5 @@ urlpatterns = [
 ]
 handler403 = 'hospital.views.error_403'
 handler404 = 'hospital.views.error_404'
-admin.site.site_header = 'MedFlow Hospital Administration'
-admin.site.site_title = 'MedFlow'
+admin.site.site_header = 'E-MedFlow Hospital Administration'
+admin.site.site_title = 'E-MedFlow'

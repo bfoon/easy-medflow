@@ -1,0 +1,66 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Find patients{% endblock %}
+{% block heading %}Find patients{% endblock %}
+{% block subheading %}<p class="sub">Search by name, patient number, phone, diagnosis, condition, allergy, medicine, test, scan or town, then narrow by category or situation.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'patient_new' %}"><i class="bi bi-person-plus"></i>Register patient</a>{% endblock %}
+{% block content %}
+<form method="get" id="sf" class="search-page">
+  <div class="big-search panel">
+    <i class="bi bi-search"></i>
+    <input class="form-control form-control-lg" name="q" value="{{ f.q }}" placeholder="e.g. Babucarr, MF-3BB6…, femur fracture, malaria Brikama, penicillin, amoxicillin" autofocus autocomplete="off" aria-label="Search patients">
+    <button class="btn btn-primary btn-lg">Search</button>
+  </div>
+  <div class="presets" role="group" aria-label="Quick filters">
+    {% for v, l in statuses %}<label class="preset"><input type="checkbox" name="status" value="{{ v }}" {% if v in f.status %}checked{% endif %} onchange="this.form.submit()">
+      <span><i class="bi {% if v == 'inpatient' %}bi-hospital{% elif v == 'queue' %}bi-people{% elif v == 'open' %}bi-clipboard2-pulse{% elif v == 'critical' %}bi-exclamation-octagon{% elif v == 'allergy' %}bi-exclamation-triangle{% else %}bi-person-check{% endif %}"></i>{{ l }}</span></label>{% endfor %}
+  </div>
+  <section class="cats {% if active %}compact{% endif %}" aria-label="Disease categories">
+    {% for c in facets %}<label class="cat" style="--c:{{ c.color }}"><input type="checkbox" name="cat" value="{{ c.key }}" {% if c.key in f.cats %}checked{% endif %} onchange="this.form.submit()">
+      <span><i class="bi {{ c.icon }}"></i><b>{{ c.label }}</b><em>{{ c.n }} patient{{ c.n|pluralize }}</em></span></label>
+    {% empty %}<p class="muted small">No diagnoses recorded yet.</p>{% endfor %}
+  </section>
+  <div class="filter-row">
+    <select class="form-select form-select-sm" name="dept" onchange="this.form.submit()" aria-label="Department"><option value="">All departments</option>{% for d in departments %}<option value="{{ d.pk }}" {% if f.dept == d.pk|stringformat:'s' %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select>
+    <select class="form-select form-select-sm" name="age" onchange="this.form.submit()" aria-label="Age"><option value="">Any age</option>{% for k, l, lo, hi in age_bands %}<option value="{{ k }}" {% if f.age == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select class="form-select form-select-sm" name="sex" onchange="this.form.submit()" aria-label="Sex"><option value="">Any sex</option><option value="F" {% if f.sex == 'F' %}selected{% endif %}>Female</option><option value="M" {% if f.sex == 'M' %}selected{% endif %}>Male</option></select>
+    <select class="form-select form-select-sm" name="town" onchange="this.form.submit()" aria-label="Town"><option value="">Any town</option>{% for t in towns %}<option {% if f.town == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+    <select class="form-select form-select-sm" name="days" onchange="this.form.submit()" aria-label="Seen within"><option value="">Seen any time</option>{% for d, l in '7:Last 7 days,30:Last 30 days,90:Last 3 months,365:Last year'|split_pairs %}<option value="{{ d }}" {% if f.days == d %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select class="form-select form-select-sm" name="sort" onchange="this.form.submit()" aria-label="Sort"><option value="relevance">Best match</option><option value="recent" {% if f.sort == 'recent' %}selected{% endif %}>Most recent visit</option><option value="name" {% if f.sort == 'name' %}selected{% endif %}>Name A–Z</option></select>
+    {% if active %}<a class="btn btn-sm btn-ghost" href="{% url 'search' %}"><i class="bi bi-x-lg"></i>Clear all</a>{% endif %}
+  </div>
+</form>
+
+<div class="d-flex align-items-baseline gap-2 mb-2"><h2 class="h5 mb-0">{{ total }} patient{{ total|pluralize }}</h2>{% if not active %}<span class="small muted">· most recently seen first</span>{% endif %}</div>
+<div class="results">
+  {% for r in results %}{% with p=r.p %}
+  <article class="pres">
+    <a class="pres-main" href="{% url 'patient_chart' p.pk %}">
+      <span class="avatar lg {{ p.sex }}">{{ p.initials }}</span>
+      <span class="flex-fill min-w-0">
+        <span class="pres-name">{{ p.full_name }}</span>
+        <span class="pres-meta">{{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %}{% if p.location %} · <i class="bi bi-geo-alt"></i>{{ p.location }}{% endif %}{% if p.phone %} · {{ p.phone }}{% endif %}</span>
+        {% if r.last %}<span class="pres-last">{% if r.last_cat %}<i class="cat-dot" style="background:{{ r.last_cat.color }}" title="{{ r.last_cat.label }}"></i>{% endif %}<b>{{ r.last.diagnosis|default:r.last.reason|truncatechars:70 }}</b> <span class="muted">· {{ r.last.created_at|date:'j M Y' }}{% if r.last.department %} · {{ r.last.department }}{% endif %}</span></span>{% endif %}
+        {% if r.cat_hit and r.cat_hit.pk != r.last.pk %}<span class="pres-cat"><i class="cat-dot" style="background:{{ r.cat_hit_info.color }}"></i>{{ r.cat_hit_info.label }}: <b>{{ r.cat_hit.diagnosis|truncatechars:60 }}</b> · {{ r.cat_hit.created_at|date:'j M Y' }}</span>{% endif %}
+        {% if r.why %}<span class="pres-why"><i class="bi bi-search"></i> Matched on {{ r.why|join:' · ' }}</span>{% endif %}
+      </span>
+    </a>
+    <div class="pres-tags">
+      {% if r.bed %}<span class="tag ink"><i class="bi bi-hospital"></i>Bed {{ r.bed.code }}</span>{% endif %}
+      {% if r.ticket %}<span class="tag indigo"><i class="bi bi-people"></i>{{ r.ticket.display_code }}</span>{% endif %}
+      {% if r.flagged %}<span class="tag red"><i class="bi bi-exclamation-octagon"></i>{{ r.flagged }} to review</span>{% endif %}
+      {% if r.allergies %}<span class="tag red" title="Allergies"><i class="bi bi-exclamation-triangle-fill"></i>{{ r.allergies|join:', '|truncatechars:30 }}</span>{% endif %}
+      {% for c in r.cats|slice:':3' %}<span class="cat-tag" style="--c:{{ c.color }}">{{ c.label }}</span>{% endfor %}
+    </div>
+    <div class="pres-acts">
+      <a class="btn btn-sm btn-ghost" href="{% url 'patient_chart' p.pk %}" title="Patient record"><i class="bi bi-person-vcard"></i><span>Record</span></a>
+      <a class="btn btn-sm btn-ghost" href="{% url 'patient_labs' p.pk %}" title="Results and body map"><i class="bi bi-activity"></i><span>Results</span></a>
+      {% if r.last and r.last.status == 'open' %}<button class="btn btn-sm btn-ghost" data-drawer="{% url 'prescription_new' %}?encounter={{ r.last.pk }}" data-title="Prescribe for {{ p.first_name }}" title="Prescribe"><i class="bi bi-capsule"></i><span>Prescribe</span></button>{% endif %}
+      <a class="btn btn-sm btn-ghost" href="{% url 'patient_story' p.pk %}" title="Play history"><i class="bi bi-play-circle"></i><span>History</span></a>
+    </div>
+  </article>
+  {% endwith %}{% empty %}
+  <div class="panel empty"><i class="bi bi-search"></i>No patients match. Try fewer words, another spelling, or clear a filter.</div>
+  {% endfor %}
+</div>
+{% if total > results|length %}<div class="text-center mt-3"><a class="btn btn-ghost" href="?{{ request.GET.urlencode }}&limit={{ limit|add:60 }}">Show more ({{ total|add:0 }} in total)</a></div>{% endif %}
+{% endblock %}

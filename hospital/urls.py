@@ -10,6 +10,7 @@ urlpatterns = [
     path('api/clinical/', v.api_clinical, name='api_clinical'),
     path('encounters/<int:pk>/ai-context/', v.ai_context_preview, name='ai_context_preview'),
 
+    path('search/', v.search, name='search'),
     path('patients/', v.patients, name='patients'),
     path('patients/new/', v.patient_new, name='patient_new'),
     path('patients/<int:pk>/', v.patient_chart, name='patient_chart'),

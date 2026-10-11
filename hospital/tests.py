@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
 
-from .models import (Location, MedicationAdministration, QueueTicket, Allergy, Invoice, Payment, Admission, Bed, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingOrder, StockRequest, LabRequest, PrescriptionItem, LabParameter, LabResultValue, Admission, Allergy, Bed, Department, Encounter, FormDefinition, FormSubmission, LabOrder, LabTest,
+from .models import (Condition, Location, MedicationAdministration, QueueTicket, Allergy, Invoice, Payment, Admission, Bed, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingOrder, StockRequest, LabRequest, PrescriptionItem, LabParameter, LabResultValue, Admission, Allergy, Bed, Department, Encounter, FormDefinition, FormSubmission, LabOrder, LabTest,
                      Medication, Patient, Prescription, QueueTicket, Referral, Signature, StaffProfile, StockBatch,
                      WorkflowDefinition, WorkflowRun)
 from .services import availability, prescription_warnings
@@ -790,3 +790,72 @@ class MapTileTests(Base):
             self.assertIn('api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key=abc123', c.get('/health/map/').content.decode())
         self.assertEqual(c.get('/health/locations/')['Referrer-Policy'], 'strict-origin-when-cross-origin')
         self.assertEqual(c.get('/patients/')['Referrer-Policy'], 'same-origin')       # other pages keep the strict policy
+
+
+class SearchAndCategoryTests(Base):
+    def setUp(self):
+        self.brikama = Location.objects.get(name='Brikama', parent=None)
+        self.p2 = Patient.objects.create(first_name='Ebrima', last_name='Touray', dob=date(1990, 1, 1), sex='M', phone='+220 7123456', location=self.brikama)
+        self.e2 = Encounter.objects.create(patient=self.p2, reason='Accident', diagnosis='Closed fracture of left femoral shaft')
+        e = self.encounter(); e.diagnosis = 'Uncomplicated malaria'; e.save()
+        self.patient.location = self.brikama; self.patient.save()
+        Allergy.objects.create(patient=self.p2, substance='Penicillin', reaction='rash', severity='moderate')
+
+    def test_categories_are_filed_automatically(self):
+        self.assertEqual(self.e2.category, 'musculoskeletal')
+        c = Condition.objects.create(patient=self.p2, name='Type 2 diabetes'); self.assertEqual(c.category, 'endocrine')
+        self.e2.diagnosis = 'Head injury'; self.e2.save(update_fields=['diagnosis'])
+        self.e2.refresh_from_db(); self.assertEqual(self.e2.category, 'injury')                 # kept in step even with update_fields
+
+    def test_search_by_anything_and_every_word_must_match(self):
+        from hospital.search import search_patients
+        names = lambda **kw: [r['p'].pk for r in search_patients(self.user('doctor'), **kw)['results']]
+        self.assertEqual(names(q='Ebrima Touray'), [self.p2.pk])                                # full name across two fields
+        self.assertEqual(names(q='femur'), [])                                                  # 'femur' is not in 'femoral'
+        self.assertEqual(names(q='femoral'), [self.p2.pk])
+        self.assertEqual(names(q='penicillin'), [self.p2.pk])                                   # allergy
+        self.assertEqual(names(q='malaria Brikama'), [self.patient.pk])                         # diagnosis AND town
+        self.assertEqual(names(q='7123456'), [self.p2.pk])                                      # phone digits
+        r = search_patients(self.user('doctor'), q=self.p2.mrn)['results'][0]
+        self.assertEqual((r['p'], r['why'][0]), (self.p2, 'Patient number'))
+        self.assertEqual(names(cats=['musculoskeletal']), [self.p2.pk])
+        facets = {f['key']: f['n'] for f in search_patients(self.user('doctor'))['facets']}
+        self.assertEqual((facets['musculoskeletal'], facets['infectious']), (1, 1))
+
+    def test_situation_filters(self):
+        from hospital.search import search_patients
+        bed = Bed.objects.filter(state='available').first()
+        Admission.objects.create(encounter=self.e2, bed=bed)
+        res = search_patients(self.user('doctor'), status=['inpatient'])
+        self.assertEqual([r['p'] for r in res['results']], [self.p2]); self.assertEqual(res['results'][0]['bed'], bed)
+        self.assertEqual([r['p'] for r in search_patients(self.user('doctor'), status=['allergy'])['results']], [self.p2])
+        self.assertEqual(search_patients(self.user('doctor'), age='child')['total'], 0)
+
+    def test_pages_quick_search_and_access(self):
+        c = self.as_('nurse')
+        page = c.get('/search/', {'q': 'fracture', 'cat': 'musculoskeletal'})
+        self.assertContains(page, 'Ebrima Touray'); self.assertContains(page, 'Matched on Diagnosis')
+        d = c.get('/api/search/', {'q': 'fracture'}).json()
+        self.assertEqual(d['results'][0]['name'], 'Ebrima Touray')
+        self.assertIn('Bones, joints & spine', [x['name'] for x in d['categories']]); self.assertIn('/search/?q=fracture', d['all_url'])
+        self.client.logout()
+        U = get_user_model(); u = U.objects.create_user('pp', password=PW)
+        StaffProfile.objects.create(user=u, role='partner', facility=NetworkFacility.objects.create(name='X'))
+        self.assertEqual(self.as_('pp').get('/search/').status_code, 403)                     # partner facilities cannot search patients
+
+    def user(self, role):
+        return StaffProfile.objects.filter(role=role).first().user
+
+    def test_new_name(self):
+        self.assertContains(self.client.get('/accounts/login/'), 'E-MedFlow')
+
+
+class SearchNegationTests(Base):
+    def test_negative_scan_reports_do_not_match(self):
+        from hospital.search import search_patients
+        e = self.encounter()
+        ImagingOrder.objects.create(encounter=e, modality='xray', region='Cervical spine', body_system='bone', status='reported', impression='No cervical spine fracture.')
+        u = StaffProfile.objects.filter(role='doctor').first().user
+        self.assertEqual(search_patients(u, q='fracture')['total'], 0)
+        ImagingOrder.objects.create(encounter=e, modality='xray', region='Femur', body_system='bone', status='reported', impression='Displaced femoral fracture.')
+        self.assertEqual(search_patients(u, q='fracture')['total'], 1)

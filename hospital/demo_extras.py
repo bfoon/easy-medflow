@@ -8,7 +8,7 @@ from django.core.files.base import ContentFile
 from django.utils import timezone
 
 from . import demo_images as di
-from .models import (Admission, Department, Encounter, ImagingImage, ImagingOrder, LabOrder, LabRequest, LabResultValue, LabTest,
+from .models import (Condition, Admission, Department, Encounter, ImagingImage, ImagingOrder, LabOrder, LabRequest, LabResultValue, LabTest,
                      MedicationAdministration, Medication, Patient, Prescription, PrescriptionItem, StaffProfile)
 
 FIRST_F = ['Awa', 'Fatou', 'Isatou', 'Mariama', 'Binta', 'Haddy', 'Ndey', 'Kaddy', 'Aminata', 'Jainaba', 'Sainabou', 'Oumie', 'Adama', 'Rohey']
@@ -185,5 +185,133 @@ def run_all():
     from .management.commands.bootstrap_hospital import link_patient_locations
     res = {'brain cases': brain_cases(doctor, rad), 'featured imaging': featured_imaging(doctor, rad),
             'history visits': population_history(doctor), 'inpatient charts': inpatient_charts(doctor, nurse)}
+    res['bone and injury cases'] = bone_cases(doctor, rad, nurse)
     res['patients placed on map'] = link_patient_locations()
     return res
+
+
+def bone_cases(doctor, rad, nurse):
+    """Fictional bone, spine and injury cases with scans, results, medicines, admissions and referrals."""
+    from .models import Bed, Referral, ReferralTask, NetworkFacility, Specialist
+    if Encounter.objects.filter(diagnosis__icontains='femoral shaft').exists():
+        return 0
+    now = timezone.now()
+    surg = Department.objects.filter(name='Surgery').first() or Department.objects.first()
+    em = Department.objects.filter(name='Emergency').first() or surg
+    meds = {m.name: m for m in Medication.objects.all()}
+    def rx(enc, lines, state='signed'):
+        p = Prescription.objects.create(encounter=enc, allergy_reviewed=True, state=state, signed_by=doctor, signed_at=now - timedelta(hours=3))
+        for i, (name, dose, per, route, freq, days) in enumerate(lines):
+            if name in meds:
+                PrescriptionItem.objects.create(prescription=p, medication=meds[name], dose=dose, units_per_dose=per, route=route, frequency=freq,
+                                                duration_days=days, quantity=PrescriptionItem.calculate_quantity(per, freq, days) or 10, sort_order=i)
+        return p
+    def admit(enc, ward_kind='general'):
+        bed = Bed.objects.filter(state='available', kind=ward_kind).first() or Bed.objects.filter(state='available').first()
+        if bed:
+            a = Admission.objects.create(encounter=enc, bed=bed); Admission.objects.filter(pk=a.pk).update(admitted_at=now - timedelta(hours=20))
+            bed.state = 'occupied'; bed.save(update_fields=['state'])
+    def refer(enc, speciality, reason, kind='consultation', days=2):
+        sp = Specialist.objects.filter(speciality__icontains=speciality, active=True).select_related('facility').first()
+        r = Referral.objects.create(encounter=enc, kind=kind, facility=sp.facility if sp else None, specialist=sp, destination=sp.facility.name if sp else f'{speciality} clinic',
+                                    speciality=sp.speciality if sp else speciality, reason=reason, urgency='urgent', status='sent', sent_at=now - timedelta(hours=2),
+                                    consent_to_share=bool(sp), planned_date=timezone.localdate() + timedelta(days=days) if kind == 'operation' else None)
+        if kind == 'operation':
+            from .views import PREOP_CHECKLIST
+            tests = {t.code: t for t in LabTest.objects.all()}
+            for side, k, title, code in PREOP_CHECKLIST:
+                ReferralTask.objects.create(referral=r, requested_by_side='receiver' if side == 'sender' else 'sender', assigned_to_side=side, kind=k, title=title,
+                                            lab_test=tests.get(code), due=r.planned_date, created_by=doctor)
+        return r
+    made = 0
+    # 1. Road traffic accident: displaced femoral shaft fracture, admitted, referred for fixation (ORIF)
+    p = new_patient('Ebrima', 'Touray', 'M', 34, 'Serrekunda')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=em, status='open', reason='Motorbike accident, unable to stand, left thigh deformity',
+                                 diagnosis='Closed displaced fracture of left femoral shaft (road traffic accident)', symptoms='Severe left thigh pain after motorbike collision 2 h ago.',
+                                 assessment='Shortened, externally rotated left leg; distal pulses present; no open wound.',
+                                 vitals={'bp': '104/66', 'heart_rate': '118', 'temperature_c': '36.9', 'spo2': '98', 'pain_score': '9'})
+    study(e, rad, 'xray', 'Left femur', 'bone', di.xray_long_bone('femur'), 'Transverse fracture of the mid-shaft of the left femur with lateral displacement and small fragments.',
+          'Displaced mid-shaft femoral fracture.', True, [{'label': 'Displacement', 'value': '24', 'unit': 'mm', 'abnormal': True}], hours=5)
+    lab_result(e, 'CBC', {'HB': 10.8, 'WBC': 13.2, 'PLT': 260, 'RBC': 3.9, 'HCT': 33, 'MCV': 85}, doctor, hours=4)
+    lab_result(e, 'BGRP', {'ABO': 'O+'}, doctor, hours=4)
+    rx(e, [('Paracetamol', '1 g', 2, 'oral', 'QDS', 5), ('Ceftriaxone', '1 g', 1, 'iv', 'OD', 1)])
+    admit(e); refer(e, 'Orthop', 'Displaced femoral shaft fracture for intramedullary nailing / ORIF. Haemodynamically stable after 1 L saline; Hb 10.8.', 'operation')
+    made += 1
+    # 2. Lumbar disc herniation with sciatica
+    p = new_patient('Fatou', 'Ceesay', 'F', 46, 'Brikama')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=surg, status='open', reason='Low back pain shooting down the right leg for 3 weeks',
+                                 diagnosis='L4/L5 disc herniation with right sciatica', assessment='Straight-leg raise positive at 35° on the right; reduced ankle reflex.',
+                                 vitals={'bp': '128/82', 'heart_rate': '78', 'pain_score': '7'})
+    study(e, rad, 'mri', 'Lumbar spine', 'bone', di.mri_spine('disc'), 'Posterior disc protrusion at L4/L5 indenting the thecal sac and right exiting nerve root.',
+          'L4/L5 disc herniation compressing the right L5 nerve root.', True, hours=26)
+    rx(e, [('Ibuprofen', '400 mg', 1, 'oral', 'TDS', 7), ('Paracetamol', '500 mg', 2, 'oral', 'QDS', 7)])
+    refer(e, 'Physio', 'Lumbar disc herniation with sciatica, no red flags. Please start core strengthening and nerve-glide programme.')
+    made += 1
+    # 3. Osteoporotic vertebral compression fracture
+    p = new_patient('Modou', 'Jallow', 'M', 71, 'Bakau', medical_alerts='Osteoporosis')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=surg, status='open', reason='Sudden mid-back pain after a minor fall at home',
+                                 diagnosis='Osteoporotic compression fracture of T12 vertebra', vitals={'bp': '142/86', 'heart_rate': '82', 'pain_score': '8'})
+    Condition.objects.get_or_create(patient=p, name='Osteoporosis', defaults={'status': 'active'})
+    study(e, rad, 'xray', 'Thoracolumbar spine', 'bone', di.xray_spine(compression=3), 'Anterior wedge compression of T12 with about 40% height loss. Posterior wall intact.',
+          'Stable osteoporotic wedge fracture of T12.', True, [{'label': 'Height loss', 'value': '40', 'unit': '%', 'abnormal': True}], hours=8)
+    lab_result(e, 'BONE', {'CA': 2.12, 'PHOS': 0.9, 'VITD': 28}, doctor, hours=6)
+    rx(e, [('Paracetamol', '1 g', 2, 'oral', 'QDS', 14)])
+    made += 1
+    # 4. Whiplash / neck injury, normal cervical X-ray
+    p = new_patient('Isatou', 'Bah', 'F', 28, 'Kololi')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=em, status='completed', outcome='improved', completed_at=now - timedelta(hours=20),
+                                 reason='Neck pain after a car was hit from behind', diagnosis='Whiplash neck injury after road traffic accident', vitals={'bp': '118/74', 'pain_score': '5'})
+    study(e, rad, 'xray', 'Cervical spine', 'bone', di.xray_spine('cervical', seed=47), 'Normal alignment C1–C7. No fracture or prevertebral swelling.', 'No cervical spine fracture.', False, hours=26)
+    rx(e, [('Paracetamol', '500 mg', 2, 'oral', 'QDS', 5)], state='dispensed')
+    made += 1
+    # 5. Child: supracondylar humerus fracture
+    p = new_patient('Lamin', 'Sanneh', 'M', 9, 'Lamin')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=em, status='open', reason='Fell from a tree onto outstretched hand, swollen elbow',
+                                 diagnosis='Supracondylar fracture of right humerus (child)', assessment='Swollen right elbow; radial pulse present; sensation intact.',
+                                 vitals={'heart_rate': '104', 'temperature_c': '36.8', 'pain_score': '8'})
+    study(e, rad, 'xray', 'Right elbow', 'bone', di.xray_long_bone('humerus'), 'Extension-type supracondylar fracture of the distal humerus, posterior displacement.',
+          'Displaced supracondylar fracture (Gartland type III).', True, hours=3)
+    rx(e, [('Paracetamol', '250 mg', 1, 'oral', 'QDS', 3), ('Ibuprofen', '200 mg', 1, 'oral', 'TDS', 3)])
+    refer(e, 'Orthop', 'Displaced supracondylar fracture in a 9-year-old; neurovascularly intact. Needs closed reduction and pinning today.', 'operation', days=0)
+    made += 1
+    # 6. Spinal cord injury after a fall from a mango tree
+    p = new_patient('Ousman', 'Camara', 'M', 38, 'Farafenni')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=em, status='open', reason='Fell from a mango tree, cannot move or feel legs',
+                                 diagnosis='Spinal cord injury at T10 with paraplegia after fall from a tree', assessment='Power 0/5 both legs; sensory level T10; priapism absent.',
+                                 vitals={'bp': '96/58', 'heart_rate': '58', 'spo2': '97', 'pain_score': '6'})
+    study(e, rad, 'mri', 'Thoracic spine', 'bone', di.mri_spine('cord'), 'Burst fracture of T10 with retropulsion; cord oedema from T9 to T11.', 'T10 burst fracture with spinal cord injury.', True, hours=6)
+    lab_result(e, 'CBC', {'HB': 12.9, 'WBC': 11.0, 'PLT': 240, 'RBC': 4.4, 'HCT': 39, 'MCV': 88}, doctor, hours=7)
+    rx(e, [('Paracetamol', '1 g', 2, 'oral', 'QDS', 5), ('Ceftriaxone', '1 g', 1, 'iv', 'OD', 3)])
+    admit(e); refer(e, 'Neurosurg', 'T10 burst fracture with complete paraplegia (sensory level T10). Log-roll and spinal precautions in place. Request urgent spinal stabilisation.', 'operation', days=1)
+    made += 1
+    # 7. Knee osteoarthritis (rheumatoid factor negative)
+    p = new_patient('Awa', 'Jobe', 'F', 61, 'Banjul')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=surg, status='completed', outcome='improved', completed_at=now - timedelta(days=3),
+                                 reason='Painful knees, worse on stairs', diagnosis='Bilateral knee osteoarthritis', vitals={'bp': '136/84', 'pain_score': '5'})
+    Condition.objects.get_or_create(patient=p, name='Knee osteoarthritis', defaults={'status': 'active'})
+    study(e, rad, 'xray', 'Left knee', 'bone', di.knee_xray(seed=29), 'Medial joint-space narrowing with osteophytes.', 'Moderate osteoarthritis of the knee.', True, hours=80)
+    if LabTest.objects.filter(code='RF').exists():
+        lab_result(e, 'RF', {'RF': 'Negative'}, doctor, hours=80)
+    lab_result(e, 'ESR', {'ESR': 14}, doctor, hours=80)
+    made += 1
+    # 8. Acute gout (uric acid high)
+    p = new_patient('Bakary', 'Fofana', 'M', 52, 'Soma', medical_alerts='Hypertension')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=em, status='open', reason='Hot, swollen big toe overnight', diagnosis='Acute gout of the right big toe',
+                                 assessment='Red, hot, exquisitely tender right first MTP joint.', vitals={'bp': '152/94', 'temperature_c': '37.6', 'pain_score': '9'})
+    if LabTest.objects.filter(code='URIC').exists():
+        lab_result(e, 'URIC', {'URIC': 612}, doctor, hours=2)
+    lab_result(e, 'CRP', {'CRP': 48}, doctor, hours=2)
+    rx(e, [('Ibuprofen', '400 mg', 1, 'oral', 'TDS', 5)])
+    made += 1
+    # earlier bone, joint and injury visits for the category counts and trends
+    pts = list(Patient.objects.all())
+    mix = ['Mechanical low back pain', 'Ankle sprain', 'Distal radius fracture after a fall', 'Knee osteoarthritis review', 'Shoulder dislocation, reduced',
+           'Lumbar strain lifting at work', 'Fracture of clavicle', 'Rheumatoid arthritis review', 'Laceration of hand', 'Head injury, minor (road traffic accident)',
+           'Burns to forearm', 'Tibial fracture follow-up (healing)', 'Cervical spondylosis', 'Dog bite to leg']
+    for _ in range(70):
+        when = now - timedelta(days=random.randint(2, 120), hours=random.randint(0, 9))
+        pe = Encounter.objects.create(patient=random.choice(pts), clinician=doctor, department=random.choice([surg, em]), reason='Outpatient visit (history)',
+                                      diagnosis=random.choice(mix), status='completed', completed_at=when + timedelta(hours=1),
+                                      outcome=random.choices(['resolved', 'improved', 'no_change', 'worsened'], weights=[45, 40, 12, 3])[0])
+        Encounter.objects.filter(pk=pe.pk).update(created_at=when)
+    return made

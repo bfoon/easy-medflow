@@ -1,4 +1,4 @@
-/* MedFlow front-end. Vanilla JS, no build step. Every feature activates only if its markup exists. */
+/* E-MedFlow front-end. Vanilla JS, no build step. Every feature activates only if its markup exists. */
 (() => {
   'use strict';
   const $ = (s, r = document) => r.querySelector(s);
@@ -175,22 +175,23 @@
       {name: 'Open waiting-room display', url: URLS.display, kind: 'Action'},
     ].filter(a => a.url);
     let items = [], sel = 0, timer;
-    const render = (patients = []) => {
-      const q = input.value.trim().toLowerCase();
+    const render = (d = {}) => {
+      const patients = d.results || [], q = input.value.trim().toLowerCase();
       const match = x => !q || x.name.toLowerCase().includes(q);
-      const groups = [['Patients', patients], ['Actions', ACTIONS.filter(match)], ['Navigate', NAV.filter(match)]];
+      const more = d.all_url ? [{name: `See all ${d.total || ''} results for “${input.value.trim()}”`, url: d.all_url, kind: 'Find patients'}] : [];
+      const groups = [['Patients', patients], ['Disease categories', d.categories || []], ['', more], ['Actions', ACTIONS.filter(match)], ['Navigate', NAV.filter(match)]];
       items = []; let html = '';
       groups.forEach(([label, arr]) => {
         if (!arr.length) return;
-        html += `<div class="group">${label}</div>`;
+        if (label) html += `<div class="group">${label}</div>`;
         arr.forEach(x => {
           const i = items.push(x) - 1;
           html += x.mrn
-            ? `<a class="res" href="${esc(x.url)}" data-i="${i}"><span class="avatar">${esc(x.initials)}</span><span><b>${esc(x.name)}</b><small>${esc(x.mrn)}${x.age != null ? ' · ' + esc(x.age) + ' yrs' : ''}</small></span><span class="kind">Chart</span></a>`
-            : `<a class="res" href="${esc(x.url)}" data-i="${i}"><span>${esc(x.name)}</span><span class="kind">${esc(x.kind)}</span></a>`;
+            ? `<a class="res" href="${esc(x.url)}" data-i="${i}"><span class="avatar">${esc(x.initials)}</span><span><b>${esc(x.name)}</b><small>${esc(x.mrn)}${x.age != null ? ' · ' + esc(x.age) + ' yrs' : ''}${x.bed ? ' · bed ' + esc(x.bed) : ''}${x.why ? ' · ' + esc(x.why) : ''}</small></span><span class="kind">Chart</span></a>`
+            : `<a class="res" href="${esc(x.url)}" data-i="${i}"><span>${x.color ? `<i class="cat-dot" style="background:${esc(x.color)}"></i>` : ''}${esc(x.name)}</span><span class="kind">${esc(x.kind)}</span></a>`;
         });
       });
-      list.innerHTML = html || `<div class="empty">No matches. Try a name, MRN, or phone number.</div>`;
+      list.innerHTML = html || `<div class="empty">No matches. Try a name, number, diagnosis, medicine or town.</div>`;
       sel = 0; highlight();
     };
     const highlight = () => $$('.res', list).forEach(r => r.classList.toggle('sel', +r.dataset.i === sel));
@@ -212,7 +213,7 @@
       const q = input.value.trim();
       if (q.length < 2 || !URLS.search) return;
       timer = setTimeout(() => fetch(`${URLS.search}?q=${encodeURIComponent(q)}`, {credentials: 'same-origin'})
-        .then(r => r.json()).then(d => input.value.trim() === q && render(d.results)).catch(() => {}), 180);
+        .then(r => r.json()).then(d => input.value.trim() === q && render(d)).catch(() => {}), 180);
     });
   }
 

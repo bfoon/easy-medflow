@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <title>{% block title %}MedFlow{% endblock %} · MedFlow HMS</title>
+  <title>{% block title %}E-MedFlow{% endblock %} · E-MedFlow HMS</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230F2C3F'/><path d='M4 17h6l2-5 4 10 3-8 2 3h7' fill='none' stroke='%233FE0B0' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>">
   <link href="{% asset 'hospital/vendor/fonts/fonts.css' %}" rel="stylesheet">
   <link href="{% asset 'hospital/vendor/bootstrap.min.css' %}" rel="stylesheet">
@@ -19,7 +19,7 @@
   <aside class="rail" aria-label="Main navigation">
     <a class="brand" href="{% url 'dashboard' %}">
       <svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true"><rect width="38" height="38" rx="11" fill="#18405A"/><path d="M5 20h7l2.5-6 4.5 12 3.5-9 2.5 3H33" fill="none" stroke="#3FE0B0" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span><b>MedFlow</b><small>Hospital management</small></span>
+      <span><b>E-MedFlow</b><small>Hospital management</small></span>
     </a>
     <nav>
       {% if nav_role == 'partner' %}
@@ -29,6 +29,7 @@
       {% else %}
       <div class="nav-group">
         <a class="nav-link {% nav_active '/' %}" href="{% url 'dashboard' %}"><i class="bi bi-activity"></i>Overview</a>
+        <a class="nav-link {% nav_active '/search/' %}" href="{% url 'search' %}"><i class="bi bi-search"></i>Find patients</a>
         <a class="nav-link {% nav_active '/health/' %}" href="{% url 'health' %}"><i class="bi bi-graph-up-arrow"></i>Health intelligence</a>
         <a class="nav-link {% nav_active '/checkin/' %}" href="{% url 'checkin' %}"><i class="bi bi-upc-scan"></i>Check in</a>
         <a class="nav-link {% nav_active '/patients/' '/encounters/' %}" href="{% url 'patients' %}"><i class="bi bi-person-vcard"></i>Patients</a>
@@ -65,7 +66,7 @@
   <main class="main">{% endif %}{% if embed %}<main class="embed-main">{% else %}
     <div class="utility">
       <button class="btn btn-ghost menu-btn" aria-label="Open menu"><i class="bi bi-list"></i></button>
-      {% if nav_role != 'partner' %}<button class="search-trigger" data-palette type="button"><i class="bi bi-search"></i><span>Find a patient or jump to…</span><kbd>Ctrl K</kbd></button>{% endif %}
+      {% if nav_role != 'partner' %}<button class="search-trigger" data-palette type="button"><i class="bi bi-search"></i><span>Find a patient, diagnosis or medicine…</span><kbd>Ctrl K</kbd></button>{% endif %}
       <span class="clock"><i class="bi bi-clock me-1"></i><span data-clock="short"></span></span>
     </div>{% endif %}
     {% block topbar %}

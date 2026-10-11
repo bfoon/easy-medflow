@@ -29,5 +29,5 @@ else:
     print(f'   Created admin \"{name}\"')
 "
 
-echo "→ MedFlow is starting (open http://localhost:${MEDFLOW_PORT:-8000} on your machine)"
+echo "→ E-MedFlow is starting (open http://localhost:${MEDFLOW_PORT:-8000} on your machine)"
 exec python manage.py runserver 0.0.0.0:8000

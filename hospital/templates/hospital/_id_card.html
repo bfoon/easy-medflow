@@ -1,0 +1,13 @@
+<div class="card-id{% if allergies %} has-allergy{% endif %}">
+  <div class="c-head"><span class="fit">{{ hospital }}</span><small>Patient ID</small></div>
+  <div class="c-body">
+    <div class="qr">{{ qr }}</div>
+    <div class="c-who">
+      <div class="name fit">{{ p.full_name }}</div>
+      <div class="mrn">{{ p.mrn }}</div>
+      <dl><dt>Born</dt><dd>{{ p.dob|date:'d M Y' }}</dd><dt>Sex</dt><dd>{{ p.get_sex_display }}</dd>{% if p.blood_group %}<dt>Blood</dt><dd><b>{{ p.blood_group }}</b></dd>{% endif %}</dl>
+    </div>
+  </div>
+  {% if allergies %}<div class="c-foot allergy"><b>ALLERGY</b> <span class="fit">{{ allergies|join:', ' }}</span></div>
+  {% else %}<div class="c-foot">Bring this card to every visit. The code opens your record only for hospital staff.</div>{% endif %}
+</div>

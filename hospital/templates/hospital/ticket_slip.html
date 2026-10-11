@@ -4,7 +4,7 @@
 {% block actions %}<a class="btn btn-ghost" href="{% url 'checkin' %}"><i class="bi bi-upc-scan"></i>Next patient</a>{% endblock %}
 {% block content %}
 <article class="slip print-area">
-  <div class="slip-head">MedFlow Hospital</div>
+  <div class="slip-head">E-MedFlow Hospital</div>
   <div class="slip-dept">{{ t.department }}</div>
   <div class="slip-num">{{ t.display_code }}</div>
   <div class="slip-meta">{{ t.created_at|date:'D j M Y · H:i' }}{% if ahead %} · {{ ahead }} ahead of you{% if est %}, about {{ est }} min{% endif %}{% endif %}</div>

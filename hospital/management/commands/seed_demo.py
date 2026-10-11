@@ -1,4 +1,4 @@
-"""Populate MedFlow with FICTIONAL demo data so every screen has something to show.
+"""Populate E-MedFlow with FICTIONAL demo data so every screen has something to show.
 
 Never run against a database that holds real patient information.
 """

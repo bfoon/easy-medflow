@@ -87,6 +87,13 @@ class Condition(Tracked):
     status=models.CharField(max_length=30,choices=[('active','Active'),('resolved','Resolved'),('history','History')],default='active')
     onset=models.DateField(null=True,blank=True)
     notes=models.TextField(blank=True)
+    category=models.CharField(max_length=20,blank=True,db_index=True,editable=False,help_text='Filed automatically from the name')
+    def save(self,*a,**kw):
+        from .categories import classify
+        self.category=classify(self.name)
+        if kw.get('update_fields') is not None and 'name' in kw['update_fields']:
+            kw['update_fields']=list(set(kw['update_fields'])|{'category'})
+        super().save(*a,**kw)
     def __str__(self):return self.name
 
 class Encounter(Tracked):
@@ -105,6 +112,13 @@ class Encounter(Tracked):
     OUTCOMES=[('resolved','Resolved'),('improved','Improved'),('no_change','No change'),('worsened','Worsened'),('referred','Referred on')]
     outcome=models.CharField(max_length=12,choices=OUTCOMES,blank=True,help_text='How the patient was at the end of this visit or course')
     outcome_notes=models.CharField(max_length=300,blank=True)
+    category=models.CharField(max_length=20,blank=True,db_index=True,editable=False,help_text='Disease category, filed automatically from the diagnosis')
+    def save(self,*a,**kw):
+        from .categories import classify
+        self.category=classify(self.diagnosis) if self.diagnosis else ''
+        if kw.get('update_fields') is not None and 'diagnosis' in kw['update_fields']:
+            kw['update_fields']=list(set(kw['update_fields'])|{'category'})
+        super().save(*a,**kw)
     def __str__(self):return f'{self.patient.first_name} {self.patient.last_name} · {self.patient.mrn} · {self.reason[:40]} · {self.created_at:%d %b}'
 
 class QueueReset(Tracked):

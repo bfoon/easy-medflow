@@ -161,3 +161,9 @@ def patient_qr(context, patient, size=4):
     from django.utils.safestring import mark_safe
     url = context['request'].build_absolute_uri(reverse('patient_qr', args=[patient.mrn]))
     return mark_safe(segno.make(url, error='m').svg_inline(scale=size, dark='#0F2C3F', light='#ffffff', border=2))
+
+
+@register.filter
+def split_pairs(value):
+    """'7:Last 7 days,30:Last 30 days' -> [('7', 'Last 7 days'), ('30', 'Last 30 days')] for small fixed option lists."""
+    return [tuple(x.split(':', 1)) for x in value.split(',')]

@@ -1,0 +1,9 @@
+<div class="label-id{% if allergies %} has-allergy{% endif %}">
+  <div class="qr">{{ qr }}</div>
+  <div class="l-who">
+    <div class="name fit">{{ p.last_name|upper }}, {{ p.first_name }}</div>
+    <div class="mrn fit">{{ p.mrn }}</div>
+    <div class="fit">{{ p.dob|date:'d M Y' }} · {{ p.sex }}{% if p.blood_group %} · {{ p.blood_group }}{% endif %}</div>
+    {% if allergies %}<div class="l-allergy fit">ALLERGY</div>{% endif %}
+  </div>
+</div>

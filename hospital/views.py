@@ -175,13 +175,36 @@ def api_pulse(request):
 
 @login_required
 def api_search(request):
+    """Quick search for the Ctrl+K palette: patients by anything in their record, plus matching disease categories."""
     authorize(request)
+    from .search import category_suggestions, search_patients
     q = request.GET.get('q', '').strip()[:60]
     if len(q) < 2:
         return JsonResponse({'results': []})
-    qs = Patient.objects.filter(Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(mrn__icontains=q) | Q(phone__icontains=q))[:8]
-    return JsonResponse({'results': [{'name': p.full_name, 'mrn': p.mrn, 'initials': p.initials, 'age': p.age,
-                                      'url': reverse('patient_chart', args=[p.pk])} for p in qs]})
+    res = search_patients(request.user, q=q, limit=7)
+    return JsonResponse({
+        'results': [{'name': r['p'].full_name, 'mrn': r['p'].mrn, 'initials': r['p'].initials, 'age': r['p'].age, 'url': reverse('patient_chart', args=[r['p'].pk]),
+                     'why': ' · '.join(x for x in r['why'] if x != 'Name')[:80], 'bed': r['bed'].code if r['bed'] else ''} for r in res['results']],
+        'categories': [{'name': c['label'], 'url': reverse('search') + f"?cat={c['key']}", 'kind': 'Category', 'color': c['color']} for c in category_suggestions(q)],
+        'total': res['total'], 'all_url': reverse('search') + '?' + __import__('urllib.parse', fromlist=['urlencode']).urlencode({'q': q})})
+
+
+@login_required
+def search(request):
+    """Find patients: one box for anything in the record, plus filters by disease category and situation."""
+    authorize(request)
+    from .search import AGE_BANDS, STATUS, search_patients
+    from .categories import INFO
+    g = request.GET
+    f = {'q': g.get('q', '').strip()[:100], 'cats': [c for c in g.getlist('cat') if c in INFO], 'dept': g.get('dept', '') if g.get('dept', '').isdigit() else '',
+         'status': [x for x in g.getlist('status') if x in dict(STATUS)], 'age': g.get('age', ''), 'sex': g.get('sex', ''), 'town': g.get('town', '')[:60],
+         'days': g.get('days', ''), 'sort': g.get('sort', 'relevance')}
+    active = any([f['q'], f['cats'], f['dept'], f['status'], f['age'], f['sex'], f['town'], f['days']])
+    res = search_patients(request.user, limit=int(g.get('limit', 60)) if g.get('limit', '').isdigit() else 60, **f)
+    audit(request, 'search', 'patients', {'q': f['q'][:40], 'cats': f['cats'], 'n': res['total']})
+    return render(request, 'hospital/search.html', {**res, 'f': f, 'active': active, 'age_bands': AGE_BANDS, 'statuses': STATUS,
+                                                    'towns': Location.objects.filter(kind='town', active=True).order_by('name').values_list('name', flat=True),
+                                                    'limit': int(g.get('limit', 60)) if g.get('limit', '').isdigit() else 60})
 
 
 # ---------------------------------------------------------------- patients
@@ -2153,7 +2176,7 @@ def ticket_share(request, t):
     """Text and links for sending a ticket to the patient. The status link shows no name or medical details."""
     from urllib.parse import quote
     status_url = request.build_absolute_uri(reverse('ticket_status', args=[ticket_token(t)]))
-    text = (f'MedFlow Hospital · your queue number is {t.display_code} ({t.department}). '
+    text = (f'E-MedFlow Hospital · your queue number is {t.display_code} ({t.department}). '
             f'Issued {timezone.localtime(t.created_at):%d %b %H:%M}. Follow your place in the queue: {status_url}')
     digits = re.sub(r'\D', '', t.patient.phone or '')
     if len(digits) == 7:

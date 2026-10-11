@@ -1,0 +1,12 @@
+{# Wristband strip. `child` shortens it: no second QR, smaller clasp area. #}
+<div class="band{% if child %} child{% endif %}{% if allergies %} has-allergy{% endif %}">
+  <div class="clasp" aria-hidden="true"></div>
+  <div class="qr">{{ qr }}</div>
+  <div class="who">
+    <div class="name fit">{{ p.last_name|upper }}, {{ p.first_name }}</div>
+    <div class="ids fit"><b>{{ p.mrn }}</b> &nbsp; DOB {{ p.dob|date:'d M Y' }}{% if p.age is not None %} ({{ p.age }}y){% endif %} &nbsp; {{ p.get_sex_display }}{% if p.blood_group %} &nbsp; <b>{{ p.blood_group }}</b>{% endif %}</div>
+    <div class="org fit">{{ hospital }}</div>
+  </div>
+  {% if allergies %}<div class="allergy"><b>ALLERGY</b><span class="fit">{{ allergies|join:', ' }}</span></div>{% endif %}
+  {% if not child %}<div class="qr">{{ qr }}</div>{% endif %}
+</div>

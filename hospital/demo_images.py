@@ -146,3 +146,78 @@ def eeg_strip(spikes=True):
             pts.append((x, base + v))
         d.line(pts, fill=(30, 30, 60), width=1); d.text((6, base - 6), name, fill=(90, 90, 110))
     d.text((80, h - 40), '10 s/page · 7 µV/mm', fill=(90, 90, 110)); _stamp(d, w, h); return _png(img)
+
+
+def xray_spine(view='lumbar', compression=None, seed=41):
+    """Lateral spine radiograph. view: 'lumbar' or 'cervical'; compression: index of a wedge-compressed vertebra."""
+    random.seed(seed); w, h = 480, 680
+    img = Image.new('L', (w, h), 12); d = ImageDraw.Draw(img)
+    d.rounded_rectangle([80, 0, 400, 680], 60, fill=58)                              # soft tissue
+    n = 7 if view == 'cervical' else 5
+    top, step = 40, (600 if view == 'cervical' else 560) // n
+    for i in range(n):
+        y = top + i * step + random.randint(-2, 2)
+        x = 190 + (i * 10 if view == 'lumbar' else -abs(i - 3) * 6)                  # lordotic curve
+        bh = step - 22
+        if compression is not None and i == compression:                              # anterior wedge: front shorter than back
+            d.polygon([(x, y + bh * .45), (x + 100, y), (x + 100, y + bh), (x, y + bh)], fill=200)
+            d.line([(x, y + bh * .45), (x + 100, y)], fill=235, width=3)
+        else:
+            d.rounded_rectangle([x, y, x + 100, y + bh], 10, fill=185)
+        d.rounded_rectangle([x + 104, y + 6, x + 150, y + bh - 6], 8, fill=150)       # posterior elements
+        if i < n - 1:
+            d.rectangle([x + 6, y + bh + 3, x + 94, y + step - 3], fill=70)            # disc space
+    img = Image.blend(img.filter(ImageFilter.GaussianBlur(2.2)), Image.effect_noise((w, h), 12).convert('L'), .07).convert('RGB')
+    d = ImageDraw.Draw(img); d.text((14, 14), f'{"C-spine" if view == "cervical" else "L-spine"} · lateral', fill=(230, 230, 230)); _stamp(d, w, h); return _png(img)
+
+
+def xray_long_bone(bone='femur', fracture=True, healing=False, seed=43):
+    """AP radiograph of a long bone. fracture: displaced transverse/oblique break; healing: callus around the line."""
+    random.seed(seed); w, h = 420, 720
+    img = Image.new('L', (w, h), 10); d = ImageDraw.Draw(img)
+    width = {'femur': 70, 'tibia': 56, 'humerus': 52, 'radius': 30}.get(bone, 50)
+    d.rounded_rectangle([210 - width * 1.9, 0, 210 + width * 1.9, 720], 80, fill=62)     # soft tissue
+    if bone == 'humerus':                                                                   # child's elbow: humerus above, forearm below
+        d.rounded_rectangle([210 - width / 2, 0, 210 + width / 2, 380], 18, fill=185)
+        d.ellipse([150, 360, 270, 430], fill=190)
+        d.rounded_rectangle([160, 440, 196, 720], 12, fill=175); d.rounded_rectangle([222, 440, 256, 720], 12, fill=175)
+        if fracture:
+            d.line([(150, 330), (270, 300)], fill=30, width=5)                              # supracondylar line
+            d.polygon([(150, 334), (270, 304), (276, 330), (156, 362)], fill=160)
+    else:
+        if fracture and not healing:
+            d.rounded_rectangle([210 - width / 2, 0, 210 + width / 2, 352], 16, fill=190)
+            d.rounded_rectangle([210 - width / 2 + 24, 362, 210 + width / 2 + 24, 720], 16, fill=190)   # displaced distal fragment
+            d.line([(210 - width / 2, 352), (210 + width / 2, 340)], fill=235, width=2)
+            for _ in range(6):                                                              # small fragments
+                x, y = random.randint(170, 260), random.randint(340, 372); d.ellipse([x, y, x + 7, y + 5], fill=215)
+        else:
+            d.rounded_rectangle([210 - width / 2, 0, 210 + width / 2, 720], 16, fill=190)
+            if healing:
+                d.ellipse([210 - width, 320, 210 + width, 400], fill=150)                   # callus
+                d.rounded_rectangle([210 - width / 2, 0, 210 + width / 2, 720], 16, fill=195)
+                d.line([(210 - width / 2, 360), (210 + width / 2, 356)], fill=160, width=2)
+        d.rectangle([210 - width / 2 + 10, 0, 210 + width / 2 - 10, 720], fill=None)
+        d.line([(210 - width / 2 + 12, 0), (210 - width / 2 + 12, 720)], fill=120, width=3)   # medullary canal hint
+    img = Image.blend(img.filter(ImageFilter.GaussianBlur(1.8)), Image.effect_noise((w, h), 12).convert('L'), .06).convert('RGB')
+    d = ImageDraw.Draw(img); d.text((14, 14), f'{bone.capitalize()} · AP', fill=(230, 230, 230)); _stamp(d, w, h); return _png(img)
+
+
+def mri_spine(finding='disc', seed=45):
+    """Sagittal T2 lumbar/thoracic spine MRI. finding: 'disc' (herniation), 'cord' (cord injury) or None."""
+    random.seed(seed); w, h = 440, 680
+    img = Image.new('L', (w, h), 18); d = ImageDraw.Draw(img)
+    d.rectangle([60, 0, 380, 680], fill=60)
+    d.rounded_rectangle([238, 0, 286, 680], 14, fill=225)                                 # CSF (bright on T2)
+    d.rounded_rectangle([250, 0, 274, 520], 10, fill=120)                                 # spinal cord
+    for i in range(7):
+        y = 30 + i * 92
+        d.rounded_rectangle([110, y, 220, y + 70], 10, fill=95)                          # vertebral bodies
+        d.ellipse([112, y + 72, 218, y + 90], fill=165 if not (finding == 'disc' and i == 5) else 120)   # discs
+    if finding == 'disc':
+        d.ellipse([200, 30 + 5 * 92 + 64, 262, 30 + 5 * 92 + 98], fill=105)              # herniated disc pressing on the sac
+    if finding == 'cord':
+        d.ellipse([244, 300, 280, 360], fill=235)                                         # bright cord signal (oedema)
+        d.polygon([(110, 300), (220, 290), (220, 362), (110, 350)], fill=140)             # injured vertebra
+    img = Image.blend(img.filter(ImageFilter.GaussianBlur(1.6)), Image.effect_noise((w, h), 20).convert('L'), .08).convert('RGB')
+    d = ImageDraw.Draw(img); d.text((14, 14), 'MRI · sagittal T2', fill=(220, 220, 220)); _stamp(d, w, h); return _png(img)

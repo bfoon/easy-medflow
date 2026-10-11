@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Print ID · {{ p.full_name }}</title>
+<style>
+  /* Everything is sized in millimetres so it prints at true size. Black text and borders survive thermal
+     wristband printers (which print red as black); colour is a bonus on card printers and inkjets. */
+  {% if fmt == 'a4' %}@page { size: A4 landscape; margin: 0; }{% else %}@page { size: {{ page_w }}mm {{ page_h }}mm; margin: 0; }{% endif %}
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #E9EEEC; color: #000; font-family: Arial, Helvetica, sans-serif; }
+  .qr svg { display: block; width: 100%; height: 100%; }
+  .fit { white-space: nowrap; overflow: hidden; }
+
+  /* ------------------------------------------------ screen toolbar (never printed) */
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 18px; background: #0F2C3F; color: #fff; font: 14px system-ui, sans-serif; }
+  .bar h1 { font-size: 16px; margin: 0 10px 0 0; font-weight: 700; }
+  .bar a, .bar button, .bar label { font: 600 13px system-ui, sans-serif; color: #fff; text-decoration: none; }
+  .fmt { display: flex; flex-wrap: wrap; gap: 4px; background: rgba(255,255,255,.08); padding: 4px; border-radius: 10px; }
+  .fmt a { padding: 6px 10px; border-radius: 7px; color: #CFE3E0; }
+  .fmt a.on { background: #fff; color: #0F2C3F; }
+  .bar input[type=number] { width: 56px; padding: 5px 6px; border-radius: 6px; border: 0; font: 600 13px system-ui; }
+  .print { margin-left: auto; background: #0F7B78; border: 0; padding: 9px 16px; border-radius: 8px; cursor: pointer; }
+  .print:hover { background: #12918D; }
+  .back { opacity: .8; }
+  .hint { width: 100%; font-size: 12px; color: #B9CDD4; }
+  .stage { padding: 28px 18px 60px; display: flex; flex-direction: column; align-items: center; gap: 24px; overflow-x: auto; }
+  .sheet { background: #fff; box-shadow: 0 6px 24px rgba(15,44,63,.18); flex: none; overflow: hidden; }
+
+  /* ------------------------------------------------ wristband: 25 mm tall strip */
+  .band { display: flex; align-items: center; gap: 2.5mm; width: 280mm; height: 25mm; padding: 1.5mm 3mm 1.5mm 0; background: #fff; }
+  .band.child { width: 180mm; }
+  .band .clasp { flex: none; width: 38mm; height: 100%; }
+  .band.child .clasp { width: 26mm; }
+  .band .qr { flex: none; width: 21mm; height: 21mm; }
+  .band .who { flex: 1; min-width: 0; line-height: 1.12; }
+  .band .name { font-size: 15pt; font-weight: 800; letter-spacing: .2px; }
+  .band .ids { font-size: 9pt; margin-top: .6mm; }
+  .band .org { font-size: 7pt; margin-top: .6mm; color: #333; }
+  .band .allergy { flex: none; max-width: 70mm; height: 19mm; border: .8mm solid #C8102E; border-radius: 1.5mm; padding: 1mm 2mm; display: flex; flex-direction: column; justify-content: center; color: #C8102E; }
+  .band.child .allergy { max-width: 46mm; }
+  .band .allergy b { font-size: 10pt; letter-spacing: 1px; }
+  .band .allergy span { font-size: 8.5pt; font-weight: 700; color: #000; }
+  /* the clasp end stays blank (most band printers can't print there); a thick red edge marks an allergy band at a glance */
+  .band.has-allergy .who { border-left: 1.6mm solid #C8102E; padding-left: 2mm; }
+
+  /* ------------------------------------------------ ID card: CR80, 85.6 × 54 mm */
+  .card-id { width: 85.6mm; height: 54mm; display: flex; flex-direction: column; background: #fff; border-radius: 3mm; overflow: hidden; }
+  .c-head { display: flex; align-items: baseline; gap: 2mm; background: #0F2C3F; color: #fff; padding: 2mm 3.5mm; }
+  .c-head span { font-weight: 800; font-size: 9pt; flex: 1; min-width: 0; }
+  .c-head small { font-size: 6.5pt; opacity: .8; }
+  .c-body { flex: 1; display: flex; gap: 3mm; align-items: center; padding: 2mm 3.5mm; min-height: 0; }
+  .c-body .qr { flex: none; width: 27mm; height: 27mm; }
+  .c-who { flex: 1; min-width: 0; }
+  .c-who .name { font-size: 12pt; font-weight: 800; line-height: 1.1; }
+  .c-who .mrn { font: 700 9pt "Courier New", monospace; margin: 1mm 0 1.4mm; letter-spacing: .3px; }
+  .c-who dl { display: grid; grid-template-columns: auto 1fr; gap: .4mm 2mm; margin: 0; font-size: 7.5pt; }
+  .c-who dt { color: #555; } .c-who dd { margin: 0; }
+  .c-foot { padding: 1.6mm 3.5mm; font-size: 6.3pt; color: #444; border-top: .3mm solid #DDE4E2; line-height: 1.25; }
+  .c-foot.allergy { background: #C8102E; color: #fff; border: 0; font-size: 7.5pt; display: flex; gap: 1.5mm; align-items: center; }
+  .c-foot.allergy span { min-width: 0; font-weight: 700; }
+
+  /* ------------------------------------------------ sticker label: 50 × 25 mm (sample tubes, folders) */
+  .label-id { width: 50mm; height: 25mm; display: flex; gap: 1.6mm; align-items: center; padding: 1.5mm; background: #fff; }
+  .label-id .qr { flex: none; width: 21mm; height: 21mm; }
+  .l-who { flex: 1; min-width: 0; font-size: 6.6pt; line-height: 1.2; }
+  .l-who .name { font-size: 8pt; font-weight: 800; }
+  .l-who .mrn { font: 700 7pt "Courier New", monospace; }
+  .l-allergy { margin-top: .5mm; font-weight: 800; color: #fff; background: #C8102E; padding: 0 1mm; display: inline-block; letter-spacing: .5px; }
+
+  /* ------------------------------------------------ A4 cut-out sheet */
+  .a4 { width: 297mm; height: 210mm; padding: 8mm; display: flex; flex-direction: column; gap: 5mm; }
+  .a4 .cut { outline: .25mm dashed #9AA8AD; outline-offset: 0; }
+  .a4 .row { display: flex; gap: 5mm; }
+  .a4 .bands { display: flex; flex-direction: column; gap: 4mm; }
+  .a4 .note { font: 8pt system-ui, sans-serif; color: #666; margin-top: auto; }
+
+  @media print {
+    html, body { background: #fff; }
+    .bar { display: none !important; }
+    .stage { display: block; padding: 0; overflow: visible; }
+    .sheet { box-shadow: none; break-after: page; page-break-after: always; border-radius: 0; }
+    .sheet:last-child { break-after: auto; page-break-after: auto; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style></head>
+<body>
+<div class="bar">
+  <h1>Print patient ID</h1>
+  <nav class="fmt" aria-label="Format">
+    {% for key, f in formats.items %}<a href="?fmt={{ key }}&copies={{ n_copies }}{% if not show_allergies %}&allergies=0{% endif %}" class="{% if key == fmt %}on{% endif %}">{{ f.0 }}</a>{% endfor %}
+  </nav>
+  <form method="get" style="display:flex;gap:10px;align-items:center;margin:0">
+    <input type="hidden" name="fmt" value="{{ fmt }}">
+    <label>Copies <input type="number" name="copies" min="1" max="20" value="{{ n_copies }}" onchange="this.form.submit()"></label>
+    {% if not show_allergies %}<input type="hidden" name="allergies" value="0">{% endif %}
+  </form>
+  <a href="?fmt={{ fmt }}&copies={{ n_copies }}{% if show_allergies %}&allergies=0{% endif %}">{% if show_allergies %}Hide allergies{% else %}Show allergies{% endif %}</a>
+  <button class="print" onclick="printNow()">Print</button>
+  <a class="back" href="{% url 'patient_chart' p.pk %}">Back to chart</a>
+  <div class="hint">In the print dialog choose your {% if fmt == 'a4' %}normal printer and A4 paper{% elif fmt == 'card' %}card printer{% elif fmt == 'label' %}label printer{% else %}wristband printer{% endif %}, set margins to <b>None</b> and scale to <b>100%</b>, and turn off headers and footers.</div>
+</div>
+
+<main class="stage">
+  {% for _ in copies %}
+    {% if fmt == 'a4' %}
+      <div class="sheet a4">
+        <div class="bands">{% for _ in '123' %}<div class="cut">{% include 'hospital/_id_band.html' with child=False %}</div>{% endfor %}</div>
+        <div class="row">{% for _ in '123' %}<div class="cut">{% include 'hospital/_id_card.html' %}</div>{% endfor %}</div>
+        <div class="row">{% for _ in '12345' %}<div class="cut">{% include 'hospital/_id_label.html' %}</div>{% endfor %}</div>
+        <div class="note">{{ p.full_name }} · {{ p.mrn }} · printed {{ printed|date:'d M Y H:i' }}. Cut along the dashed lines. Tape or laminate the wristband strip before fastening.</div>
+      </div>
+    {% elif fmt == 'card' %}<div class="sheet">{% include 'hospital/_id_card.html' %}</div>
+    {% elif fmt == 'label' %}<div class="sheet">{% include 'hospital/_id_label.html' %}</div>
+    {% else %}<div class="sheet">{% include 'hospital/_id_band.html' with child=is_child %}</div>
+    {% endif %}
+  {% endfor %}
+</main>
+
+<script>
+  // Shrink any line that is too long for its box (long names, many allergies) instead of cutting it off.
+  function fitAll() {
+    document.querySelectorAll('.fit').forEach(el => {
+      el.style.fontSize = '';
+      let size = parseFloat(getComputedStyle(el).fontSize), min = size * .55;
+      while (el.scrollWidth > el.clientWidth + 1 && size > min) { size -= .5; el.style.fontSize = size + 'px'; }
+      if (el.scrollWidth > el.clientWidth + 1) { el.style.whiteSpace = 'normal'; el.style.lineHeight = '1.05'; }
+    });
+  }
+  function printNow() {
+    fitAll();
+    {% if not auto_print %}fetch(location.pathname + location.search + (location.search ? '&' : '?') + 'print=1', {credentials: 'same-origin'}).catch(() => {});  // records the print in the audit log{% endif %}
+    window.print();
+  }
+  document.fonts.ready.then(fitAll);
+  {% if auto_print %}window.addEventListener('load', () => setTimeout(() => { fitAll(); window.print(); }, 350));{% endif %}
+</script>
+</body></html>
