@@ -1,4 +1,5 @@
 import json
+import re
 from decimal import Decimal
 from datetime import date, timedelta
 
@@ -16,7 +17,7 @@ from django.views.decorators.http import require_POST
 
 from .forms import (VITAL_FIELDS, AdmissionForm, AllergyForm, ConditionForm, EncounterForm, FormDefinitionForm,
                     LabOrderForm, PatientForm, ImagingOrderForm, ReferralNetworkForm, PrescriptionForm, PrescriptionItemFormSet, ReferralForm, TicketForm, WorkflowDefinitionForm)
-from .models import (Invoice, InvoiceLine, Payment, Tariff, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, MODALITIES, ImagingImage, ImagingOrder, StockRequest, FREQUENCIES, LabRequest, PrescriptionItem, BODY_SYSTEMS, LabCategory, LabParameter, LabResultValue, LabTest, StaffProfile,
+from .models import (Location, MedicationAdministration, QueueReset, Invoice, InvoiceLine, Payment, Tariff, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, MODALITIES, ImagingImage, ImagingOrder, StockRequest, FREQUENCIES, LabRequest, PrescriptionItem, BODY_SYSTEMS, LabCategory, LabParameter, LabResultValue, LabTest, StaffProfile,
                      Admission, Attendance, AuditEvent, Bed, Department, Encounter, FormDefinition, FormSubmission,
                      LabOrder, Medication, Patient, Prescription, QueueTicket, Referral, Signature, Ward,
                      WorkflowDefinition, WorkflowRun)
@@ -1064,6 +1065,8 @@ def error_403(request, exception=None):
 
 
 def error_404(request, exception=None):
+    if not request.user.is_authenticated:     # signed-out visitors (e.g. an expired ticket link) get a plain page
+        return render(request, 'hospital/error_public.html', {'code': 404, 'title': 'Not found', 'message': 'This link is not valid or has expired.'}, status=404)
     return render(request, 'hospital/error.html', {'code': 404, 'title': 'Record not found',
                                                    'message': 'The page or record you followed does not exist or was removed.'}, status=404)
 
@@ -1658,6 +1661,7 @@ def bed_detail(request, pk):
                                                             prescription__created_at__gte=current.admitted_at - timedelta(days=1)).select_related('medication')[:10],
                     'pending_labs': lab_requests_qs().filter(encounter__patient=e.patient, orders__status__in=['ordered', 'collected', 'processing']).distinct()[:5],
                     'stay_pct': min(100, round(current.los_days * 100 / 7))})
+        ctx['mar'], ctx['mar_counts'] = medication_chart(e.patient, current.admitted_at)
     return render(request, 'hospital/bed_detail.html', ctx)
 
 
@@ -1987,3 +1991,277 @@ def patient_story(request, pk):
         ev.append({'t': ts(a.created_at), 'kind': 'allergy', 'title': f'Allergy recorded: {a.substance}', 'detail': f'{a.reaction} · {a.severity}'})
     ev.sort(key=lambda x: x['t'])
     return render(request, 'hospital/story.html', {'p': p, 'events': ev, 'systems': dict(BODY_SYSTEMS)})
+
+
+# ---------------------------------------------------------------- QR access, check-in, queue numbering
+
+@login_required
+def patient_qr(request, mrn):
+    """Target of the patient QR code: opens the record after sign-in. Partners and unknown numbers get nothing."""
+    authorize(request)
+    p = get_object_or_404(Patient, mrn__iexact=mrn)
+    audit(request, 'qr_open', f'patient:{p.pk}')
+    return redirect('patient_chart', pk=p.pk)
+
+
+def find_patients(q):
+    q = (q or '').strip()
+    if not q:
+        return [], None
+    exact = Patient.objects.filter(mrn__iexact=q).first()
+    if exact:
+        return [exact], exact
+    digits = re.sub(r'\D', '', q)
+    qs = Patient.objects.all()
+    cond = Q(mrn__icontains=q) | Q(first_name__icontains=q) | Q(last_name__icontains=q)
+    if len(digits) >= 6:
+        cond |= Q(phone__icontains=digits[-7:])
+    return list(qs.filter(cond).order_by('last_name')[:15]), None
+
+
+@login_required
+def checkin(request):
+    """Returning patients: enter their patient number (or scan their QR), confirm, and issue a queue number."""
+    authorize(request, 'reception')
+    q = request.GET.get('q', '') or request.POST.get('q', '')
+    if request.method == 'POST':
+        p = get_object_or_404(Patient, pk=request.POST.get('patient'))
+        dept = get_object_or_404(Department, pk=request.POST.get('department'))
+        try:
+            priority = int(request.POST.get('priority') or 3)
+        except ValueError:
+            priority = 3
+        with transaction.atomic():
+            enc = p.encounters.filter(status='open').order_by('-created_at').first()
+            if not enc or request.POST.get('new_visit') == 'on':
+                enc = Encounter.objects.create(patient=p, department=dept, reason=(request.POST.get('reason') or f'{dept.name} visit')[:255])
+            t = QueueTicket.objects.create(patient=p, encounter=enc, department=dept, priority=priority if priority in (1, 2, 3, 4) else 3)
+            audit(request, 'checkin', f'ticket:{t.pk}', {'returning': True})
+        messages.success(request, f'{p.full_name} checked in · queue number {t.display_code}.')
+        return redirect('ticket_slip', pk=t.pk)
+    matches, exact = find_patients(q)
+    sel = exact or (matches[0] if len(matches) == 1 else None)
+    ctx = {'q': q, 'matches': matches, 'sel': sel, 'departments': Department.objects.order_by('name'), 'priorities': QueueTicket.PRIORITY}
+    if sel:
+        ctx.update({'open_enc': sel.encounters.filter(status='open').first(), 'last_enc': sel.encounters.order_by('-created_at').first(),
+                    'allergies': sel.allergies.filter(status='active'), 'waiting_ticket': QueueTicket.objects.filter(patient=sel, status__in=['waiting', 'called', 'in_service']).first(),
+                    'owing': sum(i.balance for i in sel.invoices.filter(status__in=['issued', 'partial']))})
+    return render(request, 'hospital/checkin.html', ctx)
+
+
+@login_required
+def ticket_slip(request, pk):
+    authorize(request)
+    t = get_object_or_404(QueueTicket.objects.select_related('patient', 'department'), pk=pk)
+    ahead, est = queue_position(t)
+    return render(request, 'hospital/ticket_slip.html', {'t': t, 'p': t.patient, 'ahead': ahead, 'est': est, 'share': ticket_share(request, t)})
+
+
+@login_required
+@require_POST
+def queue_reset(request):
+    authorize(request, 'reception')
+    dept = Department.objects.filter(pk=request.POST.get('department') or 0).first()
+    QueueReset.objects.create(department=dept, reset_by=request.user)
+    audit(request, 'queue_reset', f'department:{dept.pk if dept else "all"}')
+    messages.success(request, f'Queue numbers restart from 001 for {dept.name if dept else "all departments"}. Waiting patients keep their numbers.')
+    return redirect('queue')
+
+
+# ---------------------------------------------------------------- medication chart (bed page)
+
+DOSE_HOURS = {'OD': [8], 'BD': [8, 20], 'TDS': [8, 14, 20], 'QDS': [6, 12, 18, 22], 'Q4H': [2, 6, 10, 14, 18, 22], 'Q6H': [0, 6, 12, 18],
+              'Q8H': [6, 14, 22], 'Q12H': [8, 20], 'MANE': [7], 'NOCTE': [22]}
+
+
+def medication_chart(patient, since, day=None):
+    """Today's doses for an inpatient: what was given, what is due, what is late, and what is still to come."""
+    now = timezone.localtime()
+    day = day or now.date()
+    d0 = timezone.make_aware(timezone.datetime.combine(day, timezone.datetime.min.time()))
+    items = (PrescriptionItem.objects.filter(prescription__encounter__patient=patient, prescription__state__in=['signed', 'partial', 'dispensed'],
+                                             prescription__created_at__gte=since - timedelta(days=1)).exclude(availability='unavailable')
+             .select_related('medication', 'prescription').prefetch_related('administrations__given_by'))
+    rows = []
+    for it in items:
+        start = it.prescription.signed_at or it.prescription.created_at
+        end = start + timedelta(days=it.duration_days) if it.frequency not in ('PRN', 'STAT', 'ASDIR') else None
+        given = {timezone.localtime(a.scheduled_for).replace(second=0, microsecond=0): a for a in it.administrations.all()}
+        slots = []
+        if it.frequency in DOSE_HOURS:
+            for h in DOSE_HOURS[it.frequency]:
+                at = d0 + timedelta(hours=h)
+                if at < start - timedelta(hours=1) or (end and at > end):
+                    continue
+                a = given.get(timezone.localtime(at).replace(second=0, microsecond=0))
+                state = a.status if a else ('late' if at < now - timedelta(hours=1) else 'due' if at <= now + timedelta(minutes=60) else 'upcoming')
+                slots.append({'at': at, 'state': state, 'adm': a})
+        elif it.frequency == 'STAT':
+            a = next(iter(given.values()), None)
+            slots.append({'at': start, 'state': a.status if a else 'due', 'adm': a})
+        prn = [a for a in it.administrations.all() if it.frequency in ('PRN', 'ASDIR') and timezone.localtime(a.given_at).date() == day]
+        if not slots and it.frequency not in ('PRN', 'ASDIR', 'STAT'):
+            continue                                     # course finished or not started on this day
+        rows.append({'item': it, 'slots': slots, 'prn': prn, 'is_prn': it.frequency in ('PRN', 'ASDIR')})
+    counts = {'given': sum(s['state'] == 'given' for r in rows for s in r['slots']), 'due': sum(s['state'] == 'due' for r in rows for s in r['slots']),
+              'late': sum(s['state'] == 'late' for r in rows for s in r['slots']), 'upcoming': sum(s['state'] == 'upcoming' for r in rows for s in r['slots'])}
+    return rows, counts
+
+
+@login_required
+@require_POST
+def administer(request, item_pk):
+    authorize(request, 'clinical')
+    it = get_object_or_404(PrescriptionItem.objects.select_related('medication', 'prescription__encounter'), pk=item_pk)
+    status = request.POST.get('status') if request.POST.get('status') in dict(MedicationAdministration.STATUS) else 'given'
+    from django.utils.dateparse import parse_datetime
+    when = parse_datetime(request.POST.get('scheduled_for') or '') or timezone.now()
+    if timezone.is_naive(when):
+        when = timezone.make_aware(when)
+    when = when.replace(second=0, microsecond=0)
+    note = request.POST.get('note', '').strip()[:200]
+    if status != 'given' and not note:
+        messages.error(request, 'Say why the dose was not given.')
+    elif MedicationAdministration.objects.filter(item=it, scheduled_for=when).exists():
+        messages.error(request, 'This dose has already been recorded.')
+    else:
+        MedicationAdministration.objects.create(item=it, scheduled_for=when, status=status, given_by=request.user, note=note)
+        audit(request, 'administer', f'prescription_item:{it.pk}', {'status': status})
+        messages.success(request, f'{it.medication} · {"given" if status == "given" else dict(MedicationAdministration.STATUS)[status].lower()} at {timezone.localtime().strftime("%H:%M")}.')
+    return redirect(request.POST.get('next') or 'beds')
+
+
+# ---------------------------------------------------------------- hospital health intelligence
+
+@login_required
+def health_dashboard(request):
+    authorize(request, 'all')
+    from .health import health_data
+    days = int(request.GET.get('days', 90)) if request.GET.get('days', '90').isdigit() else 90
+    days = days if days in (30, 90, 180, 365) else 90
+    return render(request, 'hospital/health.html', {'data': health_data(days), 'days': days})
+
+
+# ---------------------------------------------------------------- queue tickets: thermal print, sharing, public status
+
+def ticket_token(t):
+    from django.core import signing
+    return signing.dumps(t.pk, salt='medflow.ticket')
+
+
+def ticket_share(request, t):
+    """Text and links for sending a ticket to the patient. The status link shows no name or medical details."""
+    from urllib.parse import quote
+    status_url = request.build_absolute_uri(reverse('ticket_status', args=[ticket_token(t)]))
+    text = (f'MedFlow Hospital · your queue number is {t.display_code} ({t.department}). '
+            f'Issued {timezone.localtime(t.created_at):%d %b %H:%M}. Follow your place in the queue: {status_url}')
+    digits = re.sub(r'\D', '', t.patient.phone or '')
+    if len(digits) == 7:
+        digits = '220' + digits                           # local Gambian number
+    return {'status_url': status_url, 'text': text,
+            'whatsapp': f'https://wa.me/{digits}?text={quote(text)}' if digits else f'https://wa.me/?text={quote(text)}',
+            'email': f'mailto:{t.patient.email}?subject={quote("Your queue number " + t.display_code)}&body={quote(text)}', 'has_phone': bool(digits)}
+
+
+def queue_position(t):
+    ahead = QueueTicket.objects.filter(department=t.department, status='waiting').filter(
+        Q(priority__lt=t.priority) | Q(priority=t.priority, created_at__lt=t.created_at)).count() if t.status == 'waiting' else 0
+    recent = list(QueueTicket.objects.filter(department=t.department, called_at__isnull=False, created_at__gte=timezone.now() - timedelta(days=7))
+                  .values_list('created_at', 'called_at')[:200])
+    per = (sum((k - c).total_seconds() for c, k in recent) / len(recent) / 60) if recent else 15
+    est = round(min(240, max(5, per * .4)) * ahead) if ahead else 0     # rough: average wait split across those ahead
+    return ahead, est
+
+
+@login_required
+def ticket_thermal(request, pk):
+    """Bare page sized for 80 mm or 58 mm receipt printers; prints itself."""
+    authorize(request)
+    t = get_object_or_404(QueueTicket.objects.select_related('patient', 'department'), pk=pk)
+    width = '58' if request.GET.get('w') == '58' else '80'
+    ahead, est = queue_position(t)
+    import segno
+    from django.utils.safestring import mark_safe
+    share = ticket_share(request, t)
+    qr = mark_safe(segno.make(share['status_url'], error='m').svg_inline(scale=3 if width == '80' else 2, border=1))
+    return render(request, 'hospital/ticket_thermal.html', {'t': t, 'width': width, 'ahead': ahead, 'est': est, 'qr': qr})
+
+
+def ticket_status(request, token):
+    """Public page for the patient's phone: queue number, department, people ahead. No login, no personal details."""
+    from django.core import signing
+    try:
+        pk = signing.loads(token, salt='medflow.ticket', max_age=60 * 60 * 24)
+    except signing.BadSignature:
+        from django.http import Http404
+        raise Http404
+    t = get_object_or_404(QueueTicket.objects.select_related('department'), pk=pk)
+    ahead, est = queue_position(t)
+    return render(request, 'hospital/ticket_status.html', {'t': t, 'ahead': ahead, 'est': est,
+                                                           'serving': QueueTicket.objects.filter(department=t.department, status__in=['called', 'in_service']).order_by('-called_at').first()})
+
+
+@login_required
+def health_explore(request):
+    """Drill-down: filter by diagnosis, town, age band and sex; every chart recomputes for that slice."""
+    authorize(request, 'all')
+    from .health import explore_data
+    data = explore_data(**_explore_filters(request.GET))
+    data.pop('points', None)
+    return render(request, 'hospital/health_explore.html', {'data': data})
+
+
+def _explore_filters(g):
+    days = int(g.get('days')) if (g.get('days') or '').isdigit() and int(g.get('days')) in (30, 90, 180, 365) else 90
+    age = g.get('age', '') if g.get('age', '').isdigit() and int(g.get('age')) < 9 else ''
+    return {'days': days, 'dx': g.get('dx', '')[:40], 'town': g.get('town', '')[:60], 'age': age, 'sex': g.get('sex', '') if g.get('sex') in ('M', 'F') else ''}
+
+
+@login_required
+def health_map_view(request):
+    """A real map (OpenStreetMap via Folium) of patients by location for the current filters; shown in an iframe."""
+    authorize(request, 'all')
+    from django.http import HttpResponse
+    from .health import explore_data
+    from .maps import health_map
+    f = _explore_filters(request.GET)
+    data = explore_data(**f)
+    resp = HttpResponse(health_map(data['points'], reverse('health_explore'), f, active=f['town']))
+    resp['Referrer-Policy'] = 'strict-origin-when-cross-origin'   # tile servers see only this site's origin
+    return resp
+
+
+@login_required
+def locations(request):
+    """Towns and areas used for patient addresses and maps. Add one by name and click its position on the map."""
+    authorize(request, 'all')
+    can_edit = role_of(request.user) in ('admin', 'management', 'reception')
+    edit = Location.objects.filter(pk=request.GET.get('edit') or 0).first()
+    if request.method == 'POST':
+        if not can_edit:
+            raise PermissionDenied('Only reception, management or admin can change locations.')
+        from decimal import Decimal, InvalidOperation
+        loc = Location.objects.filter(pk=request.POST.get('id') or 0).first() or Location()
+        try:
+            loc.name = request.POST.get('name', '').strip()[:120]
+            loc.kind = 'area' if request.POST.get('parent') else 'town'
+            loc.parent = Location.objects.filter(pk=request.POST.get('parent') or 0, kind='town').first()
+            loc.region = loc.parent.region if loc.parent else (request.POST.get('region') if request.POST.get('region') in dict(Location.REGIONS) else 'other')
+            loc.latitude, loc.longitude = Decimal(request.POST['latitude']), Decimal(request.POST['longitude'])
+            if not loc.name or not (-90 <= loc.latitude <= 90 and -180 <= loc.longitude <= 180):
+                raise ValueError
+            loc.save()
+            audit(request, 'location_save', f'location:{loc.pk}', {'name': loc.name})
+            messages.success(request, f'{loc} saved. It can now be chosen for patients and appears on the maps.')
+            return redirect('locations')
+        except (KeyError, ValueError, InvalidOperation):
+            messages.error(request, 'Give a name and click the map (or type latitude and longitude) to place it.')
+        except Exception:
+            messages.error(request, 'That name already exists here.')
+    locs = Location.objects.select_related('parent').annotate(n=Count('patients')).order_by('region', 'parent__name', 'name')
+    resp = render(request, 'hospital/locations.html', {
+        'tiles': __import__('hospital.maps', fromlist=['tile_layers']).tile_layers(),
+        'locs': locs, 'towns': Location.objects.filter(kind='town').order_by('name'), 'regions': Location.REGIONS, 'edit': edit, 'can_edit': can_edit,
+        'geo': [{'id': l.pk, 'name': str(l), 'lat': float(l.latitude), 'lon': float(l.longitude), 'kind': l.kind, 'n': l.n} for l in locs]})
+    resp['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return resp

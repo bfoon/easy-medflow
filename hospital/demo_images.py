@@ -112,3 +112,37 @@ def ultrasound_abdomen(gallstones=True, seed=9):
             d.rectangle([cx - 11, cy + 13, cx + 11, h], fill=8)                  # acoustic shadow
     img = Image.composite(img.filter(ImageFilter.GaussianBlur(1.2)), Image.new('L', (w, h), 0), sector).convert('RGB')
     d = ImageDraw.Draw(img); d.text((14, 14), 'RUQ · gallbladder', fill=(200, 200, 200)); _stamp(d, w, h); return _png(img)
+
+
+def mri_brain(lesion=None, seed=11):
+    """Axial T2-style slice. lesion: None, 'infarct' (bright wedge) or 'meningitis' (bright meninges)."""
+    random.seed(seed); w, h = 560, 560
+    img = Image.new('L', (w, h), 0); d = ImageDraw.Draw(img)
+    d.ellipse([80, 60, 480, 500], fill=40)                      # skull (dark on T2)
+    d.ellipse([96, 76, 464, 484], fill=150 if lesion == 'meningitis' else 110)   # CSF / meninges
+    d.ellipse([106, 86, 454, 474], fill=95)                     # cortex
+    d.ellipse([150, 130, 410, 430], fill=70)                    # white matter
+    for x0 in (170, 290):                                       # gyri
+        for i in range(6):
+            d.arc([x0, 130 + i * 48, x0 + 100, 180 + i * 48], 0, 360, fill=100, width=4)
+    d.ellipse([238, 220, 268, 300], fill=235); d.ellipse([292, 220, 322, 300], fill=235)   # ventricles (bright fluid)
+    if lesion == 'infarct':
+        d.pieslice([120, 140, 300, 400], 150, 220, fill=210)    # bright wedge in the left MCA territory
+    img = Image.blend(img.filter(ImageFilter.GaussianBlur(2)), Image.effect_noise((w, h), 25).convert('L'), .08).convert('RGB')
+    d = ImageDraw.Draw(img); d.text((14, 14), 'MRI · axial T2', fill=(220, 220, 220)); _stamp(d, w, h); return _png(img)
+
+
+def eeg_strip(spikes=True):
+    w, h = 900, 380
+    img = Image.new('RGB', (w, h), (255, 255, 255)); d = ImageDraw.Draw(img)
+    for x in range(0, w, 45): d.line([x, 0, x, h], fill=(230, 236, 240))
+    leads = ['Fp1-F3', 'F3-C3', 'C3-P3', 'P3-O1', 'Fp2-F4', 'F4-C4', 'C4-P4', 'P4-O2']
+    for li, name in enumerate(leads):
+        base = 30 + li * 42; pts = []
+        for x in range(80, w):
+            v = math.sin(x * .18 + li) * 4 + math.sin(x * .05 + li * 2) * 3
+            if spikes and 420 < x < 600 and (x - 420) % 30 < 6:           # generalised 3 Hz spike-wave
+                v += -16 if (x - 420) % 30 < 3 else 10
+            pts.append((x, base + v))
+        d.line(pts, fill=(30, 30, 60), width=1); d.text((6, base - 6), name, fill=(90, 90, 110))
+    d.text((80, h - 40), '10 s/page · 7 µV/mm', fill=(90, 90, 110)); _stamp(d, w, h); return _png(img)

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="20"><title>Queue {{ t.display_code }}</title>
+<style>
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#0F2C3F;color:#fff;min-height:100vh;display:grid;place-items:center;text-align:center}
+  .card{padding:28px 22px;max-width:380px;width:100%}
+  .h{color:#9FBFCF;font-weight:600;letter-spacing:.04em}
+  .num{font-size:5rem;font-weight:800;line-height:1;margin:14px 0 6px;letter-spacing:-.03em}
+  .dept{font-size:1.2rem;color:#CFE2EA}
+  .state{display:inline-block;margin-top:18px;padding:10px 18px;border-radius:99px;font-weight:700;font-size:1.1rem}
+  .waiting{background:#18405A}.called,.in_service{background:#3FE0B0;color:#0F2C3F;animation:p 1.4s infinite}.completed,.cancelled,.skipped{background:#5A6F7D}
+  @keyframes p{50%{box-shadow:0 0 0 12px rgba(63,224,176,.15)}}
+  .ahead{font-size:2.6rem;font-weight:800;margin-top:22px}.small{color:#9FBFCF;font-size:.9rem}
+</style></head>
+<body><main class="card">
+  <div class="h">MEDFLOW HOSPITAL · QUEUE</div>
+  <div class="num">{{ t.display_code }}</div>
+  <div class="dept">{{ t.department }}</div>
+  {% if t.status == 'waiting' %}
+    <div class="ahead">{{ ahead }}</div><div class="small">{% if ahead == 1 %}person{% else %}people{% endif %} ahead of you{% if est %} · about {{ est }} minutes{% endif %}</div>
+    <div class="state waiting">Please wait</div>
+    {% if serving %}<p class="small" style="margin-top:18px">Now serving {{ serving.display_code }}</p>{% endif %}
+  {% elif t.status == 'called' or t.status == 'in_service' %}
+    <div class="state {{ t.status }}">It's your turn{% if t.counter %} · go to {{ t.counter }}{% endif %}</div>
+  {% elif t.status == 'skipped' %}<div class="state skipped">You were called but missed. Please see the desk.</div>
+  {% else %}<div class="state completed">This ticket is finished. Thank you.</div>{% endif %}
+  <p class="small" style="margin-top:28px">This page updates by itself every 20 seconds.</p>
+</main></body></html>

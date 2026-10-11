@@ -6,8 +6,8 @@
   const EV = JSON.parse($('#story-data').textContent), SYS = JSON.parse($('#story-systems').textContent);
   if (!EV.length) { $('#s-card').innerHTML = '<div class="empty">No records yet.</div>'; return; }
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const SPOTS = {brain: [200, 58], thyroid: [200, 150], lungs: [160, 250], heart: [214, 268], blood: [118, 322], liver: [168, 322], stomach: [244, 332],
-    pancreas: [192, 364], kidneys: [240, 404], bladder: [200, 468], reproductive: [200, 497], bone: [168, 640], immune: [252, 212]};
+  const SPOTS = {brain: [200, 58], thyroid: [200, 150], lungs: [160, 250], heart: [214, 268], blood: [86, 336], liver: [168, 322], stomach: [244, 332],
+    pancreas: [192, 364], kidneys: [240, 404], bladder: [200, 468], reproductive: [200, 497], bone: [150, 640], immune: [252, 212]};
   const KIND = {visit: ['bi-clipboard2-pulse', 'Visit', '#0F7B78'], lab: ['bi-droplet-half', 'Lab results', '#4A5FC1'], rx: ['bi-capsule', 'Prescription', '#E0912A'],
     imaging: ['bi-radioactive', 'Imaging', '#0E7490'], admission: ['bi-hospital', 'Admission', '#C8323F'], referral: ['bi-signpost-split', 'Referral', '#8A4A8F'], allergy: ['bi-exclamation-triangle', 'Allergy', '#C8323F']};
   const t0 = new Date(EV[0].t).getTime(), t1 = Date.now(), span = Math.max(1, t1 - t0);

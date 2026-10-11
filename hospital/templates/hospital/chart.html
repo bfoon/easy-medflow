@@ -30,6 +30,7 @@
     <div class="dropdown">
       <button class="btn btn-ghost" aria-expanded="false" aria-label="More actions" onclick="this.nextElementSibling.classList.toggle('show')"><i class="bi bi-three-dots"></i></button>
       <ul class="dropdown-menu dropdown-menu-end" style="right:0;left:auto;top:110%">
+        <li><button class="dropdown-item" onclick="mfModal('Patient QR code', document.getElementById('qr-tpl').innerHTML)">Patient QR code &amp; wristband</button></li>
         <li><button class="dropdown-item" data-drawer="{% url 'allergy_new' p.pk %}" data-title="Record allergy">Record allergy</button></li>
         <li><button class="dropdown-item" data-drawer="{% url 'condition_new' p.pk %}" data-title="Add condition">Add condition</button></li>
         <li><button class="dropdown-item" data-drawer="{% url 'ticket_new' %}?patient={{ p.pk }}" data-title="Queue ticket">Add to queue</button></li>
@@ -89,7 +90,7 @@
       {% if open_encounter %}<button class="btn btn-sm btn-primary mb-3" data-drawer="{% url 'prescription_new' %}?encounter={{ open_encounter.pk }}" data-title="New prescription"><i class="bi bi-plus-lg"></i>Prescribe</button>{% endif %}
       {% for x in prescriptions %}
       <a class="rx-card linkcard" href="{% url 'prescription_detail' x.pk %}"><div class="d-flex gap-2 align-items-center"><b>{{ x.number }}</b><span class="small muted">{{ x.created_at|date:'j M Y' }}</span><span class="tag {{ x.state|tone }} ms-auto">{{ x.get_state_display }}</span></div>
-        <ol class="rx-items">{% for i in x.items.all %}<li><span class="med">{{ i.medication }}</span><span class="dir">{{ i.directions }}</span><span class="qty">× {{ i.quantity }}</span>{% if i.availability == 'unavailable' %} <span class="tag red">Not available</span>{% elif i.availability == 'ordered' %} <span class="tag indigo">Ordered</span>{% endif %}</li>{% endfor %}</ol></a>
+        <ol class="rx-items">{% for i in x.items.all %}<li><span class="med">{{ i.medication|med_icon:i.route }}{{ i.medication }}</span><span class="dir">{{ i.directions }}</span><span class="qty">× {{ i.quantity }}</span>{% if i.availability == 'unavailable' %} <span class="tag red">Not available</span>{% elif i.availability == 'ordered' %} <span class="tag indigo">Ordered</span>{% endif %}</li>{% endfor %}</ol></a>
       {% empty %}<div class="empty">No prescriptions.</div>{% endfor %}
     </div>
 
@@ -181,5 +182,7 @@
     </section>
   </div>
 </div>
+<template id="qr-tpl"><div class="qr-card print-area"><div class="wrist"><div>{% patient_qr p 5 %}</div><div class="text-start"><b class="display" style="font-size:1.3rem">{{ p.full_name }}</b><div>{{ p.mrn }}</div><div class="small">{{ p.get_sex_display }} · born {{ p.dob|date:'j M Y' }}{% if p.blood_group %} · {{ p.blood_group }}{% endif %}</div>{% if allergies %}<div class="small text-danger fw-bold mt-1">ALLERGIES: {% for a in allergies %}{% if a.status == 'active' %}{{ a.substance }} {% endif %}{% endfor %}</div>{% endif %}</div></div>
+  <p class="small muted mt-2 mb-2">Scanning opens this record after staff sign-in. It contains only a link, no medical details.</p><button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i>Print wristband / card</button></div></template>
 {% endblock %}
 {% block scripts %}<script>document.addEventListener('click',e=>{if(!e.target.closest('.dropdown'))document.querySelectorAll('.dropdown-menu.show').forEach(m=>m.classList.remove('show'))})</script>{% endblock %}

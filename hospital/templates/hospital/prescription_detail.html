@@ -18,7 +18,7 @@
       <div class="rx-row-main">
         <span class="rx-n">{{ forloop.counter }}</span>
         <div class="flex-fill">
-          <div class="med">{{ i.medication }}</div>
+          <div class="med">{{ i.medication|med_icon:i.route }}{{ i.medication }}</div>
           <div class="dir">{{ i.directions }}</div>
           <div class="meta">
             <span>Qty <b>{{ i.quantity }}</b></span>

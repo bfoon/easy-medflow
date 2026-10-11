@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
 
-from .models import (Allergy, Invoice, Payment, Admission, Bed, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingOrder, StockRequest, LabRequest, PrescriptionItem, LabParameter, LabResultValue, Admission, Allergy, Bed, Department, Encounter, FormDefinition, FormSubmission, LabOrder, LabTest,
+from .models import (Location, MedicationAdministration, QueueTicket, Allergy, Invoice, Payment, Admission, Bed, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingOrder, StockRequest, LabRequest, PrescriptionItem, LabParameter, LabResultValue, Admission, Allergy, Bed, Department, Encounter, FormDefinition, FormSubmission, LabOrder, LabTest,
                      Medication, Patient, Prescription, QueueTicket, Referral, Signature, StaffProfile, StockBatch,
                      WorkflowDefinition, WorkflowRun)
 from .services import availability, prescription_warnings
@@ -623,3 +623,170 @@ class DecisionSupportTests(Base):
         self.assertContains(c.get(f'/patients/{self.patient.pk}/story/'), 'story-data')
         self.assertContains(c.get(f'/encounters/{e.pk}/'), 'Clinical safety review')
         self.assertEqual(self.client.get(f'/patients/{self.patient.pk}/story/').status_code, 200)
+
+
+class CheckinQueueTests(Base):
+    def test_returning_patient_checks_in_by_number(self):
+        c = self.as_('reception')
+        page = c.get('/checkin/', {'q': self.patient.mrn.lower()})
+        self.assertContains(page, self.patient.full_name); self.assertContains(page, '<svg')     # found by number, QR shown
+        r = c.post('/checkin/', {'patient': self.patient.pk, 'department': self.dept.pk, 'priority': 3, 'reason': 'Follow-up'})
+        t = QueueTicket.objects.get()
+        self.assertRedirects(r, f'/queue/tickets/{t.pk}/slip/')
+        self.assertEqual((t.display_code, t.encounter.patient), ('OU001', self.patient))
+        self.assertContains(c.get(f'/queue/tickets/{t.pk}/slip/'), 'OU001')
+
+    def test_numbers_restart_daily_and_on_demand(self):
+        mk = lambda: QueueTicket.objects.create(patient=self.patient, encounter=self.encounter(), department=self.dept)
+        self.assertEqual([mk().display_code for _ in range(2)], ['OU001', 'OU002'])
+        old = mk(); QueueTicket.objects.filter(pk=old.pk).update(created_at=timezone.now() - timedelta(days=1))
+        self.assertEqual(mk().display_code, 'OU003')         # yesterday's ticket no longer counts
+        self.as_('reception').post('/queue/restart/', {'department': self.dept.pk})
+        self.assertEqual(mk().display_code, 'OU001')         # manual restart
+
+    def test_qr_link_opens_record_only_when_signed_in(self):
+        self.assertEqual(self.client.get(f'/p/{self.patient.mrn}/').status_code, 302)
+        self.assertRedirects(self.as_('nurse').get(f'/p/{self.patient.mrn}/'), f'/patients/{self.patient.pk}/')
+
+
+class MedicationChartTests(Base):
+    def test_doses_given_late_and_not_given(self):
+        from hospital.templatetags.medflow import med_kind
+        self.assertEqual(med_kind(Medication.objects.get(name='Ceftriaxone')), 'injection')
+        self.assertEqual(med_kind(Medication.objects.get(name='Amoxicillin')), 'capsule')
+        self.assertEqual(med_kind(Medication.objects.get(name='Paracetamol'), 'iv'), 'injection')
+        e = self.encounter(); bed = Bed.objects.filter(state='available').first()
+        Admission.objects.create(encounter=e, bed=bed); bed.state = 'occupied'; bed.save()
+        rx = Prescription.objects.create(encounter=e, allergy_reviewed=True, state='signed', signed_at=timezone.now() - timedelta(days=1))
+        Prescription.objects.filter(pk=rx.pk).update(created_at=timezone.now() - timedelta(days=1))
+        it = PrescriptionItem.objects.create(prescription=rx, medication=self.med, frequency='Q6H', duration_days=5, quantity=20)
+        c = self.as_('nurse')
+        page = c.get(f'/beds/{bed.pk}/'); self.assertContains(page, 'Medication chart')
+        slot = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
+        c.post(f'/beds/medication/{it.pk}/', {'scheduled_for': slot.isoformat(), 'status': 'given'})
+        c.post(f'/beds/medication/{it.pk}/', {'scheduled_for': slot.isoformat(), 'status': 'given'})     # duplicate refused
+        self.assertEqual(MedicationAdministration.objects.count(), 1)
+        c.post(f'/beds/medication/{it.pk}/', {'scheduled_for': (slot + timedelta(hours=6)).isoformat(), 'status': 'refused'})
+        self.assertEqual(MedicationAdministration.objects.count(), 1)                                  # needs a reason
+        c.post(f'/beds/medication/{it.pk}/', {'scheduled_for': (slot + timedelta(hours=6)).isoformat(), 'status': 'refused', 'note': 'Vomiting'})
+        self.assertEqual(MedicationAdministration.objects.filter(status='refused').count(), 1)
+        from hospital.views import medication_chart
+        rows, counts = medication_chart(self.patient, timezone.now() - timedelta(days=1))
+        self.assertEqual(counts['given'], 1); self.assertEqual(len(rows[0]['slots']), 4)
+        self.assertEqual(self.as_('reception').post(f'/beds/medication/{it.pk}/', {'status': 'given'}).status_code, 403)
+
+
+class HealthDashboardTests(Base):
+    def test_dashboard_and_outbreak_signal(self):
+        from hospital.health import health_data
+        for i in range(14):
+            e = self.encounter(); e.diagnosis = 'Uncomplicated malaria'; e.save()
+        d = health_data(90)
+        self.assertEqual(d['diagnoses'][0]['label'], 'Malaria')
+        self.assertEqual(d['signals'][0]['label'], 'Malaria')
+        self.assertIn('Malaria rising', [a['title'] for a in d['advice']])
+        self.assertContains(self.as_('doctor').get('/health/?days=30'), 'health-data')
+
+
+class TicketSharingTests(Base):
+    def setUp(self):
+        self.patient.phone = '7712345'; self.patient.email = 'awa@example.com'; self.patient.save()
+        self.t = QueueTicket.objects.create(patient=self.patient, encounter=self.encounter(), department=self.dept)
+
+    def test_slip_offers_thermal_whatsapp_and_email(self):
+        page = self.as_('reception').get(f'/queue/tickets/{self.t.pk}/slip/')
+        self.assertContains(page, 'https://wa.me/2207712345?text=')            # local number gets the Gambia country code
+        self.assertContains(page, 'mailto:awa@example.com')
+        for w in ('80', '58'):
+            r = self.client.get(f'/queue/tickets/{self.t.pk}/thermal/?w={w}')
+            self.assertContains(r, f'size: {w}mm auto'); self.assertContains(r, self.t.display_code)
+
+    def test_public_status_page_needs_no_login_and_shows_no_name(self):
+        from hospital.views import ticket_token
+        url = f'/t/{ticket_token(self.t)}/'
+        r = self.client.get(url)                                                # not signed in
+        self.assertContains(r, self.t.display_code)
+        self.assertNotContains(r, self.patient.first_name); self.assertNotContains(r, self.patient.mrn)
+        self.assertEqual(self.client.get('/t/made-up-token/').status_code, 404)
+
+
+class ExploreTests(Base):
+    def test_drill_down_filters(self):
+        from hospital.health import explore_data
+        p2 = Patient.objects.create(first_name='B', last_name='C', dob=date(2020, 1, 1), sex='M', address='1 Road, Brikama')
+        for p, dx in ((self.patient, 'Malaria'), (self.patient, 'Pneumonia'), (p2, 'Malaria')):
+            Encounter.objects.create(patient=p, reason='x', diagnosis=dx)
+        self.assertEqual(explore_data(90, dx='malaria')['summary']['visits'], 2)
+        d = explore_data(90, dx='malaria', town='Brikama')
+        self.assertEqual(d['summary']['visits'], 1); self.assertEqual(next(t['xy'] for t in d['towns'] if t['town'] == 'Brikama'), (-16.65, 13.27))
+        self.assertEqual(explore_data(90, age='0')['summary']['patients'], 1)    # the under-10 only
+        self.assertEqual(explore_data(90, sex='F')['summary']['patients'], 1)
+        page = self.as_('doctor').get('/health/explore/?dx=malaria&town=Brikama&age=0&sex=M&days=30')
+        self.assertContains(page, 'explore-data')
+
+
+class LocationMapTests(Base):
+    def test_locations_loaded_and_patients_linked_from_address(self):
+        from hospital.management.commands.bootstrap_hospital import link_patient_locations
+        self.assertTrue(Location.objects.filter(name='Banjul', kind='town').exists())
+        self.assertEqual(Location.objects.get(name='Bundung').region, 'kanifing')
+        self.assertEqual(Location.objects.get(name='Nema').parent.name, 'Brikama')
+        self.patient.address = '12 Main Road, Brikama'; self.patient.save()
+        link_patient_locations(); self.patient.refresh_from_db()
+        self.assertEqual(self.patient.location.name, 'Brikama')
+
+    def test_add_location_by_name_and_map_click(self):
+        U = get_user_model(); u = U.objects.create_user('mgr', password=PW); StaffProfile.objects.create(user=u, role='management')
+        c = self.as_('mgr')
+        brikama = Location.objects.get(name='Brikama', parent=None)
+        c.post('/health/locations/', {'name': 'Kabafita', 'parent': brikama.pk, 'latitude': '13.2650', 'longitude': '-16.6550'})
+        loc = Location.objects.get(name='Kabafita')
+        self.assertEqual((loc.kind, loc.parent, loc.region, str(loc)), ('area', brikama, 'west_coast', 'Kabafita, Brikama'))
+        c.post('/health/locations/', {'name': 'Nowhere', 'latitude': 'abc', 'longitude': '1'})
+        self.assertFalse(Location.objects.filter(name='Nowhere').exists())
+        self.client.logout()
+        self.assertEqual(self.as_('doctor').post('/health/locations/', {'name': 'X', 'latitude': '13', 'longitude': '-16'}).status_code, 403)
+
+    def test_patient_form_offers_locations_and_map_renders(self):
+        page = self.as_('reception').get('/patients/new/')
+        self.assertContains(page, 'Serrekunda · Westfield'); self.assertContains(page, '<optgroup label="Kanifing">')
+        self.patient.location = Location.objects.get(name='Basse', parent=None); self.patient.save()
+        Encounter.objects.create(patient=self.patient, reason='x', diagnosis='Malaria')
+        html = self.client.get('/health/map/?dx=malaria').content.decode()
+        self.assertIn('/static/hospital/vendor/leaflet/leaflet.js', html)      # Leaflet served locally
+        self.assertNotIn('cdn.jsdelivr.net/npm/leaflet', html)
+        self.assertIn('Basse', html); self.assertIn('openstreetmap', html.lower())
+        from hospital.health import explore_data
+        pts = explore_data(90, dx='malaria')['points']
+        self.assertEqual((pts[0]['town'], pts[0]['n']), ('Basse', 1))
+        self.assertContains(self.client.get('/health/locations/'), 'Basse')
+
+
+class DatabaseCheckTests(TestCase):
+    def test_demo_commands_refuse_an_out_of_date_database(self):
+        from io import StringIO
+        from unittest import mock
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+        from hospital.management.dbcheck import pending_migrations
+        self.assertEqual(pending_migrations(), [])                        # the test database is fully migrated
+        with mock.patch('hospital.management.dbcheck.pending_migrations', return_value=['hospital.0011_locations']):
+            with self.assertRaises(CommandError) as ctx:
+                call_command('seed_demo_extras', force=True, stdout=StringIO())
+        self.assertIn('hospital.0011_locations', str(ctx.exception)); self.assertIn('migrate', str(ctx.exception))
+
+
+class MapTileTests(Base):
+    def test_tiles_are_requested_with_the_site_origin(self):
+        c = self.as_('doctor')
+        r = c.get('/health/map/')
+        self.assertEqual(r['Referrer-Policy'], 'strict-origin-when-cross-origin')     # origin only, never the page path
+        html = r.content.decode()
+        self.assertIn('"referrerPolicy": "strict-origin-when-cross-origin"', html)
+        self.assertIn('World_Street_Map', html); self.assertIn('World_Imagery', html); self.assertIn('tile.openstreetmap.org', html)
+        self.assertNotIn('cartocdn', html)                                                          # CARTO now needs a paid key
+        from django.test import override_settings
+        with override_settings(MAPTILER_KEY='abc123'):
+            self.assertIn('api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key=abc123', c.get('/health/map/').content.decode())
+        self.assertEqual(c.get('/health/locations/')['Referrer-Policy'], 'strict-origin-when-cross-origin')
+        self.assertEqual(c.get('/patients/')['Referrer-Policy'], 'same-origin')       # other pages keep the strict policy

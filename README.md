@@ -218,6 +218,60 @@ de-identified context (no name, record number, phone, address, date of birth, re
 server to an approved service; *What AI would see* on the visit page shows exactly that payload. Without AI the
 rule-based checks still run. All suggestions are advisory and need clinician review.
 
+## Check-in, queue numbers and QR codes
+
+**Check in** (menu) is for returning patients: type or scan their patient number (or search by name or phone),
+confirm the person, choose the department and triage, and print the queue ticket. No re-registration. Queue numbers
+(e.g. `OU001`) restart automatically every day, and *Restart numbers* on the Queue page restarts them on demand for
+one department or all. Patients already waiting keep their numbers.
+
+Every patient has a QR code (patient page → ⋯ → *Patient QR code & wristband*, the bed page, check-in and the queue
+ticket). It contains only a link; opening it requires staff sign-in. Print it on a wristband or card.
+
+**Queue tickets** print on a regular printer or on **thermal receipt printers (80 mm or 58 mm)**, and can be sent
+to the patient by **WhatsApp** (to their phone number; local 7-digit numbers get +220) or **email** (add the
+patient's email on their record), or the link copied. The message contains the queue number and a live status link
+the patient can open on their phone without signing in: it shows only the number, department, people ahead and an
+estimated wait, never their name or medical details, and it expires after 24 hours.
+
+## Medication chart (bed page)
+
+For each inpatient, the bed page shows today's doses for every active medicine: given (who and when), due now,
+late, not given (refused, held, missed or unavailable, with a reason) and still to come. Tap a dose to record it;
+"when required" medicines have a *Give dose* button. Icons show how each medicine is given: tablet, capsule,
+injection, infusion, syrup, sachet, cream, drops or inhaler.
+
+## Health intelligence
+
+An interactive dashboard for planning and public-health decisions: disease trends by week (click a diagnosis to
+show or hide it, hover for numbers), outbreak signals (this week against the previous four), malaria test
+positivity, age and sex of patients seen, where patients come from and their malaria share, outcomes by diagnosis,
+antibiotic use, waiting times, admissions and chronic disease control, with plain-language advice generated from
+the indicators. Anonymous counts and rates only; choose 30 days to 1 year.
+
+**Real maps.** The health maps are real OpenStreetMap maps built with Folium (bubbles sized by patients, colour by
+share, a popup with an *Explore* link, a heat-map layer and a scale bar). Leaflet is served by MedFlow itself; only the
+map tiles need internet. Map tiles are requested with only the site's address as Referer, as OpenStreetMap's
+tile policy requires; the layer box offers Esri street map (default), Esri satellite and OpenStreetMap, none needing a key. Set
+`MAPTILER_KEY` (free key from maptiler.com) to make MapTiler the main map, or `MAP_TILE_URL` and
+`MAP_TILE_ATTRIBUTION` for your own provider. **Locations** (Health intelligence → Locations) lists the towns and areas used for patient
+addresses and maps; about 50 Gambian towns and areas are included. Add one by typing its name, choosing its region
+(or the town it is an area of, e.g. Bundung or Westfield), and clicking its place on the map (or dragging the
+marker). Patients choose their town or area from a grouped list; existing patients are linked automatically from the
+town written at the end of their address.
+
+**Explore** (button on the dashboard, or click a diagnosis, town or outbreak signal) drills into any group: filter
+by diagnosis, town, age band and sex, and every chart recomputes — a map of The Gambia with a magnified Greater
+Banjul inset (click a town), weekly trend against all visits, a calendar of daily visits, arrival times, outcomes,
+treatments used with how often patients improved, tests ordered and malaria positivity. 
+
+## Adding new demo content to an existing database
+
+`docker compose exec web python manage.py seed_demo_extras` adds the newer fictional content (brain cases with
+spinal-fluid results, CT, MRI and EEG; imaging for the featured patient; four months of visits for the health
+dashboard; inpatient medication charts) without wiping your database. It only runs in demo mode (DEBUG on) and
+does nothing the second time.
+
 ## Modules included
 
 - Patient MRN, demographics, longitudinal encounters, symptoms, assessments, diagnoses, vitals, conditions, allergies, medications, labs, admissions, referrals, structured forms and chart timeline.
@@ -259,7 +313,7 @@ For HTTPS deployments set `SECURE_SSL_REDIRECT=True`, correct `DJANGO_ALLOWED_HO
 ## Development utilities
 
 ```bash
-USE_SQLITE=True python manage.py test hospital   # 50 workflow tests
+USE_SQLITE=True python manage.py test hospital   # 61 workflow tests
 docker compose -f compose.prod.yml logs -f web
 docker compose -f compose.prod.yml exec web python manage.py check --deploy
 ```

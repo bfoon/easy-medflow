@@ -57,6 +57,8 @@ class Command(BaseCommand):
     def handle(self, *args, **o):
         if not settings.DEBUG and not o['force']:
             raise CommandError('Refusing to seed demo data with DEBUG=False. Use --force only on a throwaway database.')
+        from hospital.management.dbcheck import require_up_to_date_database
+        require_up_to_date_database()
         if Patient.objects.exists():
             if o['if_empty']:
                 self.stdout.write('Demo data already present; skipping.')
@@ -123,7 +125,7 @@ class Command(BaseCommand):
 
         # past week of visits (drives the arrivals chart and history)
         for day in range(6, 0, -1):
-            for p in random.sample(patients, random.randint(5, 11)):
+            for p in random.sample(patients, random.randint(2, 4)):
                 reason, dx, test = random.choice(REASONS)
                 day_start = timezone.localtime(now).replace(hour=8, minute=0, second=0, microsecond=0) - timedelta(days=day)
                 when = day_start + timedelta(minutes=random.randint(0, 9 * 60))
@@ -347,6 +349,10 @@ class Command(BaseCommand):
         self.bed_history(now, doctor, depts)
         self.more_imaging(now, doctor, staff)
         self.finance(now, staff)
+        from hospital.demo_extras import run_all
+        run_all()
+        from hospital.management.commands.bootstrap_hospital import link_patient_locations
+        link_patient_locations()
 
     def outcomes_and_imaging(self, now, doctor, staff, featured, featured_enc, depts):
         from django.core.files.base import ContentFile

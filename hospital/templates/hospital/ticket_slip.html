@@ -1,0 +1,35 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Ticket {{ t.display_code }}{% endblock %}
+{% block heading %}Queue ticket{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'checkin' %}"><i class="bi bi-upc-scan"></i>Next patient</a>{% endblock %}
+{% block content %}
+<article class="slip print-area">
+  <div class="slip-head">MedFlow Hospital</div>
+  <div class="slip-dept">{{ t.department }}</div>
+  <div class="slip-num">{{ t.display_code }}</div>
+  <div class="slip-meta">{{ t.created_at|date:'D j M Y · H:i' }}{% if ahead %} · {{ ahead }} ahead of you{% if est %}, about {{ est }} min{% endif %}{% endif %}</div>
+  <div class="slip-name">{{ p.first_name }} {{ p.last_name|first }}.</div>
+  <div class="slip-qr">{% patient_qr p 3 %}</div>
+  <div class="slip-foot">Please wait until your number is called on the screen. Show this ticket at the desk.</div>
+</article>
+<section class="share-bar">
+  <div class="label-sm mb-2">Print</div>
+  <div class="d-flex gap-2 flex-wrap mb-3">
+    <a class="btn btn-ink" href="{% url 'ticket_thermal' t.pk %}?w=80" target="_blank"><i class="bi bi-receipt"></i>Thermal 80 mm</a>
+    <a class="btn btn-ghost" href="{% url 'ticket_thermal' t.pk %}?w=58" target="_blank"><i class="bi bi-receipt-cutoff"></i>Thermal 58 mm</a>
+    <button class="btn btn-ghost" onclick="window.print()"><i class="bi bi-printer"></i>Regular printer</button>
+  </div>
+  <div class="label-sm mb-2">Send to the patient</div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a class="btn btn-wa" href="{{ share.whatsapp }}" target="_blank" rel="noopener"><i class="bi bi-whatsapp"></i>WhatsApp{% if share.has_phone %} {{ p.phone }}{% endif %}</a>
+    <a class="btn btn-ghost" href="{{ share.email }}"><i class="bi bi-envelope"></i>Email{% if p.email %} {{ p.email }}{% endif %}</a>
+    <button class="btn btn-ghost" type="button" data-copy="{{ share.status_url }}"><i class="bi bi-link-45deg"></i>Copy status link</button>
+  </div>
+  <p class="form-text mt-2 mb-0">The message has the queue number and a link where the patient can follow their place in the queue. It shows no name or medical details and expires after 24 hours.</p>
+</section>
+{% endblock %}
+{% block scripts %}<script>
+document.querySelector('[data-copy]')?.addEventListener('click', async e => {
+  const b = e.currentTarget; try { await navigator.clipboard.writeText(b.dataset.copy); mfToast('Status link copied.'); } catch (_) { prompt('Copy this link:', b.dataset.copy); }
+});
+</script>{% endblock %}

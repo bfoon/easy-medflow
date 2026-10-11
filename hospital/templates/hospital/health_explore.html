@@ -1,0 +1,7 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Explore · Health intelligence{% endblock %}
+{% block heading %}Explore health data{% endblock %}
+{% block subheading %}<p class="sub">Click anything to drill in: a diagnosis, a town on the map, an age group or sex. Every chart updates for that group. Anonymous counts only.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'health' %}"><i class="bi bi-arrow-left"></i>Dashboard</a>{% endblock %}
+{% block content %}<div id="ex"></div>{{ data|json_script:"explore-data" }}{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/health-charts.js' %}"></script><script src="{% asset 'hospital/js/explore.js' %}"></script>{% endblock %}

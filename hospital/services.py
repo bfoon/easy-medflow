@@ -80,7 +80,7 @@ MIN_GROUP=3  # never show a treatment group, or any case inside it, with fewer t
 
 def _diagnosis_term(dx):
     import re
-    words=[w for w in re.findall(r'[a-z]+',(dx or '').lower()) if w not in {'suspected','acute','query','with','and','the','of','type','mild','severe','uncomplicated'} and len(w)>3]
+    words=[w for w in re.findall(r'[a-z]+',(dx or '').lower()) if w not in {'suspected','acute','query','with','and','the','of','type','mild','severe','uncomplicated','upper','lower','chronic','early','review','tract','post'} and len(w)>3]
     return words[0] if words else ''
 
 def _age_band(patient,on_date):

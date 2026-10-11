@@ -24,7 +24,7 @@
   <div class="stack">
     {% if vitals %}<section class="panel"><div class="panel-head"><h2>Vitals at referral</h2></div><div class="vitals">{% for label, unit, val in vitals %}<div class="vital"><span>{{ label }}</span><b>{{ val }}</b><small>{{ unit }}</small></div>{% endfor %}</div></section>{% endif %}
     <section class="panel"><div class="panel-head"><h2>Conditions</h2></div><ul class="plain ruled">{% for c in conditions %}<li>{{ c.name }}{% if c.onset %} <span class="small muted">since {{ c.onset|date:'Y' }}</span>{% endif %}</li>{% empty %}<li class="muted small">None recorded.</li>{% endfor %}</ul></section>
-    <section class="panel"><div class="panel-head"><h2>Medicines</h2></div><ol class="rx-items">{% for i in meds %}<li><span class="med">{{ i.medication }}</span><span class="dir">{{ i.directions }}</span></li>{% empty %}<li class="muted">None recorded.</li>{% endfor %}</ol></section>
+    <section class="panel"><div class="panel-head"><h2>Medicines</h2></div><ol class="rx-items">{% for i in meds %}<li><span class="med">{{ i.medication|med_icon:i.route }}{{ i.medication }}</span><span class="dir">{{ i.directions }}</span></li>{% empty %}<li class="muted">None recorded.</li>{% endfor %}</ol></section>
   </div>
 </div>
 {% endblock %}

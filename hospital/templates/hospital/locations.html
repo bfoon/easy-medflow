@@ -1,0 +1,65 @@
+{% extends 'hospital/base.html' %}{% load medflow static %}
+{% block title %}Locations{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'hospital/vendor/leaflet/leaflet.css' %}">{% endblock %}
+{% block heading %}Locations{% endblock %}
+{% block subheading %}<p class="sub">Towns and areas patients come from. They appear on the health maps and in the patient address picker. Type a name and click its place on the map.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'health' %}"><i class="bi bi-arrow-left"></i>Health intelligence</a>{% endblock %}
+{% block content %}
+<div class="grid g-main">
+  <section class="panel flush"><div id="locmap" class="locmap" aria-label="Map: click to place a location"></div>
+    <p class="small muted px-3 py-2 mb-0">Map data © OpenStreetMap contributors. Map tiles need an internet connection; switch between street map, satellite and OpenStreetMap at the top right.</p></section>
+  <aside class="stack align-self-start">
+    {% if can_edit %}
+    <section class="panel">
+      <div class="panel-head"><h2>{% if edit %}Edit {{ edit }}{% else %}Add a town or area{% endif %}</h2></div>
+      <form method="post" id="locform">{% csrf_token %}<input type="hidden" name="id" value="{{ edit.pk|default:'' }}">
+        <label class="form-label" for="ln">Name</label>
+        <input class="form-control mb-2" id="ln" name="name" value="{{ edit.name|default:'' }}" placeholder="e.g. Bundung, Kololi, Basse" required list="known">
+        <label class="form-label" for="lp">Area within a town? <span class="muted small">(optional)</span></label>
+        <select class="form-select mb-2" id="lp" name="parent"><option value="">No, this is a town or village</option>{% for t in towns %}<option value="{{ t.pk }}" {% if edit.parent_id == t.pk %}selected{% endif %}>Area of {{ t.name }}</option>{% endfor %}</select>
+        <label class="form-label" for="lr">Region</label>
+        <select class="form-select mb-2" id="lr" name="region">{% for v, l in regions %}<option value="{{ v }}" {% if edit.region == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+        <div class="d-flex gap-2"><div><label class="form-label small" for="lat">Latitude</label><input class="form-control form-control-sm" id="lat" name="latitude" value="{{ edit.latitude|default:'' }}" required></div>
+          <div><label class="form-label small" for="lon">Longitude</label><input class="form-control form-control-sm" id="lon" name="longitude" value="{{ edit.longitude|default:'' }}" required></div></div>
+        <p class="form-text mt-2"><i class="bi bi-hand-index"></i> Click the map to set the position, or drag the marker.</p>
+        <button class="btn btn-primary w-100">{% if edit %}Save changes{% else %}Add location{% endif %}</button>
+        {% if edit %}<a class="btn btn-ghost w-100 mt-2" href="{% url 'locations' %}">Cancel</a>{% endif %}
+      </form>
+    </section>{% endif %}
+    <section class="panel flush"><div class="panel-head"><h2>{{ locs|length }} locations</h2><input class="form-control form-control-sm ms-auto" style="max-width:150px" placeholder="Filter" data-filter=".loc-row" aria-label="Filter locations"></div>
+      <div class="scroll-y tall">{% regroup locs by get_region_display as byregion %}{% for g in byregion %}<div class="loc-region">{{ g.grouper }}</div>
+        {% for l in g.list %}<div class="loc-row" data-id="{{ l.pk }}"><span>{% if l.parent %}<span class="muted">{{ l.parent.name }} ·</span> {% endif %}<b>{{ l.name }}</b></span><span class="small muted ms-auto">{{ l.n }} patient{{ l.n|pluralize }}</span>{% if can_edit %}<a class="small" href="?edit={{ l.pk }}">Edit</a>{% endif %}</div>{% endfor %}{% endfor %}</div>
+    </section>
+  </aside>
+</div>
+<datalist id="known">{% for l in locs %}<option value="{{ l.name }}">{% endfor %}</datalist>
+{{ geo|json_script:"loc-geo" }}{{ tiles|json_script:"loc-tiles" }}
+{% endblock %}
+{% block scripts %}<script src="{% static 'hospital/vendor/leaflet/leaflet.js' %}"></script>
+<script>
+(() => {
+  L.Icon.Default.imagePath = "{% static 'hospital/vendor/leaflet/images/' %}";
+  const geo = JSON.parse(document.getElementById('loc-geo').textContent);
+  const map = L.map('locmap', {scrollWheelZoom: true}).fitBounds([[13.05, -16.85], [13.83, -13.79]]);
+  const T = JSON.parse(document.getElementById('loc-tiles').textContent);
+  const opts = attr => ({maxZoom: 19, attribution: attr, referrerPolicy: 'strict-origin-when-cross-origin'});   // tile servers require the site's origin
+  const layers = {};
+  T.forEach((t, i) => { layers[t.name] = L.tileLayer(t.url, opts(t.attr)); if (i === 0) layers[t.name].addTo(map); });
+  L.control.layers(layers, null, {collapsed: false}).addTo(map);
+  const markers = {};
+  geo.forEach(g => { markers[g.id] = L.circleMarker([g.lat, g.lon], {radius: g.kind === 'area' ? 5 : 7, color: g.kind === 'area' ? '#4A5FC1' : '#0F7B78', weight: 2, fillOpacity: .6})
+    .bindTooltip(`${g.name} · ${g.n} patient${g.n === 1 ? '' : 's'}`).addTo(map); });
+  document.querySelectorAll('.loc-row').forEach(r => r.addEventListener('mouseenter', () => { const m = markers[r.dataset.id]; if (m) { m.openTooltip(); } }));
+  document.querySelectorAll('.loc-row').forEach(r => r.addEventListener('click', e => { if (e.target.tagName === 'A') return; const m = markers[r.dataset.id]; if (m) map.setView(m.getLatLng(), 13); }));
+  const lat = document.getElementById('lat'), lon = document.getElementById('lon');
+  if (!lat) return;
+  let pin = null;
+  const place = (ll, pan) => { lat.value = ll.lat.toFixed(6); lon.value = ll.lng.toFixed(6);
+    if (!pin) { pin = L.marker(ll, {draggable: true}).addTo(map); pin.on('dragend', () => place(pin.getLatLng())); } else pin.setLatLng(ll);
+    if (pan) map.setView(ll, Math.max(map.getZoom(), 12)); };
+  map.on('click', e => place(e.latlng));
+  if (lat.value && lon.value) place(L.latLng(+lat.value, +lon.value), true);
+  [lat, lon].forEach(i => i.addEventListener('change', () => { if (lat.value && lon.value) place(L.latLng(+lat.value, +lon.value), true); }));
+  document.getElementById('lp').addEventListener('change', e => { const t = geo.find(g => String(g.id) === e.target.value); if (t && !lat.value) map.setView([t.lat, t.lon], 14); });
+})();
+</script>{% endblock %}

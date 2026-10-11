@@ -25,9 +25,19 @@ class StyledModelForm(StyledMixin, forms.ModelForm):
 
 
 class PatientForm(StyledModelForm):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        from .models import Location
+        locs = Location.objects.filter(active=True).select_related('parent').order_by('region', 'parent__name', 'name')
+        groups = {}
+        for l in locs:   # grouped by region, areas listed under their town
+            groups.setdefault(l.get_region_display(), []).append((l.pk, f'{l.parent.name} · {l.name}' if l.parent_id else l.name))
+        self.fields['location'].choices = [('', 'Choose town or area…')] + list(groups.items())
+        self.fields['location'].help_text = 'Missing? Add it under Health intelligence → Locations.'
+
     class Meta:
         model = Patient
-        fields = ['first_name', 'last_name', 'dob', 'sex', 'phone', 'address', 'emergency_contact', 'blood_group', 'medical_alerts']
+        fields = ['first_name', 'last_name', 'dob', 'sex', 'phone', 'email', 'location', 'address', 'emergency_contact', 'blood_group', 'medical_alerts']
         widgets = {'dob': forms.DateInput(attrs={'type': 'date'}), 'address': forms.Textarea(attrs={'rows': 2}),
                    'medical_alerts': forms.Textarea(attrs={'rows': 2})}
         labels = {'dob': 'Date of birth', 'blood_group': 'Blood group'}

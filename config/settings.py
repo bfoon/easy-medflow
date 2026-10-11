@@ -99,3 +99,11 @@ CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CLINICAL_AI_ENABLED = env.bool('CLINICAL_AI_ENABLED', False)
 CLINICAL_AI_ENDPOINT = env('CLINICAL_AI_ENDPOINT', default='')
 CLINICAL_AI_TOKEN = env('CLINICAL_AI_TOKEN', default='')
+
+# Map tiles. The first layer is the default; users can switch in the map's layer box.
+# Free without a key: Esri street map and satellite, OpenStreetMap. Set MAPTILER_KEY (free key from maptiler.com)
+# to make MapTiler the main map, or MAP_TILE_URL/MAP_TILE_ATTRIBUTION for your own provider.
+MAPTILER_KEY = env('MAPTILER_KEY', default='')
+MAP_TILE_URL = env('MAP_TILE_URL', default='')
+MAP_TILE_ATTRIBUTION = env('MAP_TILE_ATTRIBUTION', default='')
+MAP_TILE_NAME = env('MAP_TILE_NAME', default='Custom map')

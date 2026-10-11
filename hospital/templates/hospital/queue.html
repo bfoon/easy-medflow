@@ -3,8 +3,13 @@
 {% block heading %}Queue{% endblock %}
 {% block subheading %}<p class="sub">Drag a ticket to the next column, or use its buttons. Emergency and urgent patients sort to the top.</p>{% endblock %}
 {% block actions %}
+  <details class="complete-pop"><summary class="btn btn-ghost"><i class="bi bi-arrow-counterclockwise"></i>Restart numbers</summary>
+    <form method="post" action="{% url 'queue_reset' %}" class="pop-card" data-confirm="Restart queue numbers from 001? Patients already waiting keep their numbers.">{% csrf_token %}
+      <select class="form-select form-select-sm mb-2" name="department" aria-label="Department"><option value="">All departments</option>{% for d in departments %}<option value="{{ d.pk }}">{{ d.name }}</option>{% endfor %}</select>
+      <button class="btn btn-sm btn-ink w-100">Restart from 001</button><p class="form-text mt-2 mb-0">Numbers also restart automatically every day.</p></form></details>
   <a class="btn btn-ghost" href="{% url 'queue_display' %}" target="_blank"><i class="bi bi-tv"></i>Waiting-room screen</a>
-  <a class="btn btn-primary" href="{% url 'ticket_new' %}"><i class="bi bi-ticket-perforated"></i>Issue ticket</a>
+  <a class="btn btn-primary" href="{% url 'checkin' %}"><i class="bi bi-upc-scan"></i>Check in returning patient</a>
+  <a class="btn btn-ghost" href="{% url 'ticket_new' %}"><i class="bi bi-ticket-perforated"></i>Issue ticket</a>
 {% endblock %}
 {% block content %}
 <div class="filters" data-queue-baseline="{{ board.0.tickets|length }}">

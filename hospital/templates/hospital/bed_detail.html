@@ -20,6 +20,7 @@
         <div class="flex-fill"><h2 class="mb-0"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a></h2>
           <div class="small muted">{{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %} · admitted {{ current.admitted_at|date:'D j M, H:i' }}</div>
           <div class="mt-1"><b>{{ e.diagnosis|default:e.reason }}</b>{% if e.clinician %} <span class="small muted">· {{ e.clinician|display_name }}</span>{% endif %}</div></div>
+        <div class="qr-mini" title="Scan to open this patient's record">{% patient_qr p 2 %}</div>
         <div class="los"><b>{{ current.los_days }}</b><span>days in bed</span></div>
       </div>
       <div class="stay-bar mt-3" title="Day {{ current.los_days }} of a typical 7-day stay"><i style="--w:{{ stay_pct }}%"></i>{% for i in '1234567' %}<span></span>{% endfor %}</div>
@@ -32,9 +33,31 @@
         <a class="btn btn-sm btn-ghost" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-person-arms-up"></i>Body map</a>
       </div>
     </section>
+    <section class="panel mar">
+      <div class="panel-head"><h2><i class="bi bi-clipboard2-check me-1" style="color:var(--teal)"></i>Medication chart · today</h2>
+        <div class="mar-sum ms-auto"><span style="background:var(--teal-wash);color:var(--teal-2)">{{ mar_counts.given }} given</span>{% if mar_counts.due %}<span style="background:var(--amber-wash);color:#8A520B">{{ mar_counts.due }} due now</span>{% endif %}{% if mar_counts.late %}<span style="background:var(--red-wash);color:var(--red)">{{ mar_counts.late }} late</span>{% endif %}<span style="background:var(--paper);color:var(--muted)">{{ mar_counts.upcoming }} to come</span></div></div>
+      {% for r in mar %}
+      <div class="mar-row">
+        <div class="mar-med">{{ r.item.medication|med_icon:r.item.route }}<b>{{ r.item.medication }}</b><div class="small">{{ r.item.directions }}</div></div>
+        <div class="mar-slots">
+          {% for s in r.slots %}
+            {% if s.adm %}<span class="dose {{ s.state }}" title="{{ s.adm.get_status_display }} by {{ s.adm.given_by|display_name }} at {{ s.adm.given_at|date:'H:i' }}{% if s.adm.note %} · {{ s.adm.note }}{% endif %}">{% if s.state == 'given' %}<i class="bi bi-check2"></i>{% else %}<i class="bi bi-x"></i>{% endif %}{{ s.at|date:'H:i' }}</span>
+            {% else %}<details class="inform d-inline-block"><summary class="dose {{ s.state }}">{% if s.state == 'late' %}<i class="bi bi-alarm"></i>{% elif s.state == 'due' %}<i class="bi bi-bell"></i>{% endif %}{{ s.at|date:'H:i' }}</summary>
+              <form method="post" action="{% url 'administer' r.item.pk %}" class="pop-card" style="position:absolute;z-index:30">{% csrf_token %}<input type="hidden" name="scheduled_for" value="{{ s.at|date:'c' }}"><input type="hidden" name="next" value="{{ request.path }}">
+                <div class="small mb-2"><b>{{ r.item.medication }}</b> · dose due {{ s.at|date:'H:i' }}</div>
+                <button class="btn btn-sm btn-primary w-100 mb-2" name="status" value="given"><i class="bi bi-check2"></i>Given now</button>
+                <select class="form-select form-select-sm mb-1" name="status" aria-label="Not given because"><option value="given" hidden selected>Not given because…</option><option value="refused">Refused</option><option value="held">Held (clinical reason)</option><option value="unavailable">Not available</option><option value="missed">Missed</option></select>
+                <input class="form-control form-control-sm mb-1" name="note" placeholder="Reason / note"><button class="btn btn-sm btn-ghost w-100">Record not given</button></form></details>{% endif %}
+          {% endfor %}
+          {% if r.is_prn %}{% for a in r.prn %}<span class="dose given" title="Given by {{ a.given_by|display_name }}"><i class="bi bi-check2"></i>{{ a.given_at|date:'H:i' }}</span>{% endfor %}
+            <form method="post" action="{% url 'administer' r.item.pk %}" class="d-inline">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><input type="hidden" name="status" value="given"><button class="btn btn-sm btn-ghost" data-confirm="Record a when-required dose of {{ r.item.medication }} now?"><i class="bi bi-plus"></i>Give dose (when required)</button></form>{% endif %}
+        </div>
+      </div>
+      {% empty %}<p class="muted small mb-0">No active medicines for this stay. Prescribe from the buttons above.</p>{% endfor %}
+    </section>
     <div class="grid g-2">
       <section class="panel"><div class="panel-head"><h2>Vitals</h2></div>{% if vitals %}<div class="vitals">{% for label, unit, val in vitals %}<div class="vital"><span>{{ label }}</span><b>{{ val }}</b><small>{{ unit }}</small></div>{% endfor %}</div>{% else %}<p class="muted small mb-0">No vitals recorded.</p>{% endif %}</section>
-      <section class="panel"><div class="panel-head"><h2>Medicines this stay</h2></div><ol class="rx-items">{% for i in meds %}<li><span class="med">{{ i.medication }}</span><span class="dir">{{ i.directions }}</span></li>{% empty %}<li class="muted">None.</li>{% endfor %}</ol>
+      <section class="panel"><div class="panel-head"><h2>Medicines this stay</h2></div><ol class="rx-items">{% for i in meds %}<li><span class="med">{{ i.medication|med_icon:i.route }}{{ i.medication }}</span><span class="dir">{{ i.directions }}</span></li>{% empty %}<li class="muted">None.</li>{% endfor %}</ol>
         {% if pending_labs %}<div class="label-sm mt-2">Waiting for</div>{% for lr in pending_labs %}<a class="tag amber me-1" href="{% url 'lab_request_detail' lr.pk %}">{{ lr.number }}</a>{% endfor %}{% endif %}</section>
     </div>
     {% else %}

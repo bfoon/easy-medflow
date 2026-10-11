@@ -29,6 +29,8 @@
       {% else %}
       <div class="nav-group">
         <a class="nav-link {% nav_active '/' %}" href="{% url 'dashboard' %}"><i class="bi bi-activity"></i>Overview</a>
+        <a class="nav-link {% nav_active '/health/' %}" href="{% url 'health' %}"><i class="bi bi-graph-up-arrow"></i>Health intelligence</a>
+        <a class="nav-link {% nav_active '/checkin/' %}" href="{% url 'checkin' %}"><i class="bi bi-upc-scan"></i>Check in</a>
         <a class="nav-link {% nav_active '/patients/' '/encounters/' %}" href="{% url 'patients' %}"><i class="bi bi-person-vcard"></i>Patients</a>
         <a class="nav-link {% nav_active '/queue/' %}" href="{% url 'queue' %}"><i class="bi bi-people"></i>Queue{% if nav_counts.queue %}<span class="badge-count">{{ nav_counts.queue }}</span>{% endif %}</a>
       </div>

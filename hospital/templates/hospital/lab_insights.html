@@ -30,41 +30,64 @@
       <svg id="body" viewBox="0 0 400 800" role="img" aria-label="Body map of laboratory findings" preserveAspectRatio="xMidYMid meet">
         <defs>
           <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-          <radialGradient id="skin" cx="50%" cy="35%" r="70%"><stop offset="0" stop-color="#F4F7F6"/><stop offset="1" stop-color="#E1E9E6"/></radialGradient>
+          <filter id="bm-grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="5" result="n"/><feColorMatrix in="n" type="saturate" values="0" result="g"/><feComposite in="g" in2="SourceGraphic" operator="in" result="gi"/><feBlend in="SourceGraphic" in2="gi" mode="multiply"/></filter>
+          <filter id="bm-rim" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur in="SourceAlpha" stdDeviation="6" result="b"/><feOffset dx="0" dy="0"/><feComposite in="SourceAlpha" in2="b" operator="arithmetic" k2="1" k3="-1" result="rim"/><feFlood flood-color="#9DB4BC" flood-opacity=".55"/><feComposite in2="rim" operator="in" result="rimc"/><feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="rimc"/></feMerge></filter>
+          <linearGradient id="skin" x1="0" x2="1"><stop offset="0" stop-color="#D9E3E6"/><stop offset=".3" stop-color="#F3F7F7"/><stop offset=".55" stop-color="#F6F9F9"/><stop offset=".8" stop-color="#E6EDEF"/><stop offset="1" stop-color="#CFDADE"/></linearGradient>
+          <radialGradient id="skin-shade" cx="50%" cy="38%" r="65%"><stop offset=".55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#5F7A85" stop-opacity=".16"/></radialGradient>
+          <radialGradient id="g-brain" cx="45%" cy="35%" r="70%"><stop offset="0" stop-color="#F7CBD5"/><stop offset=".7" stop-color="#E7A3B4"/><stop offset="1" stop-color="#C77C90"/></radialGradient>
+          <radialGradient id="g-lung" cx="45%" cy="30%" r="75%"><stop offset="0" stop-color="#FAD3D0"/><stop offset=".6" stop-color="#EEA8A6"/><stop offset="1" stop-color="#C77276"/></radialGradient>
+          <radialGradient id="g-heart" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#E05A62"/><stop offset=".6" stop-color="#B42532"/><stop offset="1" stop-color="#6E0F1A"/></radialGradient>
+          <linearGradient id="g-liver" x1="0" x2=".3" y1="0" y2="1"><stop offset="0" stop-color="#C46B52"/><stop offset=".6" stop-color="#963F2E"/><stop offset="1" stop-color="#65261C"/></linearGradient>
+          <radialGradient id="g-stomach" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#F6C1A3"/><stop offset="1" stop-color="#D98762"/></radialGradient>
+          <linearGradient id="g-panc" x1="0" x2="1"><stop offset="0" stop-color="#F5D98A"/><stop offset="1" stop-color="#D9AE43"/></linearGradient>
+          <radialGradient id="g-kidney" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#CF6870"/><stop offset=".7" stop-color="#9C2F3A"/><stop offset="1" stop-color="#6A1A23"/></radialGradient>
+          <radialGradient id="g-bladder" cx="45%" cy="35%" r="65%"><stop offset="0" stop-color="#FBE6A6"/><stop offset="1" stop-color="#E2BF5C"/></radialGradient>
+          <radialGradient id="g-gut" cx="50%" cy="40%" r="70%"><stop offset="0" stop-color="#F8D6C8"/><stop offset="1" stop-color="#E3A992"/></radialGradient>
         </defs>
         <g class="silhouette">
-          <g class="limbs" stroke="url(#skin)" stroke-linecap="round" fill="none">
-            <path d="M150,186 L118,320" stroke-width="36"/><path d="M118,320 L100,450" stroke-width="28"/>
-            <path d="M250,186 L282,320" stroke-width="36"/><path d="M282,320 L300,450" stroke-width="28"/>
-            <path d="M178,490 L168,640" stroke-width="48"/><path d="M168,640 L166,768" stroke-width="36"/>
-            <path d="M222,490 L232,640" stroke-width="48"/><path d="M232,640 L234,768" stroke-width="36"/>
+          <path d="M200,18 C226,18 245,38 246,66 C247,88 242,104 234,116 C228,124 222,130 221,140 C221,148 222,154 224,158 C236,164 256,168 274,172 C298,177 314,190 318,214 C322,240 323,262 324,290 C325,312 328,328 332,346 C338,386 344,418 347,450 C349,466 356,476 360,494 C365,514 362,538 352,552 C344,560 335,556 335,544 C335,530 330,512 329,498 C325,486 321,470 317,452 C311,420 305,392 301,364 C299,350 297,338 295,326 C291,300 289,276 287,256 C285,244 281,236 277,232 C281,268 283,298 277,330 C271,356 266,374 268,394 C272,422 283,452 285,478 C289,520 289,560 283,600 C279,630 277,646 279,664 C284,700 283,730 273,760 C269,772 269,780 277,788 C283,795 277,801 258,801 C242,801 234,797 234,787 C232,770 230,750 232,730 C234,700 228,676 226,660 C222,640 222,620 220,600 C216,560 212,530 206,502 C204,496 202,494 200,494 C198,494 196,496 194,502 C188,530 184,560 180,600 C178,620 178,640 174,660 C172,676 166,700 168,730 C170,750 168,770 166,787 C166,797 158,801 142,801 C123,801 117,795 123,788 C131,780 131,772 127,760 C117,730 116,700 121,664 C123,646 121,630 117,600 C111,560 111,520 115,478 C117,452 128,422 132,394 C134,374 129,356 123,330 C117,298 119,268 123,232 C119,236 115,244 113,256 C111,276 109,300 105,326 C103,338 101,350 99,364 C95,392 89,420 83,452 C79,470 75,486 71,498 C70,512 65,530 65,544 C65,556 56,560 48,552 C38,538 35,514 40,494 C44,476 51,466 53,450 C56,418 62,386 68,346 C72,328 75,312 76,290 C77,262 78,240 82,214 C86,190 102,177 126,172 C144,168 164,164 176,158 C178,154 179,148 179,140 C178,130 172,124 166,116 C158,104 153,88 154,66 C155,38 174,18 200,18 Z" fill="url(#skin)" stroke="#AFC0C6" stroke-width="1.4" filter="url(#bm-rim)"/>
+          <path d="M200,18 C226,18 245,38 246,66 C247,88 242,104 234,116 C228,124 222,130 221,140 C221,148 222,154 224,158 C236,164 256,168 274,172 C298,177 314,190 318,214 C322,240 323,262 324,290 C325,312 328,328 332,346 C338,386 344,418 347,450 C349,466 356,476 360,494 C365,514 362,538 352,552 C344,560 335,556 335,544 C335,530 330,512 329,498 C325,486 321,470 317,452 C311,420 305,392 301,364 C299,350 297,338 295,326 C291,300 289,276 287,256 C285,244 281,236 277,232 C281,268 283,298 277,330 C271,356 266,374 268,394 C272,422 283,452 285,478 C289,520 289,560 283,600 C279,630 277,646 279,664 C284,700 283,730 273,760 C269,772 269,780 277,788 C283,795 277,801 258,801 C242,801 234,797 234,787 C232,770 230,750 232,730 C234,700 228,676 226,660 C222,640 222,620 220,600 C216,560 212,530 206,502 C204,496 202,494 200,494 C198,494 196,496 194,502 C188,530 184,560 180,600 C178,620 178,640 174,660 C172,676 166,700 168,730 C170,750 168,770 166,787 C166,797 158,801 142,801 C123,801 117,795 123,788 C131,780 131,772 127,760 C117,730 116,700 121,664 C123,646 121,630 117,600 C111,560 111,520 115,478 C117,452 128,422 132,394 C134,374 129,356 123,330 C117,298 119,268 123,232 C119,236 115,244 113,256 C111,276 109,300 105,326 C103,338 101,350 99,364 C95,392 89,420 83,452 C79,470 75,486 71,498 C70,512 65,530 65,544 C65,556 56,560 48,552 C38,538 35,514 40,494 C44,476 51,466 53,450 C56,418 62,386 68,346 C72,328 75,312 76,290 C77,262 78,240 82,214 C86,190 102,177 126,172 C144,168 164,164 176,158 C178,154 179,148 179,140 C178,130 172,124 166,116 C158,104 153,88 154,66 C155,38 174,18 200,18 Z" fill="url(#skin-shade)"/>
+          <g class="anatomy">
+            <path d="M152,176 C172,170 190,172 198,178 M248,176 C228,170 210,172 202,178"/>
+            <path d="M200,180 L200,300"/>
+            <path d="M158,186 C150,216 156,246 178,262 C190,268 198,266 200,262 C202,266 210,268 222,262 C244,246 250,216 242,186" class="pecs"/>
+            <path d="M170,280 C178,300 190,310 200,312 C210,310 222,300 230,280" class="ribs"/>
+            <path d="M200,312 L200,450" class="linea"/>
+            <path d="M178,330 C186,334 194,334 198,330 M222,330 C214,334 206,334 202,330 M178,370 C186,374 194,374 198,370 M222,370 C214,374 206,374 202,370" class="abs"/>
+            <ellipse cx="200" cy="412" rx="3" ry="4" class="navel"/>
+            <path d="M152,440 C170,470 186,484 200,492 M248,440 C230,470 214,484 200,492" class="iliac"/>
+            <ellipse cx="150" cy="640" rx="12" ry="15" class="knee"/><ellipse cx="250" cy="640" rx="12" ry="15" class="knee"/>
+            <path d="M96,226 C90,260 88,290 88,318 M304,226 C310,260 312,290 312,318" class="biceps"/>
           </g>
-          <g fill="url(#skin)"><circle cx="98" cy="468" r="17"/><circle cx="302" cy="468" r="17"/><ellipse cx="160" cy="782" rx="24" ry="10"/><ellipse cx="240" cy="782" rx="24" ry="10"/></g>
-          <path fill="url(#skin)" d="M146,170 C170,158 230,158 254,170 C274,178 280,196 276,222 L262,330 C256,372 258,402 262,428 C268,470 256,500 244,506 L156,506 C144,500 132,470 138,428 C142,402 144,372 138,330 L124,222 C120,196 126,178 146,170 Z"/>
-          <rect x="184" y="118" width="32" height="44" rx="12" fill="url(#skin)"/>
-          <ellipse cx="200" cy="76" rx="46" ry="54" fill="url(#skin)"/>
-          <path class="bone-hint" d="M176,500 L169,632 M224,500 L231,632" stroke="#fff" stroke-width="7" stroke-linecap="round" fill="none"/>
+          <g class="ribcage"><path d="M170,196 C170,206 150,214 150,226"/><path d="M230,196 C230,206 250,214 250,226"/><path d="M167,210 C166,220 148,228 149,240"/><path d="M233,210 C234,220 252,228 251,240"/><path d="M164,224 C162,234 146,242 148,254"/><path d="M236,224 C238,234 254,242 252,254"/><path d="M161,238 C158,248 144,256 147,268"/><path d="M239,238 C242,248 256,256 253,268"/><path d="M158,252 C154,262 142,270 146,282"/><path d="M242,252 C246,262 258,270 254,282"/><path d="M155,266 C150,276 140,284 145,296"/><path d="M245,266 C250,276 260,284 255,296"/></g>
         </g>
         <g id="vessels" class="vessels">
           <path id="v-aorta" d="M200,166 L200,470"/>
           <path id="v-car-l" d="M200,168 C196,150 194,128 190,96"/><path id="v-car-r" d="M200,168 C204,150 206,128 210,96"/>
-          <path id="v-arm-l" d="M200,180 C172,182 154,192 142,230 L118,320 L102,452"/><path id="v-arm-r" d="M200,180 C228,182 246,192 258,230 L282,320 L298,452"/>
-          <path id="v-leg-l" d="M200,470 C190,480 180,492 177,520 L168,640 L166,762"/><path id="v-leg-r" d="M200,470 C210,480 220,492 223,520 L232,640 L234,762"/>
+          <path id="v-arm-l" d="M200,180 C160,180 120,186 104,214 C96,250 90,290 86,336 C80,390 72,440 64,486"/><path id="v-arm-r" d="M200,180 C240,180 280,186 296,214 C304,250 310,290 314,336 C320,390 328,440 336,486"/>
+          <path id="v-leg-l" d="M200,470 C184,478 160,486 156,520 C152,560 150,600 150,640 C149,690 148,730 146,766"/><path id="v-leg-r" d="M200,470 C216,478 240,486 244,520 C248,560 250,600 250,640 C251,690 252,730 254,766"/>
         </g>
         <g id="droplets"></g>
-        <g class="organs">
-          <g class="org" data-sys="brain"><ellipse cx="200" cy="66" rx="35" ry="29" fill="#F2B8C6"/><path d="M200,40 C196,56 204,74 200,94" stroke="#D98FA3" stroke-width="2" fill="none"/></g>
-          <g class="org" data-sys="thyroid"><ellipse cx="191" cy="150" rx="8" ry="6" fill="#C99BD9"/><ellipse cx="209" cy="150" rx="8" ry="6" fill="#C99BD9"/><rect x="194" y="148" width="12" height="4" fill="#C99BD9"/></g>
-          <g class="org breathe" data-sys="lungs"><path fill="#F6C1C1" d="M191,196 C170,190 151,206 149,240 C147,278 152,302 167,307 C181,311 191,300 191,286 Z"/><path fill="#F6C1C1" d="M209,196 C230,190 249,206 251,240 C253,278 248,302 233,307 C219,311 209,300 209,286 Z"/></g>
-          <g class="org beat" data-sys="heart"><path fill="#E05263" d="M214,253 C206,240 187,244 189,261 C191,277 214,292 214,294 C214,292 237,277 239,261 C241,244 222,240 214,253 Z"/></g>
-          <g class="org" data-sys="liver"><path fill="#B9694F" d="M149,318 C149,303 177,299 213,305 C224,307 224,318 213,324 C197,334 176,347 160,345 C150,343 147,331 149,318 Z"/></g>
-          <g class="org" data-sys="stomach"><path fill="#F0A884" d="M226,314 C245,306 259,318 255,337 C251,355 234,363 222,357 C213,352 216,341 224,337 C232,333 230,325 226,314 Z"/></g>
-          <g class="org" data-sys="pancreas"><path fill="#F1CE6B" d="M187,361 C200,355 224,355 241,351 C248,351 248,360 239,362 C223,366 205,371 190,371 C183,370 182,364 187,361 Z"/></g>
-          <g class="org" data-sys="kidneys"><ellipse cx="168" cy="388" rx="11" ry="19" fill="#B5454F"/><ellipse cx="232" cy="388" rx="11" ry="19" fill="#B5454F"/></g>
-          <g class="org" data-sys="bladder"><ellipse cx="200" cy="468" rx="17" ry="13" fill="#F2D27A"/></g>
-          <g class="org" data-sys="reproductive"><ellipse cx="200" cy="494" rx="11" ry="6" fill="#E8A0BF"/></g>
-          <g class="org" data-sys="immune"><circle cx="150" cy="212" r="5" fill="#9FB8C9"/><circle cx="250" cy="212" r="5" fill="#9FB8C9"/><circle cx="186" cy="160" r="4" fill="#9FB8C9"/><circle cx="214" cy="160" r="4" fill="#9FB8C9"/><circle cx="178" cy="482" r="4" fill="#9FB8C9"/><circle cx="222" cy="482" r="4" fill="#9FB8C9"/></g>
-          <g class="org" data-sys="bone"><circle cx="168" cy="640" r="12" fill="none" stroke="#C9C2B0" stroke-width="5"/><circle cx="232" cy="640" r="12" fill="none" stroke="#C9C2B0" stroke-width="5"/></g>
+        <g class="organs real-organs">
+          <g class="org" data-sys="brain"><path d="M164,70 C160,44 182,28 200,30 C220,28 242,44 238,70 C240,88 224,98 200,96 C178,98 162,88 164,70Z" fill="url(#g-brain)" filter="url(#bm-grain)"/>
+            <path d="M200,32 C197,50 203,72 200,95" class="gyri-mid"/><path d="M172,52 C180,48 186,54 182,60 C190,58 194,64 188,70 M228,52 C220,48 214,54 218,60 C210,58 206,64 212,70 M170,74 C178,72 182,80 176,86 M230,74 C222,72 218,80 224,86" class="gyri"/></g>
+          <g class="org" data-sys="thyroid"><path d="M184,146 C180,140 190,138 196,146 L204,146 C210,138 220,140 216,146 C220,156 210,160 204,154 L196,154 C190,160 180,156 184,146Z" fill="#C99BD9" stroke="#9C6BB5" stroke-width="1"/></g>
+          <g class="org breathe" data-sys="lungs"><path fill="url(#g-lung)" filter="url(#bm-grain)" d="M191,194 C168,186 150,204 148,240 C146,280 152,304 168,309 C183,313 192,302 192,286 Z"/><path fill="url(#g-lung)" filter="url(#bm-grain)" d="M209,194 C232,186 250,204 252,240 C254,280 248,304 232,309 C218,313 208,302 208,286 C214,276 220,268 222,258 C214,250 209,240 209,228Z"/>
+            <path d="M152,248 C166,244 180,250 192,246 M154,276 C168,272 180,276 192,272 M216,238 C230,246 240,252 250,262" class="fissure-b"/><path d="M200,180 L200,196 M200,196 C194,204 186,210 178,222 M200,196 C206,204 214,210 222,222" class="airway-b"/></g>
+          <g class="org beat" data-sys="heart"><path fill="url(#g-heart)" filter="url(#bm-grain)" d="M214,250 C205,238 186,242 188,260 C190,278 214,294 216,297 C218,294 240,278 242,260 C244,242 224,238 214,250 Z"/>
+            <path d="M206,250 C204,236 214,228 226,232" stroke="#C2343E" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M202,262 C206,272 212,282 216,292 M222,256 C226,266 230,274 234,280" class="coronary-b"/><ellipse cx="202" cy="256" rx="8" ry="4" fill="#fff" opacity=".18" transform="rotate(-30 202 256)"/></g>
+          <g class="org" data-sys="liver"><path fill="url(#g-liver)" filter="url(#bm-grain)" d="M146,320 C144,302 178,296 216,304 C228,307 228,320 214,326 C198,336 176,350 158,348 C147,346 144,334 146,320 Z"/><path d="M196,304 C192,320 186,334 180,346" class="lobe-b"/><path d="M196,334 C192,344 198,352 205,350 C210,348 208,338 204,334Z" fill="#5E8A3A"/></g>
+          <g class="org" data-sys="stomach"><path fill="url(#g-stomach)" filter="url(#bm-grain)" d="M226,312 C246,304 262,318 257,338 C252,358 233,366 220,359 C211,353 215,341 224,337 C232,333 230,324 226,312 Z"/><path d="M230,322 C240,326 246,334 244,344" class="rugae"/></g>
+          <g class="org" data-sys="pancreas"><path fill="url(#g-panc)" filter="url(#bm-grain)" d="M186,360 C200,353 224,354 242,349 C250,349 250,359 240,362 C224,366 205,372 189,372 C181,371 180,364 186,360 Z"/></g>
+          <g class="gut" aria-hidden="true"><path d="M164,382 C160,402 168,424 186,430 C200,436 214,432 230,428 C244,424 246,404 238,388" fill="none" stroke="url(#g-gut)" stroke-width="12" stroke-linecap="round" opacity=".75"/>
+            <path d="M178,398 C186,392 196,400 204,394 C212,388 222,398 226,406 C218,414 206,410 198,416 C190,420 182,412 178,404" fill="none" stroke="#E7B3A0" stroke-width="7" stroke-linecap="round" opacity=".7"/></g>
+          <g class="org" data-sys="kidneys"><path fill="url(#g-kidney)" filter="url(#bm-grain)" d="M168,368 C156,368 154,392 158,402 C162,412 174,410 176,400 C172,394 172,386 176,380 C176,372 172,368 168,368Z"/><path fill="url(#g-kidney)" filter="url(#bm-grain)" d="M232,368 C244,368 246,392 242,402 C238,412 226,410 224,400 C228,394 228,386 224,380 C224,372 228,368 232,368Z"/>
+            <path d="M172,386 L180,388 M228,386 L220,388" stroke="#F0D38A" stroke-width="3"/></g>
+          <g class="org" data-sys="bladder"><path fill="url(#g-bladder)" d="M184,462 C184,452 216,452 216,462 C216,478 206,484 200,484 C194,484 184,478 184,462Z"/></g>
+          <g class="org" data-sys="reproductive"><ellipse cx="200" cy="496" rx="11" ry="6" fill="#E8A0BF"/></g>
+          <g class="org" data-sys="immune"><circle cx="150" cy="212" r="5" fill="#9FB8C9"/><circle cx="250" cy="212" r="5" fill="#9FB8C9"/><circle cx="186" cy="160" r="4" fill="#9FB8C9"/><circle cx="214" cy="160" r="4" fill="#9FB8C9"/><circle cx="180" cy="484" r="4" fill="#9FB8C9"/><circle cx="220" cy="484" r="4" fill="#9FB8C9"/></g>
+          <g class="org" data-sys="bone"><path d="M160,500 C156,540 152,590 151,626 M240,500 C244,540 248,590 249,626 M150,656 C149,690 148,730 146,764 M250,656 C251,690 252,730 254,764" stroke="#E8E1CF" stroke-width="9" stroke-linecap="round" fill="none" opacity=".85"/>
+            <circle cx="150" cy="640" r="12" fill="none" stroke="#C9C2B0" stroke-width="4"/><circle cx="250" cy="640" r="12" fill="none" stroke="#C9C2B0" stroke-width="4"/></g>
         </g>
         <g id="markers"></g>
       </svg>

@@ -24,6 +24,7 @@ class Command(BaseCommand):
                 ('Ceftriaxone', 'ceftriaxone', 'Injection', '1 g'), ('Zinc sulfate', 'zinc', 'Tablet', '20 mg')]
         for name, generic, form, strength in meds:
             Medication.objects.get_or_create(name=name, defaults={'generic_name': generic, 'form': form, 'strength': strength})
+        self.load_locations()
         self.load_prices()   # after medicines and tests exist, so their prices are filled in
         if kwargs.get('verbosity', 1):
             self.stdout.write(self.style.SUCCESS('Seeded departments, standard lab catalogue, 4 wards / 26 beds, and a medication catalog.'))
@@ -70,3 +71,31 @@ class Command(BaseCommand):
                 'Ibuprofen': '3.00', 'Ferrous sulfate': '1.50', 'Ceftriaxone': '120.00', 'Zinc sulfate': '2.50'}
         for name, price in meds.items():
             Medication.objects.filter(name=name, unit_price=0).update(unit_price=Decimal(price))
+
+    def load_locations(self):
+        """Add any missing standard Gambian towns and areas, then link patients to a location from their address.
+        Never overwrites your edits."""
+        from decimal import Decimal
+        from hospital.gambia_locations import TOWNS, AREAS
+        from hospital.models import Location, Patient
+        towns = {}
+        for name, region, lat, lon in TOWNS:
+            towns[name], _ = Location.objects.get_or_create(name=name, parent=None, defaults={'region': region, 'latitude': Decimal(str(lat)), 'longitude': Decimal(str(lon))})
+        for name, town, lat, lon in AREAS:
+            t = towns.get(town)
+            if t:
+                Location.objects.get_or_create(name=name, parent=t, defaults={'kind': 'area', 'region': t.region, 'latitude': Decimal(str(lat)), 'longitude': Decimal(str(lon))})
+        link_patient_locations()
+
+
+def link_patient_locations():
+    """Patients without a location: match the town written at the end of their address (e.g. '12 Main Road, Brikama')."""
+    from hospital.models import Location, Patient
+    by_name = {l.name.lower(): l for l in Location.objects.filter(active=True).order_by('-kind')}   # towns win over areas of the same name
+    n = 0
+    for p in Patient.objects.filter(location__isnull=True).exclude(address=''):
+        parts = [x.strip().lower() for x in p.address.replace('\n', ',').split(',') if x.strip()]
+        for part in reversed(parts):
+            if part in by_name:
+                p.location = by_name[part]; p.save(update_fields=['location']); n += 1; break
+    return n

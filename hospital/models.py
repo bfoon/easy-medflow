@@ -27,6 +27,22 @@ class StaffProfile(Tracked):
     lab_view=models.CharField(max_length=10,choices=[('body','Body map'),('clean','Charts & lists')],default='body',help_text='Preferred way to review lab results')
     def __str__(self):return f'{self.user} - {self.role}'
 
+class Location(Tracked):
+    """A town or an area within a town, with map coordinates. Patients are linked to one for maps and statistics."""
+    REGIONS=[('banjul','Banjul'),('kanifing','Kanifing'),('west_coast','West Coast'),('north_bank','North Bank'),
+             ('lower_river','Lower River'),('central_river','Central River'),('upper_river','Upper River'),('other','Other / outside The Gambia')]
+    name=models.CharField(max_length=120)
+    kind=models.CharField(max_length=8,choices=[('town','Town / village'),('area','Area within a town')],default='town')
+    parent=models.ForeignKey('self',null=True,blank=True,on_delete=models.CASCADE,related_name='areas',limit_choices_to={'kind':'town'},help_text='For an area: the town it belongs to')
+    region=models.CharField(max_length=16,choices=REGIONS,default='west_coast')
+    latitude=models.DecimalField(max_digits=9,decimal_places=6)
+    longitude=models.DecimalField(max_digits=9,decimal_places=6)
+    active=models.BooleanField(default=True)
+    class Meta: ordering=['region','name']; unique_together=[('name','parent')]
+    @property
+    def town(self):return self.parent if self.kind=='area' and self.parent_id else self
+    def __str__(self):return f'{self.name}, {self.parent.name}' if self.parent_id else self.name
+
 class Patient(Tracked):
     mrn=models.CharField(max_length=32,unique=True,editable=False)
     first_name=models.CharField(max_length=120)
@@ -34,7 +50,9 @@ class Patient(Tracked):
     dob=models.DateField()
     sex=models.CharField(max_length=20,choices=[('F','Female'),('M','Male'),('X','Other / unspecified')])
     phone=models.CharField(max_length=40,blank=True)
-    address=models.TextField(blank=True)
+    email=models.EmailField(blank=True,help_text='Optional, for sending queue tickets and receipts')
+    address=models.TextField(blank=True,verbose_name='Street / compound')
+    location=models.ForeignKey('Location',null=True,blank=True,on_delete=models.SET_NULL,related_name='patients',verbose_name='Town or area')
     emergency_contact=models.CharField(max_length=200,blank=True)
     blood_group=models.CharField(max_length=5,blank=True)
     medical_alerts=models.TextField(blank=True,help_text='Human-reviewed high-priority alerts; do not replace structured allergy data')
@@ -89,6 +107,13 @@ class Encounter(Tracked):
     outcome_notes=models.CharField(max_length=300,blank=True)
     def __str__(self):return f'{self.patient.first_name} {self.patient.last_name} · {self.patient.mrn} · {self.reason[:40]} · {self.created_at:%d %b}'
 
+class QueueReset(Tracked):
+    """A manual restart of queue numbering (numbers also restart automatically every day)."""
+    department=models.ForeignKey('Department',null=True,blank=True,on_delete=models.CASCADE,help_text='Blank = all departments')
+    reset_at=models.DateTimeField(default=timezone.now)
+    reset_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name='+')
+    class Meta: ordering=['-reset_at']
+
 class QueueTicket(Tracked):
     STATES=[(x,x.title()) for x in ['waiting','called','in_service','completed','skipped','cancelled']]
     patient=models.ForeignKey(Patient,on_delete=models.PROTECT,related_name='tickets')
@@ -108,7 +133,11 @@ class QueueTicket(Tracked):
         if not self.display_code:
             words=self.department.name.split()
             prefix=(''.join(w[0] for w in words[:2]) if len(words)>1 else words[0][:2]).upper()
-            n=QueueTicket.objects.filter(department=self.department,created_at__date=timezone.localdate()).count()+1
+            # numbers restart every day, or from the last manual restart for this department (or all departments)
+            start=timezone.localtime().replace(hour=0,minute=0,second=0,microsecond=0)
+            reset=QueueReset.objects.filter(models.Q(department=self.department)|models.Q(department__isnull=True),reset_at__gte=start).order_by('-reset_at').first()
+            since=reset.reset_at if reset else start
+            n=QueueTicket.objects.filter(department=self.department,created_at__gte=since).count()+1
             self.display_code=f'{prefix}{n:03d}'
         super().save(*a,**kw)
     def clean(self):
@@ -375,7 +404,7 @@ class Dispense(Tracked):
     dispensed_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
 
 MODALITIES=[('xray','X-ray'),('ct','CT scan'),('mri','MRI'),('ultrasound','Ultrasound'),('ecg','ECG'),('echo','Echocardiogram'),
-            ('mammogram','Mammogram'),('fluoro','Fluoroscopy')]
+            ('mammogram','Mammogram'),('fluoro','Fluoroscopy'),('eeg','EEG (brain waves)')]
 
 class ImagingOrder(Tracked):
     """An imaging study (X-ray, CT, MRI, ultrasound, ECG…) with its images and the radiologist's report."""
@@ -669,3 +698,15 @@ class Payment(Tracked):
     class Meta: ordering=['-received_at']
     @property
     def receipt_number(self):return f'RCP-{self.pk:06d}'
+
+
+class MedicationAdministration(Tracked):
+    """One dose given (or not given) to an inpatient, against a scheduled time from the prescription."""
+    STATUS=[('given','Given'),('refused','Refused'),('held','Held'),('missed','Missed'),('unavailable','Not available')]
+    item=models.ForeignKey('PrescriptionItem',on_delete=models.CASCADE,related_name='administrations')
+    scheduled_for=models.DateTimeField(help_text='The dose time this record answers; for when-required doses, the time given')
+    status=models.CharField(max_length=12,choices=STATUS,default='given')
+    given_at=models.DateTimeField(default=timezone.now)
+    given_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='+')
+    note=models.CharField(max_length=200,blank=True)
+    class Meta: ordering=['scheduled_for']; unique_together=[('item','scheduled_for')]
