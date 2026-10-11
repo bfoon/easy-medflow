@@ -1017,3 +1017,21 @@ class AnatomyLayerTests(Base):
         self.assertEqual(hand_foot_cases(doc, doc), 0)
         self.assertTrue(Encounter.objects.filter(diagnosis__icontains='rheumatoid arthritis of both hands', patient__conditions__name='Rheumatoid arthritis').exists())
         self.assertEqual(ImagingOrder.objects.filter(region__in=['Both hands', 'Right hand', 'Left ankle', 'Right foot']).count(), 4)
+
+
+class PregnancyAnatomyTests(Base):
+    def test_page_loads_reproductive_views_in_order(self):
+        html = self.as_('doctor').get(f'/patients/{self.patient.pk}/labs/').content.decode()
+        order = [html.index(x) for x in ('organs-anatomy.js', 'organs-womb3d.js', 'organs-repro.js', 'anatomy-layers.js', 'insights.js')]
+        self.assertEqual(order, sorted(order))      # the tabs wrap the existing cycle/prostate views; the womb is drawn before the markers
+
+    def test_pregnancy_samples_added_once_and_classified(self):
+        from hospital.demo_extras import pregnancy_cases
+        doc = StaffProfile.objects.filter(role='doctor').first().user
+        self.assertEqual(pregnancy_cases(doc, doc), 4)
+        self.assertEqual(pregnancy_cases(doc, doc), 0)
+        e = Encounter.objects.get(diagnosis__icontains='singleton pregnancy at 28 weeks')
+        self.assertEqual(e.category, 'maternal')
+        self.assertEqual(e.labs.get(test__code='HCG').values.first().display, 'Positive')
+        self.assertTrue(ImagingOrder.objects.filter(encounter=e, measurements__icontains='Fetal heart rate').exists())
+        self.assertEqual(Encounter.objects.get(diagnosis__icontains='Ectopic').category, 'maternal')

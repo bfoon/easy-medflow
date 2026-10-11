@@ -323,7 +323,8 @@ dashboard; inpatient medication charts) without wiping your database. It only ru
 does nothing the second time. It also adds eight bone, spine and injury cases (femur fracture after a road
 accident, disc herniation, osteoporotic spine fracture, whiplash, a child's elbow fracture, spinal cord injury,
 knee osteoarthritis, gout) and hand and foot cases (rheumatoid arthritis, boxer's fracture, ankle fracture,
-diabetic foot infection) with synthetic X-rays and MRI, results, medicines, admissions and referrals.
+diabetic foot infection) and pregnancy cases (28 weeks, 9 weeks, ectopic) and an enlarged prostate, with synthetic
+X-rays, MRI and ultrasound, results, medicines, admissions and referrals.
 
 ## Modules included
 

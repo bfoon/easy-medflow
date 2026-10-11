@@ -80,7 +80,23 @@
   const anaemia = flag('HB') === 'L' || flag('HB') === 'LL';
   const lowO2 = bad('SAO2') || bad('PO2');
 
-  window.MF_ANATOMY = {spine, realSpine, hands, feet, longBones, cordInjury, weakBone, boneSpot, hr, levels: LEVELS,
+  /* ------------------------------------------------------------------ reproductive: pregnancy and organ findings */
+  const sex = (D.patient || {}).sex;
+  const hcgPos = ((latest('HCG') || {}).display || '').toLowerCase().startsWith('positive');
+  const dxl = (D.dx || []).map(t => t.toLowerCase());
+  const ended = dxl.some(t => /postpartum|postnatal|miscarriage|delivered|termination/.test(t));
+  const ectopic = dxl.find(t => /ectopic/.test(t));
+  const pregText = dxl.find(t => /pregnan|antenatal|gestation|weeks/.test(t) && !/not pregnant/.test(t));
+  const wk = (() => { for (const t of [...dxl, ...texts]) { const m = t.match(/(\d{1,2})\s*(?:weeks|wks|w\b)/); if (m && +m[1] >= 4 && +m[1] <= 42) return +m[1]; } return null; })();
+  const fhrImg = (D.imaging || []).flatMap(i => i.measurements || []).find(m => /fetal heart/i.test(m.label || ''));
+  const pregnancy = sex === 'F' && !ended && (hcgPos || pregText) ? {weeks: wk || (hcgPos ? 8 : 20), ectopic: ectopic ? {side: side(ectopic) || 'right'} : null,
+    fhr: fhrImg ? +fhrImg.value : 140, anaemia: flag('HB') === 'L' || flag('HB') === 'LL', bp: (D.vitals || {}).bp || ''} : null;
+  const repro = {sex, pregnancy, fibroids: any('fibroid'), pid: any('pelvic inflammatory'), cyst: any('ovarian cyst'),
+    prostate: sex === 'M' && (bad('PSA') || any('prostat', 'bph')), psa: num('PSA')};
+  // the womb's top (fundus) rises with gestation: pubic bone at 12 weeks, navel at 20, near the ribs at 36
+  const fundusY = pregnancy && !pregnancy.ectopic ? Math.max(300, Math.min(470, 470 - (pregnancy.weeks - 12) * (170 / 24))) : null;
+
+  window.MF_ANATOMY = {repro, fundusY, reproSpot: fundusY ? [200, fundusY + 30] : null,spine, realSpine, hands, feet, longBones, cordInjury, weakBone, boneSpot, hr, levels: LEVELS,
     flowFactor: Math.max(.55, Math.min(1.8, 76 / hr)), nerveIrregular, lymphActive, anaemia, lowO2};
 
   /* ------------------------------------------------------------------ drawing helpers */
@@ -195,6 +211,22 @@
     if (pick[0]) pick[0].classList.add(b.healing ? 'healing' : 'broken');
   });
 
+  if (fundusY) {
+    const top = fundusY, h = 486 - top, w = Math.min(96, 30 + h * .55), cy = top + h / 2, sc = Math.min(1, .25 + (pregnancy.weeks - 8) / 32);
+    const womb = document.createElementNS(NS, 'g');
+    womb.setAttribute('class', 'bm-preg');
+    womb.innerHTML = `<title>Pregnancy, ${pregnancy.weeks} weeks</title>
+      <ellipse cx="200" cy="${cy}" rx="${w / 2}" ry="${h / 2}" class="womb"/><ellipse cx="200" cy="${cy}" rx="${w / 2 - 5}" ry="${h / 2 - 5}" class="fluid"/>
+      <path d="M${200 + w / 2 - 6},${top + h * .22} q8,${h * .2} 0,${h * .4}" class="placenta"/>
+      <g class="fetus" transform="translate(200,${cy + 4}) scale(${(sc * h / 120).toFixed(3)})">
+        <circle cx="-6" cy="-26" r="15" class="skin"/><path d="M-14,-12 C-30,6 -22,34 0,40 C22,42 30,22 22,4 C16,-8 4,-14 -14,-12Z" class="skin"/>
+        <path d="M8,30 C20,34 24,22 16,14" class="limb"/><path d="M-12,-4 C-20,6 -14,14 -6,10" class="limb"/>
+        <circle cx="2" cy="4" r="3.2" class="fhr" style="animation-duration:${(60 / (pregnancy.fhr || 140)).toFixed(2)}s"/>
+        <path d="M2,14 C14,10 22,-4 ${(w / 2 - 6) / (sc * h / 120)},-${h * .12}" class="cord"/></g>`;
+    svg.querySelector('.organs').appendChild(womb);
+    svg.querySelectorAll('.organs [data-sys="reproductive"] > *').forEach(n => { n.style.opacity = '.0'; });   // the enlarged womb replaces the small drawing
+  }
+
   /* ------------------------------------------------------------------ layer switches */
   const want = {skeleton: !!(realSpine.length || hands.inflamed || hands.fracture || feet.gout || feet.fracture || feet.infection || longBones.length),
                 nerves: !!(cordInjury || nerveIrregular.length), lymph: !!lymphActive.length};
@@ -211,6 +243,8 @@
   longBones.forEach(b => notes.push(`${b.side} ${b.bone}: ${b.healing ? 'healing' : 'fracture'}`));
   if (weakBone) notes.push('Bones shown thinner (low vitamin D / calcium)');
   if (cordInjury) notes.push(`Nerve signals stop below ${cordInjury.level}`);
+  if (pregnancy) notes.push(pregnancy.ectopic ? `Ectopic pregnancy (${pregnancy.ectopic.side} tube)` : `Pregnancy, ${pregnancy.weeks} weeks · fetal heart ${pregnancy.fhr}/min`);
+  if (repro.prostate) notes.push(`Prostate enlarged${repro.psa ? ` (PSA ${repro.psa})` : ''}`);
   if (nerveIrregular.length) notes.push(`Nerve impulses irregular: ${nerveIrregular.join(', ')} out of range`);
   if (lymphActive.length) notes.push(`Lymph nodes active: ${lymphActive.join(', ')} raised`);
   if (anaemia) notes.push('Blood paler: low haemoglobin');

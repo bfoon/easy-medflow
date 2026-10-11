@@ -16,7 +16,7 @@
   const SPOTS = {
     brain: [200, 58], thyroid: [200, 150], lungs: [160, 250], heart: [214, 268], blood: [86, 336],
     liver: [168, 322], stomach: [244, 332], pancreas: [192, 364], kidneys: [240, 404], bladder: [200, 468],
-    reproductive: [200, 497], bone: (window.MF_ANATOMY && window.MF_ANATOMY.boneSpot) || [150, 640], immune: [252, 212],
+    reproductive: (window.MF_ANATOMY && window.MF_ANATOMY.reproSpot) || [200, 497], bone: (window.MF_ANATOMY && window.MF_ANATOMY.boneSpot) || [150, 640], immune: [252, 212],
   };   // the bone marker sits where the problem is (spine level, hand, foot or long bone): see anatomy-layers.js
   const SEVERITY = {HH: 4, LL: 4, H: 2, L: 2, A: 2, N: 1, '': 0};
   const FLAG_TEXT = {HH: '▲▲ Critical high', LL: '▼▼ Critical low', H: '▲ High', L: '▼ Low', A: 'Abnormal', N: 'Normal'};

@@ -249,3 +249,32 @@
 .sk-crystal{animation:sparkL 1.4s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
 .sk-infected{stroke:#7E3A8C!important}
 @media (prefers-reduced-motion: reduce){.joint-dot.inflamed,.node.active,.layer-skeleton .bn.vert.hit,.sk-hit,.sk-gout,.sk-crystal{animation:none}}
+
+/* ============================================================= pregnancy and reproductive organs */
+.w3d-wrap{display:flex;flex-direction:column}
+.w3d{position:relative;height:380px;border-radius:14px;overflow:hidden;background:radial-gradient(ellipse at 50% 40%,#3a2a33 0%,#1d1419 60%,#0f0a0d 100%);box-shadow:inset 0 0 60px rgba(0,0,0,.45)}
+.w3d canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+.w3d canvas:active{cursor:grabbing}
+.w3d.ready .h3d-loading{opacity:0;pointer-events:none}
+.w3d-info{position:absolute;left:12px;top:10px;display:flex;flex-direction:column;gap:2px;color:#fff;font-size:.78rem;z-index:2;pointer-events:none}
+.w3d-info b{font-family:var(--display);font-size:1.25rem}.w3d-info span{color:#f3d6dc}.w3d-info .warn{color:#ffb4bc;font-weight:700}
+.rp-tabs button.on{background:#B85A6B;border-color:#B85A6B}
+.oa.rp{max-height:360px}
+.rp-follicle{animation:sparkL 3s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.rp-cyst{animation:nodeSwell 3s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.rp-fibroid{animation:boneHit 2.4s ease-in-out infinite}
+.rp-inflamed path{stroke:#E05A62!important;animation:boneHit 1.4s infinite}
+.rp-ectopic{animation:boneHit 1.2s infinite}.rp-embryo{animation:heartBeat .45s infinite;transform-box:fill-box;transform-origin:center}
+.rp-fhr{animation:heartBeat .43s infinite;transform-box:fill-box;transform-origin:center}
+.rp-hot{animation:boneHit 1.6s infinite}
+/* pregnant womb on the body map */
+.bm-preg .womb{fill:#E8A3AE;stroke:#C27384;stroke-width:1.4;opacity:.92}
+.bm-preg .fluid{fill:#DDEFF6;opacity:.85}
+.bm-preg .placenta{fill:none;stroke:#8E2A35;stroke-width:7;stroke-linecap:round;opacity:.9}
+.bm-preg .skin{fill:#F0B9A9;stroke:#D99A88;stroke-width:.8}
+.bm-preg .limb{fill:none;stroke:#F0B9A9;stroke-width:7;stroke-linecap:round}
+.bm-preg .cord{fill:none;stroke:#E6D3B3;stroke-width:3}
+.bm-preg .fhr{fill:#C8323F;animation:heartBeat .43s infinite;transform-box:fill-box;transform-origin:center}
+.bm-preg .fetus{animation:fetusFloat 4s ease-in-out infinite;transform-box:fill-box}
+@keyframes fetusFloat{50%{translate:0 -2px;rotate:-2deg}}
+@media (prefers-reduced-motion: reduce){.bm-preg .fetus,.bm-preg .fhr,.rp-fhr,.rp-follicle,.rp-cyst{animation:none}}

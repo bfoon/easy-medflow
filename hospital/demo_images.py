@@ -274,3 +274,45 @@ def xray_foot(kind='gout', seed=53):
             x, y = random.randint(150, 182), random.randint(200, 260); d.ellipse([x, y, x + 6, y + 5], fill=45)   # bone destruction
     img = Image.blend(img.filter(ImageFilter.GaussianBlur(1.7)), Image.effect_noise((w, h), 12).convert('L'), .06).convert('RGB')
     d = ImageDraw.Draw(img); d.text((14, 14), 'Ankle · AP' if kind == 'ankle' else 'Foot · DP', fill=(230, 230, 230)); _stamp(d, w, h); return _png(img)
+
+
+def ultrasound_obstetric(weeks=28, kind='normal', seed=61):
+    """Obstetric ultrasound. kind: 'normal' (fetus sized by weeks; early = embryo in a sac) or 'ectopic' (empty uterus, adnexal mass)."""
+    random.seed(seed); w, h = 640, 520
+    sector = Image.new('L', (w, h), 0); ImageDraw.Draw(sector).pieslice([-140, -300, 780, 620], 55, 125, fill=255)
+    tissue = Image.blend(Image.new('L', (w, h), 75), Image.effect_noise((w, h), 70).convert('L'), .45)
+    img = Image.composite(tissue, Image.new('L', (w, h), 0), sector); d = ImageDraw.Draw(img)
+    if kind == 'ectopic':
+        d.ellipse([230, 170, 410, 300], fill=110)                                     # empty uterus with thickened lining
+        d.ellipse([440, 220, 500, 270], fill=40); d.ellipse([458, 236, 482, 256], fill=160)   # adnexal ring
+        d.ellipse([200, 330, 420, 380], fill=20)                                      # free fluid
+    elif weeks < 11:
+        d.ellipse([250, 170, 390, 290], fill=15)                                      # gestational sac (dark fluid)
+        d.ellipse([300, 220, 340, 248], fill=170)                                     # embryo
+        d.ellipse([340, 205, 352, 216], fill=200)                                     # yolk sac
+    else:
+        s = min(1.0, .45 + (weeks - 11) / 29 * .55)
+        d.ellipse([170, 120, 470, 420], fill=12)                                      # amniotic fluid
+        cx, cy = 300, 270
+        d.ellipse([cx - 95 * s, cy - 110 * s, cx + 5 * s, cy - 10 * s], fill=175)     # fetal head
+        d.ellipse([cx - 80 * s + 2, cy - 92 * s, cx - 10 * s, cy - 28 * s], fill=120) # brain
+        d.ellipse([cx - 20 * s, cy - 40 * s, cx + 120 * s, cy + 80 * s], fill=160)    # body
+        d.line([(cx + 60 * s, cy + 70 * s), (cx + 120 * s, cy + 120 * s)], fill=170, width=int(16 * s))   # leg
+        d.line([(cx, cy - 20 * s), (cx - 30 * s, cy + 30 * s)], fill=170, width=int(12 * s))              # arm
+        d.ellipse([cx + 30 * s, cy - 2 * s, cx + 48 * s, cy + 16 * s], fill=230)      # heart (bright)
+        d.rectangle([420, 140, 470, 300], fill=140)                                   # placenta
+    img = Image.composite(img.filter(ImageFilter.GaussianBlur(1.3)), Image.new('L', (w, h), 0), sector).convert('RGB')
+    d = ImageDraw.Draw(img); d.text((14, 14), 'Ectopic: adnexa' if kind == 'ectopic' else f'Obstetric · {weeks} weeks', fill=(200, 200, 200)); _stamp(d, w, h); return _png(img)
+
+
+def ultrasound_prostate(enlarged=True, seed=63):
+    random.seed(seed); w, h = 640, 520
+    sector = Image.new('L', (w, h), 0); ImageDraw.Draw(sector).pieslice([-140, -300, 780, 620], 55, 125, fill=255)
+    tissue = Image.blend(Image.new('L', (w, h), 70), Image.effect_noise((w, h), 70).convert('L'), .45)
+    img = Image.composite(tissue, Image.new('L', (w, h), 0), sector); d = ImageDraw.Draw(img)
+    d.ellipse([230, 80, 410, 200], fill=12)                                           # bladder (urine is dark)
+    r = 95 if enlarged else 60
+    d.ellipse([320 - r, 230 - r * .7, 320 + r, 230 + r * .7], fill=120)               # prostate
+    d.ellipse([320 - r * .55, 230 - r * .4, 320 + r * .55, 230 + r * .4], fill=95)    # transition zone
+    img = Image.composite(img.filter(ImageFilter.GaussianBlur(1.3)), Image.new('L', (w, h), 0), sector).convert('RGB')
+    d = ImageDraw.Draw(img); d.text((14, 14), 'Prostate · transabdominal', fill=(200, 200, 200)); _stamp(d, w, h); return _png(img)

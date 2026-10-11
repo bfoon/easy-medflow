@@ -188,6 +188,7 @@ def run_all():
     res['bone and injury cases'] = bone_cases(doctor, rad, nurse)
     res['specialist logins'] = network_portal(doctor)
     res['hand and foot cases'] = hand_foot_cases(doctor, rad)
+    res['pregnancy and reproductive cases'] = pregnancy_cases(doctor, rad)
     res['patients placed on map'] = link_patient_locations()
     return res
 
@@ -444,4 +445,61 @@ def hand_foot_cases(doctor, rad):
     if g and not ImagingOrder.objects.filter(encounter=g).exists():
         study(g, rad, 'xray', 'Right foot', 'bone', di.xray_foot('gout'), 'Soft-tissue swelling and a punched-out erosion with overhanging edge at the right 1st MTP joint.',
               'Changes of gout at the right first metatarsophalangeal joint.', True, hours=1)
+    return made
+
+
+def pregnancy_cases(doctor, rad):
+    """Fictional antenatal patients (28 weeks, 9 weeks), an ectopic pregnancy, and an enlarged prostate."""
+    from .models import Bed
+    if Encounter.objects.filter(diagnosis__icontains='singleton pregnancy at 28 weeks').exists():
+        return 0
+    now = timezone.now()
+    mat = Department.objects.filter(name='Maternity').first() or Department.objects.first()
+    em = Department.objects.filter(name='Emergency').first() or mat
+    surg = Department.objects.filter(name='Surgery').first() or em
+    made = 0
+    # 1. antenatal visit at 28 weeks, mild anaemia
+    p = new_patient('Haddy', 'Touray', 'F', 27, 'Brikama')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=mat, status='open', reason='Routine antenatal visit',
+                                 diagnosis='Antenatal care, singleton pregnancy at 28 weeks', assessment='Fundal height 28 cm; fetal movements felt; mild pallor.',
+                                 vitals={'bp': '112/70', 'heart_rate': '92', 'temperature_c': '36.8'})
+    lab_result(e, 'HCG', {'HCG': 'Positive'}, doctor, hours=24 * 120)
+    lab_result(e, 'CBC', {'HB': 10.2, 'WBC': 8.8, 'PLT': 230, 'RBC': 3.8, 'HCT': 31, 'MCV': 79}, doctor, hours=4)
+    study(e, rad, 'ultrasound', 'Obstetric', 'reproductive', di.ultrasound_obstetric(28), 'Single live intrauterine fetus, cephalic. Placenta posterior, clear of the cervix. Liquor normal.',
+          'Normal growth for 28 weeks.', False, [{'label': 'Fetal heart rate', 'value': '146', 'unit': '/min', 'abnormal': False},
+                                                {'label': 'Estimated fetal weight', 'value': '1150', 'unit': 'g', 'abnormal': False}], hours=3)
+    made += 1
+    # 2. early pregnancy at 9 weeks
+    p = new_patient('Ndey', 'Jobe', 'F', 31, 'Serrekunda')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=mat, status='open', reason='Missed period and nausea',
+                                 diagnosis='Early intrauterine pregnancy at 9 weeks', vitals={'bp': '108/68', 'heart_rate': '84'})
+    lab_result(e, 'HCG', {'HCG': 'Positive'}, doctor, hours=6)
+    study(e, rad, 'ultrasound', 'Obstetric (early)', 'reproductive', di.ultrasound_obstetric(9), 'Intrauterine gestational sac with yolk sac and a live embryo.',
+          'Live intrauterine pregnancy, 9 weeks by crown-rump length.', False, [{'label': 'Fetal heart rate', 'value': '168', 'unit': '/min', 'abnormal': False},
+                                                                                  {'label': 'Crown-rump length', 'value': '23', 'unit': 'mm', 'abnormal': False}], hours=2)
+    made += 1
+    # 3. ectopic pregnancy: an emergency
+    p = new_patient('Sainabou', 'Ceesay', 'F', 24, 'Lamin')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=em, status='open', reason='Lower abdominal pain and spotting, 6 weeks since last period',
+                                 diagnosis='Ectopic pregnancy, right fallopian tube, 6 weeks', assessment='Right iliac fossa tenderness; cervical excitation.',
+                                 vitals={'bp': '98/60', 'heart_rate': '112', 'pain_score': '8'})
+    lab_result(e, 'HCG', {'HCG': 'Positive'}, doctor, hours=3)
+    lab_result(e, 'CBC', {'HB': 10.6, 'WBC': 11.2, 'PLT': 260, 'RBC': 3.9, 'HCT': 32, 'MCV': 86}, doctor, hours=3)
+    study(e, rad, 'ultrasound', 'Pelvis', 'reproductive', di.ultrasound_obstetric(6, 'ectopic'), 'Empty uterine cavity. Right adnexal ring-shaped mass with small free fluid.',
+          'Findings consistent with right tubal ectopic pregnancy.', True, hours=2)
+    bed = Bed.objects.filter(state='available').first()
+    if bed:
+        Admission.objects.create(encounter=e, bed=bed); bed.state = 'occupied'; bed.save(update_fields=['state'])
+    made += 1
+    # 4. enlarged prostate with raised PSA
+    p = new_patient('Ebrima', 'Faye', 'M', 68, 'Bakau')
+    e = Encounter.objects.create(patient=p, clinician=doctor, department=surg, status='open', reason='Weak urine stream and getting up at night to pass urine',
+                                 diagnosis='Benign prostatic hyperplasia with lower urinary tract symptoms', vitals={'bp': '138/84', 'heart_rate': '76'})
+    if LabTest.objects.filter(code='PSA').exists():
+        lab_result(e, 'PSA', {'PSA': 6.8}, doctor, hours=24)
+    lab_result(e, 'RFT', {'CREA': 102, 'UREA': 6.1, 'NA': 139, 'K': 4.4}, doctor, hours=24)
+    study(e, rad, 'ultrasound', 'Prostate', 'reproductive', di.ultrasound_prostate(True), 'Enlarged prostate with median lobe indenting the bladder base. Post-void residual 140 mL.',
+          'Benign prostatic enlargement.', True, [{'label': 'Prostate volume', 'value': '62', 'unit': 'mL', 'abnormal': True},
+                                                   {'label': 'Post-void residual', 'value': '140', 'unit': 'mL', 'abnormal': True}], hours=20)
+    made += 1
     return made
