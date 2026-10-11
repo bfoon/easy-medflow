@@ -1,0 +1,23 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Pharmacy · Reports{% endblock %}
+{% block heading %}Pharmacy reports{% endblock %}
+{% block actions %}<div class="seg"><a class="segl {% if days == 30 %}on{% endif %}" href="?days=30">30 days</a><a class="segl {% if days == 90 %}on{% endif %}" href="?days=90">90 days</a></div><a class="btn btn-ghost" href="{% url 'pharm_stock' %}?format=csv"><i class="bi bi-filetype-csv"></i>Stock list</a>{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+<div class="grid g-2">
+  <section class="panel"><div class="panel-head"><h2>Most used medicines</h2><span class="hint">Last {{ days }} days</span></div>
+    {% for m, v in top %}<a class="ph-barrow" href="{% url 'pharm_card' m.pk %}"><span>{{ m.name }} <small class="muted">{{ m.strength }}</small></span><div class="meter"><i style="--w:{% widthratio v top_max 100 %}%"></i></div><b>{{ v }}</b></a>{% empty %}<div class="empty">No use recorded.</div>{% endfor %}</section>
+  <section class="panel"><div class="panel-head"><h2>ABC analysis</h2><span class="hint">By value used, 90 days</span></div>
+    <div class="ph-abc"><div class="a"><b>A</b>{{ abc_counts.A }} medicines · {{ abc_share.A }}% of spend<small>Control tightly: count often, order carefully</small></div><div class="b"><b>B</b>{{ abc_counts.B }} medicines · {{ abc_share.B }}%<small>Review monthly</small></div><div class="c"><b>C</b>{{ abc_counts.C }} medicines · {{ abc_share.C }}%<small>Keep simple, order in bulk</small></div></div>
+    <div class="scroll-y" style="max-height:300px"><table class="mini-table"><thead><tr><th></th><th>Medicine</th><th class="text-end">Units</th><th class="text-end">Value</th><th class="text-end">Share</th></tr></thead><tbody>
+    {% for r in abc %}<tr><td><span class="ph-cls c-{{ r.cls }}">{{ r.cls }}</span></td><td>{{ r.name }}</td><td class="text-end">{{ r.units }}</td><td class="text-end">{{ r.value|money }}</td><td class="text-end">{{ r.share }}%</td></tr>{% endfor %}</tbody></table></div></section>
+  <section class="panel"><div class="panel-head"><h2>Stock by location</h2></div><table class="mini-table"><thead><tr><th>Location</th><th class="text-end">Units</th><th class="text-end">Value</th></tr></thead><tbody>
+    {% for n, u, v in locs %}<tr><td>{{ n }}</td><td class="text-end">{{ u }}</td><td class="text-end">{{ v|money }}</td></tr>{% empty %}<tr><td colspan="3" class="empty">No stock.</td></tr>{% endfor %}</tbody></table></section>
+  <section class="panel"><div class="panel-head"><h2>Issued to wards</h2><span class="hint">Last {{ days }} days</span></div><table class="mini-table"><thead><tr><th>Ward</th><th class="text-end">Requisitions</th><th class="text-end">Units</th></tr></thead><tbody>
+    {% for w in wards %}<tr><td>{{ w.location__name }}</td><td class="text-end">{{ w.n }}</td><td class="text-end">{{ w.units }}</td></tr>{% empty %}<tr><td colspan="3" class="empty">Nothing issued.</td></tr>{% endfor %}</tbody></table></section>
+  <section class="panel" style="grid-column:1/-1"><div class="panel-head"><h2>Dead stock</h2><span class="hint">In stock but not used or issued for 90 days: consider moving, returning or not reordering</span></div>
+    <table class="mini-table"><thead><tr><th>Medicine</th><th class="text-end">Qty</th><th class="text-end">Value</th></tr></thead><tbody>
+    {% for r in dead %}<tr><td><a href="{% url 'pharm_card' r.m.pk %}">{{ r.m }}</a></td><td class="text-end">{{ r.qty }}</td><td class="text-end">{{ r.value|money }}</td></tr>{% empty %}<tr><td colspan="3" class="empty"><i class="bi bi-check2-circle"></i>No dead stock.</td></tr>{% endfor %}</tbody></table></section>
+</div>
+{% endblock %}

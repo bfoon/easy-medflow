@@ -11,23 +11,75 @@
 {% if o.clinical_question %}<div class="alert-mf info mb-3"><i class="bi bi-question-circle"></i><div><b>Clinical question:</b> {{ o.clinical_question }}</div></div>{% endif %}
 <div class="grid g-main">
   <section class="panel viewer-panel">
-    {% if o.images.all %}
-    <div class="viewer" id="viewer" tabindex="0" aria-label="Image viewer. Scroll to zoom, drag to pan.">
-      <img id="viewer-img" src="{% url 'imaging_file' o.images.all.0.pk %}" alt="{{ o.get_modality_display }} {{ o.region }}" draggable="false">
-      <div class="viewer-hud" id="viewer-hud">100%</div>
+    {% if viewer.images %}
+    <div class="iv" id="iv" data-can-edit="{{ can_image|yesno:'1,0' }}" data-number="{{ o.number }}"
+         data-ann-url="{% url 'imaging_annotations' 0 %}" data-process-url="{% url 'imaging_process' 0 %}">
+      <div class="iv-toolbar" role="toolbar" aria-label="Image tools">
+        <div class="iv-group">
+          <button type="button" data-tool="pan" title="Pan and select (V)"><i class="bi bi-arrows-move"></i></button>
+          <button type="button" data-tool="wl" title="Window / level: drag to adjust (W)"><i class="bi bi-brightness-high"></i></button>
+          <button type="button" data-tool="lens" title="Magnifier (L)"><i class="bi bi-zoom-in"></i></button>
+        </div>
+        {% if can_image %}<div class="iv-group">
+          <button type="button" data-tool="ruler" title="Ruler (R)"><i class="bi bi-rulers"></i></button>
+          <button type="button" data-tool="angle" title="Angle (A)"><i class="bi bi-triangle"></i></button>
+          <button type="button" data-tool="cobb" title="Cobb angle, for spine curves (C)"><i class="bi bi-bezier2"></i></button>
+          <button type="button" data-tool="ellipse" title="Region: area and intensity (E)"><i class="bi bi-circle"></i></button>
+          <button type="button" data-tool="arrow" title="Arrow (O)"><i class="bi bi-arrow-up-right"></i></button>
+          <button type="button" data-tool="text" title="Note (T)"><i class="bi bi-chat-left-text"></i></button>
+          <button type="button" data-tool="calibrate" title="Calibrate to millimetres (K)"><i class="bi bi-bounding-box"></i></button>
+        </div>{% endif %}
+        <div class="iv-group">
+          <button type="button" data-act="rotl" title="Rotate left"><i class="bi bi-arrow-counterclockwise"></i></button>
+          <button type="button" data-act="rotr" title="Rotate right"><i class="bi bi-arrow-clockwise"></i></button>
+          <button type="button" data-act="flip" title="Flip horizontally"><i class="bi bi-symmetry-vertical"></i></button>
+          <button type="button" data-act="invert" title="Invert (I)"><i class="bi bi-circle-half"></i></button>
+          <select data-lut aria-label="Colour map" title="Colour map"><option value="">Greyscale</option><option value="hot">Hot</option><option value="bone">Bone</option><option value="spectrum">Spectrum</option></select>
+          <button type="button" data-act="fit" title="Fit to screen (0)"><i class="bi bi-aspect-ratio"></i></button>
+          <button type="button" data-act="full" title="Full screen (F)"><i class="bi bi-arrows-fullscreen"></i></button>
+        </div>
+        {% if can_image %}<div class="iv-group">
+          <button type="button" data-act="undo" title="Undo (Ctrl+Z)"><i class="bi bi-arrow-90deg-left"></i></button>
+          <button type="button" data-act="clear" title="Remove all measurements"><i class="bi bi-eraser"></i></button>
+          <button type="button" data-act="save" class="iv-save" title="Save measurements (Ctrl+S)" disabled><i class="bi bi-floppy"></i>Save</button>
+          <span class="iv-status" aria-live="polite"></span>
+        </div>{% endif %}
+        <div class="iv-group ms-auto">
+          <button type="button" data-act="export" title="Download with measurements"><i class="bi bi-download"></i></button>
+          {% if can_image and o.status != 'cancelled' %}<button type="button" data-act="process" class="iv-process" title="Straighten and enhance a photo of a film"><i class="bi bi-magic"></i>Process photo</button>{% endif %}
+        </div>
+      </div>
+      <div class="iv-tip"></div>
+      <div class="iv-panes">
+        <div class="iv-pane main" data-mode="pan"><div class="iv-stage"><img alt="{{ o.get_modality_display }} {{ o.region }}" draggable="false"><svg class="iv-ann" xmlns="http://www.w3.org/2000/svg"></svg></div>
+          <div class="iv-hud"></div><div class="iv-lens" hidden></div>
+          <div class="iv-processed" hidden><i class="bi bi-magic"></i> Processed copy: <span></span></div></div>
+        <div class="iv-pane compare" hidden><div class="iv-stage"><img alt="Comparison image" draggable="false"><svg></svg></div><div class="iv-hud">Comparison</div></div>
+      </div>
+      <div class="iv-bottom">
+        <label>Brightness <input type="range" min="20" max="300" value="100" data-f="b"></label>
+        <label>Contrast <input type="range" min="20" max="400" value="100" data-f="c"></label>
+        <button type="button" class="btn btn-sm btn-ghost" data-act="reset-wl"><i class="bi bi-arrow-counterclockwise"></i>Reset display</button>
+        <label class="ms-auto">Compare with <select data-compare class="form-select form-select-sm d-inline-block w-auto"><option value="">Nothing</option>
+          {% if viewer.images|length > 1 %}<optgroup label="This study">{% for i in viewer.images %}<option value="{{ i.id }}">{{ i.caption }}</option>{% endfor %}</optgroup>{% endif %}
+          {% if viewer.priors %}<optgroup label="Earlier studies">{% for i in viewer.priors %}<option value="{{ i.id }}">{{ i.caption }}</option>{% endfor %}</optgroup>{% endif %}
+        </select></label>
+        <label class="small"><input type="checkbox" class="form-check-input" data-sync checked> Link zoom</label>
+      </div>
+      <div class="iv-thumbs">{% for i in viewer.images %}<button type="button" class="iv-thumb" data-id="{{ i.id }}" title="{{ i.caption }}"><img src="{{ i.url }}" alt="" loading="lazy"><span>{% if i.processed %}<i class="bi bi-magic"></i> {% endif %}{{ i.caption }}</span></button>{% endfor %}</div>
+      <div class="iv-measures"><div class="label-sm mb-1">Measurements &amp; notes on this image</div><div class="iv-list"></div></div>
     </div>
-    <div class="viewer-tools">
-      <label>Brightness <input type="range" min="40" max="200" value="100" data-f="brightness"></label>
-      <label>Contrast <input type="range" min="40" max="250" value="100" data-f="contrast"></label>
-      <button class="btn btn-sm btn-ghost" data-act="invert"><i class="bi bi-circle-half"></i>Invert</button>
-      <button class="btn btn-sm btn-ghost" data-act="reset"><i class="bi bi-arrow-counterclockwise"></i>Reset</button>
-    </div>
-    <div class="thumbs">{% for img in o.images.all %}<button class="thumb {% if forloop.first %}on{% endif %}" data-src="{% url 'imaging_file' img.pk %}" title="{{ img.caption }}"><img src="{% url 'imaging_file' img.pk %}" alt="{{ img.caption|default:'Image' }}" loading="lazy"><span>{{ img.caption|default:forloop.counter }}</span></button>{% endfor %}</div>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <filter id="lut-hot" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="table" tableValues="0 .9 1 1 1"/><feFuncG type="table" tableValues="0 0 .45 .9 1"/><feFuncB type="table" tableValues="0 0 0 .3 1"/></feComponentTransfer></filter>
+      <filter id="lut-bone" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="table" tableValues="0 .3 .62 1"/><feFuncG type="table" tableValues="0 .33 .72 1"/><feFuncB type="table" tableValues="0 .42 .78 1"/></feComponentTransfer></filter>
+      <filter id="lut-spectrum" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="table" tableValues="0 0 0 .5 1 1"/><feFuncG type="table" tableValues="0 .3 .9 1 .7 .1"/><feFuncB type="table" tableValues=".4 1 .6 0 0 0"/></feComponentTransfer></filter>
+    </svg>
+    {{ viewer|json_script:"viewer-data" }}
     {% else %}<div class="empty"><i class="bi bi-image"></i>No images yet.{% if can_image %} Upload them below once the study is done.{% endif %}</div>{% endif %}
     {% if can_image and o.status != 'cancelled' %}
     <form method="post" action="{% url 'imaging_upload' o.pk %}" enctype="multipart/form-data" class="upload-zone mt-3" id="upload">{% csrf_token %}
-      <i class="bi bi-cloud-arrow-up"></i><div><b>Add images</b><div class="small muted">JPG, PNG or WEBP, up to 15 MB each. DICOM files must be exported to JPG/PNG first.</div></div>
-      <input type="file" name="images" accept=".jpg,.jpeg,.png,.webp" multiple required aria-label="Choose images">
+      <i class="bi bi-cloud-arrow-up"></i><div><b>Add images</b><div class="small muted">JPG, PNG or WEBP up to 15 MB, including phone photos of films. Then use <b>Process photo</b> to straighten and enhance them.</div></div>
+      <input type="file" name="images" accept=".jpg,.jpeg,.png,.webp" capture="environment" multiple required aria-label="Choose images">
       <input class="form-control form-control-sm" name="caption" placeholder="Caption, e.g. PA view" style="max-width:180px">
       <button class="btn btn-sm btn-ink">Upload</button>
     </form>{% endif %}
@@ -53,25 +105,38 @@
     {% else %}<p class="muted small mb-0">Waiting for the radiology report.</p>{% endif %}
   </section>
 </div>
+{% if can_image and viewer.images %}
+<dialog id="iv-process" class="ivp" aria-labelledby="ivp-title">
+  <header><h2 id="ivp-title"><i class="bi bi-magic"></i> Process photo</h2><button type="button" class="btn btn-ghost btn-sm ms-auto" data-p="close" aria-label="Close"><i class="bi bi-x-lg"></i></button></header>
+  <p class="small muted mb-2">For a phone photo of a film on a light box: drag the four numbered corners onto the film's corners, choose what to improve, preview, then save. The original stays unchanged and the result is added as a new image.</p>
+  <div class="ivp-body">
+    <div class="ivp-src"><img alt="Original"><svg viewBox="0 0 1000 1000" preserveAspectRatio="none"></svg></div>
+    <div class="ivp-opts">
+      <div class="d-flex flex-wrap gap-1 mb-2">
+        <button type="button" class="btn btn-sm btn-ghost" data-p="auto"><i class="bi bi-crosshair"></i>Find film</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-p="whole"><i class="bi bi-fullscreen"></i>Whole image</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-p="rotl" title="Rotate left"><i class="bi bi-arrow-counterclockwise"></i></button>
+        <button type="button" class="btn btn-sm btn-ghost" data-p="rotr" title="Rotate right"><i class="bi bi-arrow-clockwise"></i></button>
+        <button type="button" class="btn btn-sm btn-ghost" data-p="flip" title="Flip"><i class="bi bi-symmetry-vertical"></i></button>
+        <span class="small muted ivp-rot align-self-center"></span>
+      </div>
+      <label class="ivp-check"><input type="checkbox" class="form-check-input" name="ivp-gray" checked> Greyscale</label>
+      <label class="ivp-check"><input type="checkbox" class="form-check-input" name="ivp-denoise" checked> Remove noise and grain</label>
+      <label class="ivp-check"><input type="checkbox" class="form-check-input" name="ivp-level" checked> Level the exposure</label>
+      <label class="ivp-range">Enhance contrast (CLAHE) <b data-out="ivp-enhance">2</b><input type="range" name="ivp-enhance" min="0" max="4" step=".5" value="2"></label>
+      <label class="ivp-range">Sharpen <b data-out="ivp-sharpen">0.6</b><input type="range" name="ivp-sharpen" min="0" max="3" step=".1" value=".6"></label>
+      <label class="ivp-range">Gamma <b data-out="ivp-gamma">1</b><input type="range" name="ivp-gamma" min=".4" max="2.5" step=".05" value="1"></label>
+      <label class="ivp-check"><input type="checkbox" class="form-check-input" name="ivp-invert"> Invert</label>
+      <div class="ivp-out mt-2"></div>
+    </div>
+  </div>
+  <footer><button type="button" class="btn btn-ghost" data-p="preview"><i class="bi bi-eye"></i>Preview</button><button type="button" class="btn btn-primary" data-p="save"><i class="bi bi-check2"></i>Save as new image</button></footer>
+</dialog>{% endif %}
 {{ o.measurements|json_script:"meas-data" }}
 {% endblock %}
-{% block scripts %}<script>
+{% block head %}<link href="{% asset 'hospital/css/imaging.css' %}" rel="stylesheet">{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/imaging-viewer.js' %}"></script><script>
 (() => {
-  // ---------- viewer: wheel zoom, drag pan, brightness / contrast / invert (display only; the stored image is untouched)
-  const vw = document.getElementById('viewer'), img = document.getElementById('viewer-img');
-  if (vw) {
-    let z = 1, x = 0, y = 0, inv = false, drag = null; const f = {brightness: 100, contrast: 100};
-    const apply = () => { img.style.transform = `translate(${x}px,${y}px) scale(${z})`; img.style.filter = `brightness(${f.brightness}%) contrast(${f.contrast}%)${inv ? ' invert(1)' : ''}`; document.getElementById('viewer-hud').textContent = Math.round(z * 100) + '%'; };
-    vw.addEventListener('wheel', e => { e.preventDefault(); z = Math.min(8, Math.max(1, z * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); if (z === 1) { x = 0; y = 0; } apply(); }, {passive: false});
-    vw.addEventListener('pointerdown', e => { drag = [e.clientX - x, e.clientY - y]; vw.setPointerCapture(e.pointerId); vw.classList.add('grab'); });
-    vw.addEventListener('pointermove', e => { if (drag && z > 1) { x = e.clientX - drag[0]; y = e.clientY - drag[1]; apply(); } });
-    vw.addEventListener('pointerup', () => { drag = null; vw.classList.remove('grab'); });
-    vw.addEventListener('dblclick', () => { z = z > 1 ? 1 : 2.5; if (z === 1) { x = 0; y = 0; } apply(); });
-    document.querySelectorAll('[data-f]').forEach(r => r.addEventListener('input', () => { f[r.dataset.f] = r.value; apply(); }));
-    document.querySelector('[data-act="invert"]').addEventListener('click', () => { inv = !inv; apply(); });
-    document.querySelector('[data-act="reset"]').addEventListener('click', () => { z = 1; x = y = 0; inv = false; f.brightness = f.contrast = 100; document.querySelectorAll('[data-f]').forEach(r => r.value = 100); apply(); });
-    document.querySelectorAll('.thumb').forEach(t => t.addEventListener('click', () => { img.src = t.dataset.src; document.querySelectorAll('.thumb').forEach(o => o.classList.toggle('on', o === t)); z = 1; x = y = 0; apply(); }));
-  }
   // ---------- measurements editor
   const box = document.getElementById('meas'); if (!box) return;
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -81,6 +146,7 @@
   box.addEventListener('input', e => { const i = +e.target.closest('.meas-row').dataset.i, k = e.target.dataset.k; rows[i][k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; sync(); });
   box.addEventListener('click', e => { if (e.target.closest('[data-del]')) { rows.splice(+e.target.closest('.meas-row').dataset.i, 1); render(); } });
   document.getElementById('add-meas').addEventListener('click', () => { rows.push({label: '', value: '', unit: '', abnormal: false}); render(); });
+  window.addReportMeasurement = m => { rows.push(m); render(); document.getElementById('meas').scrollIntoView({behavior: 'smooth', block: 'nearest'}); };   // the viewer sends measurements here
   document.getElementById('report-form').addEventListener('submit', sync);
   render();
 })();

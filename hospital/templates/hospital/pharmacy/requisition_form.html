@@ -1,0 +1,20 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}New ward requisition{% endblock %}
+{% block heading %}New ward requisition{% endblock %}
+{% block subheading %}<p class="sub">Ask the pharmacy for stock for a ward or department.</p>{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+<form method="post" class="panel" style="max-width:860px">{% csrf_token %}
+  <div class="form-grid">
+    <div class="field"><label class="form-label">For</label><select name="deliver_to" class="form-select" required onchange="location.search='?ward='+this.value"><option value="">Choose ward…</option>{% for w in wards %}<option value="{{ w.pk }}" {% if ward.pk == w.pk %}selected{% endif %}>{{ w }}</option>{% endfor %}</select></div>
+    <div class="field"><label class="form-label">Supplied from</label><select name="supply_from" class="form-select">{% for s in sources %}<option value="{{ s.pk }}" {% if s.is_dispensing %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+    <div class="field"><label class="form-label">Priority</label><select name="priority" class="form-select"><option value="routine">Routine</option><option value="urgent">Urgent</option></select></div>
+    <div class="field"><label class="form-label">Needed by</label><input type="date" name="needed_by" class="form-control"></div>
+    <div class="field span-2"><label class="form-label">Notes</label><input name="notes" class="form-control" maxlength="300" placeholder="e.g. for the weekend, extra admissions expected"></div>
+  </div>
+  {% if suggest %}<div class="alert-mf info mb-2"><i class="bi bi-lightbulb"></i><div>Filled in from {{ ward }}'s cupboard: these are running low. Change or remove any line.</div></div>{% endif %}
+  {% with pre=suggest show_cost=False %}{% include 'hospital/pharmacy/_lines.html' %}{% endwith %}
+  <div class="form-actions mt-3"><button class="btn btn-primary"><i class="bi bi-send"></i>Send to pharmacy</button><a class="btn btn-ghost" href="{% url 'pharm_requisitions' %}">Cancel</a></div>
+</form>
+{% endblock %}

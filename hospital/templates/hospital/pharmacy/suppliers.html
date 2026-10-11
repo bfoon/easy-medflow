@@ -1,0 +1,19 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Pharmacy · Suppliers &amp; stores{% endblock %}
+{% block heading %}Suppliers &amp; stores{% endblock %}
+{% block actions %}{% if can_stock %}<a class="btn btn-ghost" href="{% url 'pharm_location_new' %}"><i class="bi bi-plus"></i>Stock location</a><a class="btn btn-primary" href="{% url 'pharm_supplier_new' %}"><i class="bi bi-plus"></i>Supplier</a>{% endif %}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+<div class="grid g-main">
+  <section class="panel align-self-start"><div class="panel-head"><h2>Suppliers</h2></div>
+    <table class="mini-table"><thead><tr><th>Supplier</th><th>Contact</th><th class="text-end">Lead time</th><th class="text-end">Orders</th><th class="text-end">Received, 12 months</th><th></th></tr></thead><tbody>
+    {% for s in rows %}<tr class="{% if not s.active %}text-muted{% endif %}"><td><b>{{ s.name }}</b>{% if not s.active %} <span class="tag">inactive</span>{% endif %}<div class="small muted">{{ s.n_meds }} medicine{{ s.n_meds|pluralize }} by default</div></td>
+      <td class="small">{{ s.contact_person }}<div class="muted">{{ s.phone }}{% if s.email %} · {{ s.email }}{% endif %}</div></td><td class="text-end">{{ s.lead_time_days }} d</td><td class="text-end">{{ s.n_orders }}</td><td class="text-end">{{ s.spend|money }}</td>
+      <td class="text-end">{% if can_stock %}<a class="icon-btn" href="{% url 'pharm_supplier_edit' s.pk %}" aria-label="Edit {{ s.name }}"><i class="bi bi-pencil"></i></a>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="6" class="empty">No suppliers yet.</td></tr>{% endfor %}</tbody></table></section>
+  <section class="panel align-self-start"><div class="panel-head"><h2>Stock locations</h2></div>
+    {% for l in locations %}<div class="ph-item"><b>{{ l.name }}</b>{% if l.is_dispensing %} <span class="tag teal">dispensing</span>{% endif %}{% if not l.active %} <span class="tag">inactive</span>{% endif %}<span class="small muted ms-auto">{{ l.get_kind_display }} · {{ l.n }} batches</span>
+      {% if can_stock %}<a class="icon-btn" href="{% url 'pharm_location_edit' l.pk %}" aria-label="Edit {{ l.name }}"><i class="bi bi-pencil"></i></a>{% endif %}</div>{% endfor %}</section>
+</div>
+{% endblock %}

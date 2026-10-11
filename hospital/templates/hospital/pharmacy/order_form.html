@@ -1,0 +1,19 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}New purchase order{% endblock %}
+{% block heading %}New purchase order{% endblock %}
+{% block subheading %}<p class="sub">Saved as a draft. Check it, then mark it sent.</p>{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+<form method="post" class="panel" style="max-width:980px">{% csrf_token %}
+  <div class="form-grid">
+    <div class="field"><label class="form-label">Supplier</label><select name="supplier" class="form-select" required><option value="">Choose…</option>{% for s in suppliers %}<option value="{{ s.pk }}" {% if sel_supplier == s.pk|stringformat:'s' %}selected{% endif %}>{{ s }} · usually {{ s.lead_time_days }} days</option>{% endfor %}</select></div>
+    <div class="field"><label class="form-label">Funding</label><select name="funding" class="form-select">{% for k, v in funding %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+    <div class="field"><label class="form-label">Deliver to</label><select name="deliver_to" class="form-select">{% for s in stores %}<option value="{{ s.pk }}" {% if s.kind == 'store' %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+    <div class="field"><label class="form-label">Notes for the supplier</label><input name="notes" class="form-control" maxlength="500"></div>
+  </div>
+  {% if pre %}<div class="alert-mf info mb-2"><i class="bi bi-magic"></i><div>{{ pre|length }} lines filled in from the reorder suggestions, rounded up to whole packs, priced at the last cost paid.</div></div>{% endif %}
+  {% with show_cost=True %}{% include 'hospital/pharmacy/_lines.html' %}{% endwith %}
+  <div class="form-actions mt-3"><button class="btn btn-primary"><i class="bi bi-save"></i>Save draft order</button><a class="btn btn-ghost" href="{% url 'pharm_orders' %}">Cancel</a></div>
+</form>
+{% endblock %}

@@ -1,0 +1,1 @@
+{% load medflow %}<select name="witness" class="form-select form-select-sm" required aria-label="Witness"><option value="">Witness (controlled drug)…</option>{% for w in witnesses %}<option value="{{ w.pk }}">{{ w|display_name }}</option>{% endfor %}</select>

@@ -1,0 +1,25 @@
+{# Repeating medicine rows. `pre` = list of {m, qty, cost}; show_cost adds a unit-cost column. #}
+<datalist id="med-list">{% for m in meds %}<option data-id="{{ m.pk }}" value="{{ m.name }} {{ m.strength }} {{ m.form }}"></option>{% endfor %}</datalist>
+<table class="mini-table ph-lines"><thead><tr><th>Medicine</th><th style="width:110px">Quantity</th>{% if show_cost %}<th style="width:120px">Unit cost</th><th class="text-end" style="width:110px">Line total</th>{% endif %}<th style="width:40px"></th></tr></thead>
+<tbody id="lines">
+  {% for p in pre %}<tr><td><select name="med" class="form-select form-select-sm" required>{% for m in meds %}<option value="{{ m.pk }}" {% if m.pk == p.m.pk %}selected{% endif %}>{{ m }} {{ m.form }}</option>{% endfor %}</select></td>
+    <td><input type="number" name="qty" class="form-control form-control-sm" min="1" value="{{ p.qty }}" required></td>{% if show_cost %}<td><input type="number" name="cost" step="0.01" min="0" class="form-control form-control-sm" value="{{ p.cost }}"></td><td class="text-end lt"></td>{% endif %}
+    <td><button type="button" class="icon-btn" data-del aria-label="Remove line"><i class="bi bi-x"></i></button></td></tr>{% endfor %}
+</tbody></table>
+<template id="line-tpl"><tr><td><select name="med" class="form-select form-select-sm" required><option value="">Choose medicine…</option>{% for m in meds %}<option value="{{ m.pk }}">{{ m }} {{ m.form }}</option>{% endfor %}</select></td>
+  <td><input type="number" name="qty" class="form-control form-control-sm" min="1" required></td>{% if show_cost %}<td><input type="number" name="cost" step="0.01" min="0" class="form-control form-control-sm"></td><td class="text-end lt"></td>{% endif %}
+  <td><button type="button" class="icon-btn" data-del aria-label="Remove line"><i class="bi bi-x"></i></button></td></tr></template>
+<button type="button" class="btn btn-sm btn-ghost mt-2" id="add-line"><i class="bi bi-plus"></i>Add medicine</button>{% if show_cost %}<span class="float-end mt-2">Total <b id="po-total">0.00</b></span>{% endif %}
+<script>
+(() => {
+  const body = document.getElementById('lines'), tpl = document.getElementById('line-tpl');
+  const add = () => { body.appendChild(tpl.content.cloneNode(true)); body.lastElementChild.querySelector('select').focus(); };
+  document.getElementById('add-line').addEventListener('click', add);
+  body.addEventListener('click', e => { if (e.target.closest('[data-del]')) { e.target.closest('tr').remove(); total(); } });
+  const total = () => { const t = document.getElementById('po-total'); if (!t) return; let sum = 0;
+    body.querySelectorAll('tr').forEach(r => { const q = +r.querySelector('[name=qty]').value || 0, c = +(r.querySelector('[name=cost]') || {}).value || 0, lt = r.querySelector('.lt'); if (lt) lt.textContent = (q * c).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}); sum += q * c; });
+    t.textContent = sum.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+  body.addEventListener('input', total); total();
+  if (!body.children.length) add();
+})();
+</script>

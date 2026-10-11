@@ -1,0 +1,41 @@
+/* Pharmacy management pages */
+.ph-nav{display:flex;gap:2px;overflow-x:auto;border-bottom:1px solid var(--line);margin:-4px 0 18px;padding-bottom:0}
+.ph-nav a{display:inline-flex;align-items:center;gap:6px;padding:9px 12px;font-weight:600;font-size:.88rem;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.ph-nav a:hover{color:var(--ink)}.ph-nav a.on{color:var(--ink);border-bottom-color:var(--teal)}
+.ph-nav .n{font-size:.7rem;font-weight:700;background:var(--indigo-wash);color:var(--indigo);border-radius:99px;padding:1px 7px}
+.ph-nav .n.warn{background:var(--amber-wash);color:#8A520B}
+.ph-kpis a.kpi{text-decoration:none;color:inherit}.ph-kpis a.kpi:hover{border-color:var(--teal)}
+.ph-kpis .kpi b{font-size:1.65rem}
+.ph-bars{width:100%;height:auto;display:block}.ph-ax{font-size:10px;fill:var(--muted)}
+.ph-barrow{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(60px,1fr) auto;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line);text-decoration:none;color:inherit;font-size:.88rem}
+.ph-barrow:first-of-type{border-top:0}.ph-barrow>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ph-barrow:hover>span{color:var(--teal-2)}
+.ph-item{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 0;border-top:1px solid var(--line);text-decoration:none;color:inherit;font-size:.9rem}
+.ph-item:first-of-type{border-top:0}.ph-item small{width:100%}
+.ph-move{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;padding:6px 0;border-top:1px solid var(--line);font-size:.86rem}.ph-move:first-of-type{border-top:0}
+.ph-move b{margin-left:auto}.ph-move small{width:100%}
+.ph-k{display:inline-block;font-size:.7rem;font-weight:700;padding:1px 7px;border-radius:5px;background:var(--paper);color:var(--muted);white-space:nowrap}
+.k-receipt,.k-opening{background:var(--teal-wash);color:var(--teal-2)}.k-dispense{background:var(--indigo-wash);color:var(--indigo)}
+.k-issue_out,.k-issue_in{background:#E6F0FA;color:#1D5C99}.k-adjust{background:var(--plum-wash);color:var(--plum)}
+.k-expired,.k-damaged{background:var(--red-wash);color:var(--red)}.k-quarantine{background:var(--amber-wash);color:#8A520B}.k-ward_use{background:#EEF6E8;color:#3E6B1F}.k-return{background:var(--teal-wash);color:var(--teal-2)}
+.ph-table td{vertical-align:middle}.ph-table .row-out td,.row-out td{background:#FFF6F6}
+.ph-ledger td{font-size:.86rem;padding-top:7px;padding-bottom:7px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.ph-batch{border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px}
+.ph-batch.expired{border-color:#F3C1C4;background:#FFF7F7}.ph-batch.quar{border-color:#C7CCF3;background:#F7F8FF}
+.ph-acts summary{cursor:pointer;color:var(--teal-2);margin-top:4px}
+.ph-inline{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}.ph-inline .form-control,.ph-inline .form-select{width:auto;flex:1;min-width:120px}
+.ph-sugg{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}.ph-sugg:first-of-type{border-top:0}
+.ph-lines td{vertical-align:middle;padding-top:6px;padding-bottom:6px}
+.ph-count tr.diff td{background:#FFFBEB}
+.ph-abc{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.ph-abc>div{border-radius:10px;padding:10px;font-size:.82rem}.ph-abc b{display:block;font-size:1.3rem;font-family:var(--display)}.ph-abc small{display:block;color:var(--muted);margin-top:2px}
+.ph-abc .a{background:var(--red-wash)}.ph-abc .b{background:var(--amber-wash)}.ph-abc .c{background:var(--teal-wash)}
+.ph-cls{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:6px;font-weight:800;font-size:.75rem}
+.c-A{background:var(--red-wash);color:var(--red)}.c-B{background:var(--amber-wash);color:#8A520B}.c-C{background:var(--teal-wash);color:var(--teal-2)}
+.alert-mf.danger{background:var(--red-wash);border-color:transparent;color:var(--red)}
+@media (max-width:980px){.ph-abc{grid-template-columns:1fr}}
+@media print{.ph-nav,.ph-acts,.filter-row{display:none!important}}
+.scroll-y:has(.ph-ledger){overflow:auto}
+.ph-ledger{min-width:820px}.ph-ledger td,.ph-ledger th{white-space:nowrap}.ph-ledger td:nth-child(2){white-space:normal;min-width:150px}
+.ph-ledger .muted{font-size:.78rem}

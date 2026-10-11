@@ -1,0 +1,28 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ po.number }}{% endblock %}
+{% block heading %}{{ po.number }} · {{ po.supplier }}{% endblock %}
+{% block subheading %}<p class="sub">{{ po.get_funding_display }} · deliver to {{ po.deliver_to|default:'main store' }} · created by {{ po.created_by|display_name }} {{ po.created_at|date:'j M' }}{% if po.sent_at %} · sent {{ po.sent_at|date:'j M' }}{% endif %}{% if po.expected_date %} · expected {{ po.expected_date|date:'j M' }}{% endif %} ·
+  <span class="tag {% if po.status == 'sent' %}indigo{% elif po.status == 'partial' %}amber{% elif po.status == 'received' %}teal{% elif po.status == 'cancelled' %}red{% endif %}">{{ po.get_status_display }}</span></p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'pharm_orders' %}"><i class="bi bi-arrow-left"></i>Orders</a><button class="btn btn-ghost" onclick="window.print()"><i class="bi bi-printer"></i>Print order</button>
+  {% if can_stock and po.status == 'draft' %}<form method="post" action="{% url 'pharm_order_action' po.pk 'send' %}">{% csrf_token %}<button class="btn btn-primary"><i class="bi bi-send"></i>Mark as sent</button></form>{% endif %}
+  {% if can_stock and po.status in 'draft sent' %}<form method="post" action="{% url 'pharm_order_action' po.pk 'cancel' %}" data-confirm="Cancel {{ po.number }}?">{% csrf_token %}<button class="btn btn-ghost">Cancel</button></form>{% endif %}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+{% if po.notes %}<div class="alert-mf info mb-3"><i class="bi bi-chat-left-text"></i><div>{{ po.notes }}</div></div>{% endif %}
+<section class="panel print-area">
+  {% if can_stock and po.status in 'sent partial' %}<form method="post" action="{% url 'pharm_order_action' po.pk 'receive' %}" data-confirm="Book this delivery into stock?">{% csrf_token %}
+  <div class="alert-mf info mb-2"><i class="bi bi-box-seam"></i><div><b>Receiving a delivery:</b> enter what actually arrived, with the batch number and expiry printed on each pack. Leave a line at 0 if it did not come.</div></div>{% endif %}
+  <table class="mini-table"><thead><tr><th>Medicine</th><th class="text-end">Ordered</th><th class="text-end">Unit cost</th><th class="text-end">Line total</th><th class="text-end">Received</th>{% if can_stock and po.status in 'sent partial' %}<th>Arrived now</th><th>Batch</th><th>Expiry</th>{% endif %}</tr></thead><tbody>
+  {% for l in lines %}<tr><td><a href="{% url 'pharm_card' l.medication_id %}">{{ l.medication }}</a> <span class="muted">{{ l.medication.form }}</span>{% if l.medication.cold_chain %} <i class="bi bi-snow2 text-info" title="Cold chain: check the temperature on arrival"></i>{% endif %}</td>
+    <td class="text-end">{{ l.quantity }}</td><td class="text-end">{{ l.unit_cost|money }}</td><td class="text-end">{{ l.line_total|money }}</td>
+    <td class="text-end {% if l.outstanding %}text-warning-emphasis{% else %}text-success{% endif %}">{{ l.received_quantity }}</td>
+    {% if can_stock and po.status in 'sent partial' %}{% if l.outstanding %}<td><input type="number" name="qty_{{ l.pk }}" class="form-control form-control-sm" min="0" max="{{ l.outstanding }}" value="{{ l.outstanding }}" style="width:90px"></td>
+      <td><input name="batch_{{ l.pk }}" class="form-control form-control-sm" placeholder="Batch no." style="width:120px"></td><td><input type="date" name="expiry_{{ l.pk }}" class="form-control form-control-sm" min="{{ today|date:'Y-m-d' }}"></td>
+      {% else %}<td colspan="3" class="small text-success"><i class="bi bi-check2"></i> Complete</td>{% endif %}{% endif %}</tr>{% endfor %}
+  </tbody><tfoot><tr><td colspan="3" class="text-end"><b>Total</b></td><td class="text-end"><b>{{ po.total|money }}</b></td><td colspan="4"></td></tr></tfoot></table>
+  {% if can_stock and po.status in 'sent partial' %}<button class="btn btn-primary mt-3"><i class="bi bi-box-arrow-in-down"></i>Book delivery into stock</button></form>{% endif %}
+</section>
+{% if receipts %}<section class="panel mt-3"><div class="panel-head"><h2>Deliveries booked</h2></div><table class="mini-table"><thead><tr><th>When</th><th>Medicine</th><th>Batch</th><th>Expiry</th><th class="text-end">Qty</th><th>By</th></tr></thead><tbody>
+{% for mv in receipts %}<tr><td class="small">{{ mv.created_at|date:'j M H:i' }}</td><td>{{ mv.medication }}</td><td class="mono small">{{ mv.batch.batch_number }}</td><td class="small">{{ mv.batch.expiry|date:'j M Y' }}</td><td class="text-end text-success">+{{ mv.quantity }}</td><td class="small">{{ mv.actor|display_name }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
+{% endblock %}

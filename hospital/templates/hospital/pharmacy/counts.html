@@ -1,0 +1,22 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Pharmacy · Stock take{% endblock %}
+{% block heading %}Stock take{% endblock %}
+{% block subheading %}<p class="sub">Count what is physically on the shelf. Differences are posted to the ledger as adjustments once you confirm.</p>{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+<div class="grid g-main">
+  <section class="panel align-self-start"><div class="panel-head"><h2>Stock takes</h2></div>
+    <table class="mini-table"><thead><tr><th>Number</th><th>Location</th><th>Batches</th><th>Started</th><th>Status</th></tr></thead><tbody>
+    {% for c in counts %}<tr><td><a href="{% url 'pharm_count' c.pk %}"><b>{{ c.number }}</b></a></td><td>{{ c.location }}</td><td>{{ c.n }}</td><td class="small">{{ c.started_by|display_name }}<div class="muted">{{ c.created_at|date:'j M Y' }}</div></td>
+      <td><span class="tag {% if c.status == 'open' %}amber{% elif c.status == 'posted' %}teal{% endif %}">{{ c.get_status_display }}</span>{% if c.posted_at %}<div class="small muted">{{ c.posted_at|date:'j M' }}</div>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty"><i class="bi bi-list-check"></i>No stock takes yet.</td></tr>{% endfor %}</tbody></table></section>
+  {% if can_stock %}<section class="panel align-self-start"><div class="panel-head"><h2>Start a stock take</h2></div>
+    <form method="post">{% csrf_token %}
+      <div class="field"><label class="form-label">Location</label><select name="location" class="form-select" required>{% for l in locations %}<option value="{{ l.pk }}">{{ l }}</option>{% endfor %}</select></div>
+      <div class="field"><label class="form-label">Notes</label><input name="notes" class="form-control" placeholder="e.g. month-end count"></div>
+      <button class="btn btn-primary"><i class="bi bi-play"></i>Start counting</button>
+      <p class="form-text mt-2 mb-0">The count sheet lists every batch the system thinks is there. Print it, count, then type the numbers in. Stock that moves while you count is taken into account.</p>
+    </form></section>{% endif %}
+</div>
+{% endblock %}

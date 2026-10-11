@@ -7,8 +7,10 @@ from django.core.exceptions import ValidationError
 from .models import *
 
 CLINICAL_DISCLAIMER='Decision support only. Clinician verification required. No drug-interaction or dosing engine is configured.'
-def availability(medication):
-    return StockBatch.objects.filter(medication=medication,expiry__gte=timezone.localdate()).aggregate(total=Sum('quantity'))['total'] or 0
+def availability(medication,location=None):
+    """Usable stock (in date, not quarantined) at the dispensing pharmacy, or at `location`."""
+    loc=location or StockLocation.dispensing()
+    return StockBatch.objects.filter(medication=medication,store=loc,expiry__gte=timezone.localdate(),quarantined=False).aggregate(total=Sum('quantity'))['total'] or 0
 
 def prescription_warnings(encounter,medication,quantity):
     allergies=list(encounter.patient.allergies.filter(status='active').values('substance','reaction','severity'))
@@ -27,7 +29,7 @@ def prescription_check(prescription):
     return {'lines':lines,'any_allergy':any(l['possible_allergy_matches'] for l in lines),'any_short':any(l['insufficient_stock'] for l in lines)}
 
 @transaction.atomic
-def dispense(prescription,actor):
+def dispense(prescription,actor,witness=None):
     """Dispense every line that is still owed, earliest-expiring stock first.
 
     Lines marked 'not available, patient informed' are skipped. Lines ordered from a supplier that still have no stock are
@@ -44,18 +46,19 @@ def dispense(prescription,actor):
     plan,waiting=[],[]
     for item in owed:
         need=item.quantity-item.dispensed_quantity
-        batches=list(StockBatch.objects.select_for_update().filter(medication=item.medication,expiry__gte=timezone.localdate(),quantity__gt=0).order_by('expiry','pk'))
+        batches=list(StockBatch.objects.select_for_update().filter(medication=item.medication,store=StockLocation.dispensing(),expiry__gte=timezone.localdate(),quarantined=False,quantity__gt=0).order_by('expiry','pk'))
         have=sum(b.quantity for b in batches)
         if have<need:
             if item.availability=='ordered':waiting.append(item);continue
             raise ValidationError(f'Not enough stock of {item.medication} (need {need}, have {have}). Order it from the supplier, or mark it not available and inform the patient.')
         plan.append((item,batches,need))
     if not plan:raise ValidationError('Still waiting for supplier stock: '+', '.join(str(i.medication) for i in waiting))
+    from .pharmacy import move
     for item,batches,need in plan:
         for batch in batches:
             q=min(need,batch.quantity)
             if q:
-                batch.quantity-=q;batch.save(update_fields=['quantity'])
+                move(batch,-q,'dispense',actor,p.number,f'{item.medication} for {p.encounter.patient.mrn}',witness,p.encounter.patient)   # ledger + controlled-drug witness check
                 Dispense.objects.create(prescription=p,item=item,batch=batch,quantity=q,dispensed_by=actor)
                 need-=q
             if not need:break
@@ -68,7 +71,8 @@ def receive_stock(stock_request,actor,batch_number,expiry,quantity):
     """Book supplier stock into the pharmacy and release prescription lines that were waiting for it."""
     sr=StockRequest.objects.select_for_update().get(pk=stock_request.pk)
     if sr.status in ('received','cancelled'):raise ValidationError('This supplier order is already closed')
-    batch=StockBatch.objects.create(medication=sr.medication,batch_number=batch_number,expiry=expiry,quantity=quantity)
+    from .pharmacy import put
+    batch=put(StockLocation.dispensing(),sr.medication,batch_number,expiry,quantity,Decimal('0'),'receipt',actor,f'SR-{sr.pk}','Supplier request received')
     sr.status,sr.received_batch='received',batch;sr.save(update_fields=['status','received_batch','updated_at'])
     PrescriptionItem.objects.filter(medication=sr.medication,availability='ordered',prescription__state__in=['draft','signed','partial']).update(availability='')
     AuditEvent.objects.create(actor=actor,action='stock_received',target=f'stock_request:{sr.pk}',details={'batch':batch_number,'quantity':quantity})

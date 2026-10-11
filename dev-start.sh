@@ -1,7 +1,7 @@
 #!/bin/sh
 # Development entrypoint: the Docker equivalent of
 #   pip install -r requirements.txt   (done at image build)
-#   migrate → seed_demo → createsuperuser → runserver
+#   migrate → seed_demo → seed_pharmacy → createsuperuser → runserver
 set -eu
 
 echo "→ Waiting for the database"
@@ -15,6 +15,9 @@ python manage.py bootstrap_hospital
 
 echo "→ Seeding fictional demo data (first start only)"
 python manage.py seed_demo --if-empty
+
+# 90 days of sample pharmacy history (medicines, suppliers, wards, orders, requisitions); skips itself once done
+python manage.py seed_pharmacy
 
 echo "→ Ensuring admin account"
 python manage.py shell -c "

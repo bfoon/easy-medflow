@@ -1,0 +1,63 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Pharmacy · Overview{% endblock %}
+{% block heading %}Pharmacy{% endblock %}
+{% block subheading %}<p class="sub">Stock across the main store, the dispensing pharmacy and ward cupboards. Every movement is recorded in the stock ledger.</p>{% endblock %}
+{% block actions %}{% if can_stock %}<a class="btn btn-ghost" href="{% url 'pharm_order_new' %}?from=suggestions"><i class="bi bi-cart-plus"></i>Reorder</a>{% endif %}<a class="btn btn-primary" href="{% url 'pharm_requisition_new' %}"><i class="bi bi-clipboard-plus"></i>Ward requisition</a>{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+<div class="kpis ph-kpis">
+  <a class="kpi good" href="{% url 'pharm_reports' %}"><b>{{ stock_value|money }}</b><span>usable stock value · {{ n_items }} medicines</span></a>
+  <a class="kpi {% if out %}crit{% endif %}" href="{% url 'pharm_stock' %}?level=out"><b>{{ out|length }}</b><span>out of stock</span></a>
+  <a class="kpi {% if low %}abn{% endif %}" href="{% url 'pharm_stock' %}?level=low"><b>{{ low|length }}</b><span>at or below reorder level</span></a>
+  <a class="kpi {% if expired %}crit{% elif soon_count %}abn{% endif %}" href="{% url 'pharm_expiry' %}"><b>{{ soon_count }}</b><span>batches expiring in 90 days{% if expired %} · <b class="d-inline text-danger" style="font-size:inherit">{{ expired|length }} already expired</b>{% endif %}</span></a>
+  <div class="kpi"><b>{{ dispensed30 }}</b><span>units dispensed in 30 days</span></div>
+</div>
+{% if out %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div><b>Out of stock:</b> {% for r in out|slice:":10" %}<a href="{% url 'pharm_card' r.m.pk %}">{{ r.m }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}{% if out|length > 10 %} and {{ out|length|add:"-10" }} more{% endif %}.{% if can_stock %} <a href="{% url 'pharm_order_new' %}?from=suggestions">Raise a purchase order</a>.{% endif %}</div></div>{% endif %}
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Daily use</h2><span class="hint">Units dispensed and used on wards, last 45 days</span></div>
+      {{ chart }}
+    </section>
+    <div class="grid g-2">
+      <section class="panel">
+        <div class="panel-head"><h2>Most used</h2><span class="hint">30 days</span></div>
+        {% for m, v, pct in top %}<a class="ph-barrow" href="{% url 'pharm_card' m.pk %}"><span>{{ m.name }} <small class="muted">{{ m.strength }}</small></span><div class="meter"><i style="--w:{{ pct }}%"></i></div><b>{{ v }}</b></a>
+        {% empty %}<div class="empty">No use recorded yet.</div>{% endfor %}
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>Stock value by group</h2></div>
+        {% for c, v, pct in cats %}<div class="ph-barrow"><span>{{ c }}</span><div class="meter amber"><i style="--w:{{ pct }}%"></i></div><b>{{ v|money }}</b></div>{% empty %}<div class="empty">No stock.</div>{% endfor %}
+      </section>
+    </div>
+    <section class="panel">
+      <div class="panel-head"><h2>Expiring soon</h2><a class="more" href="{% url 'pharm_expiry' %}">All expiry →</a></div>
+      <table class="mini-table"><thead><tr><th>Medicine</th><th>Batch</th><th>Where</th><th>Qty</th><th>Expires</th></tr></thead><tbody>
+      {% for b in soon %}<tr><td><a href="{% url 'pharm_card' b.medication_id %}">{{ b.medication }}</a></td><td class="mono">{{ b.batch_number }}</td><td>{{ b.store }}</td><td>{{ b.quantity }}</td><td><span class="tag {% if b.expiry <= soon30 %}red{% else %}amber{% endif %}">{{ b.expiry|date:'j M Y' }}</span> <small class="muted">{{ b.expiry|timeuntil }}</small></td></tr>
+      {% empty %}<tr><td colspan="5" class="empty">Nothing expires in the next 90 days.</td></tr>{% endfor %}</tbody></table>
+    </section>
+  </div>
+  <div class="stack align-self-start">
+    <section class="panel">
+      <div class="panel-head"><h2>Ward requisitions</h2><a class="more" href="{% url 'pharm_requisitions' %}">All →</a></div>
+      {% for r in reqs %}<a class="ph-item" href="{% url 'pharm_requisition' r.pk %}"><b>{{ r.number }}</b> · {{ r.deliver_to }}{% if r.priority == 'urgent' %} <span class="tag red">Urgent</span>{% endif %}<span class="tag {% if r.status == 'submitted' %}amber{% elif r.status == 'approved' %}indigo{% else %}teal{% endif %} ms-auto">{{ r.get_status_display }}</span><small class="muted d-block">{{ r.requested_by|display_name }} · {{ r.created_at|ago }}</small></a>
+      {% empty %}<div class="empty">No open requisitions.</div>{% endfor %}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Deliveries expected</h2><a class="more" href="{% url 'pharm_orders' %}">Orders →</a></div>
+      {% for po in orders %}<a class="ph-item" href="{% url 'pharm_order' po.pk %}"><b>{{ po.number }}</b> · {{ po.supplier }}<span class="tag {% if po.status == 'partial' %}amber{% else %}indigo{% endif %} ms-auto">{{ po.get_status_display }}</span><small class="muted d-block">{% if po.expected_date %}Expected {{ po.expected_date|date:'j M' }}{% if po.expected_date < today %} · <b class="text-danger">late</b>{% endif %}{% endif %} · {{ po.get_funding_display }}</small></a>
+      {% empty %}<div class="empty">No deliveries pending.</div>{% endfor %}
+    </section>
+    {% if cold %}<section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-snow2 text-info"></i> Cold chain</h2><span class="hint">Keep at 2–8 °C</span></div>
+      {% for r in cold %}<div class="ph-barrow"><span><a href="{% url 'pharm_card' r.m.pk %}">{{ r.m.name }}</a> <small class="muted">{{ r.m.strength }}</small></span><b>{{ r.qty }} {{ r.m.get_unit_display|lower }}{{ r.qty|pluralize }}</b></div>{% endfor %}
+    </section>{% endif %}
+    <section class="panel">
+      <div class="panel-head"><h2>Latest movements</h2></div>
+      {% for mv in recent %}<div class="ph-move"><span class="ph-k k-{{ mv.kind }}">{{ mv.get_kind_display }}</span><a href="{% url 'pharm_card' mv.medication_id %}">{{ mv.medication.name }}</a><b class="{% if mv.quantity < 0 %}text-danger{% else %}text-success{% endif %}">{% if mv.quantity > 0 %}+{% endif %}{{ mv.quantity }}</b><small class="muted d-block">{{ mv.location }} · {{ mv.actor|display_name }} · {{ mv.created_at|ago }}</small></div>
+      {% empty %}<div class="empty">No movements yet.</div>{% endfor %}
+    </section>
+  </div>
+</div>
+{% endblock %}

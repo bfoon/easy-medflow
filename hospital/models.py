@@ -317,23 +317,75 @@ class LabResultValue(Tracked):
     @property
     def is_critical(self):return self.flag in ('LL','HH')
 
+MED_CATEGORIES=[('analgesic','Pain & fever'),('antibiotic','Antibiotics'),('antimalarial','Antimalarials'),('antiretroviral','HIV medicines'),
+    ('tb','TB medicines'),('cardiovascular','Heart & blood pressure'),('diabetes','Diabetes'),('respiratory','Respiratory'),('gi','Stomach & gut'),
+    ('obstetric','Maternal health'),('vitamin','Vitamins & minerals'),('fluids','IV fluids & electrolytes'),('anaesthetic','Anaesthesia'),
+    ('emergency','Emergency'),('mental','Mental health'),('skin','Skin'),('eye','Eye & ear'),('vaccine','Vaccines'),('other','Other')]
+MED_UNITS=[('tablet','Tablet'),('capsule','Capsule'),('sachet','Sachet'),('vial','Vial'),('ampoule','Ampoule'),('bottle','Bottle'),('bag','Bag'),
+    ('tube','Tube'),('inhaler','Inhaler'),('suppository','Suppository'),('pessary','Pessary'),('dose','Dose'),('piece','Piece')]
+
+class StockLocation(Tracked):
+    """A place that holds medicine stock: the main store, the dispensing pharmacy, or a ward's stock cupboard."""
+    KINDS=[('store','Main store'),('pharmacy','Dispensing pharmacy'),('ward','Ward stock'),('theatre','Theatre'),('emergency','Emergency'),('quarantine','Quarantine')]
+    name=models.CharField(max_length=100,unique=True)
+    kind=models.CharField(max_length=12,choices=KINDS,default='ward')
+    ward=models.ForeignKey('Ward',on_delete=models.SET_NULL,null=True,blank=True,related_name='stock_locations')
+    is_dispensing=models.BooleanField(default=False,help_text='Prescriptions are dispensed from this location')
+    active=models.BooleanField(default=True)
+    class Meta: ordering=['kind','name']
+    def __str__(self):return self.name
+    @classmethod
+    def dispensing(cls):
+        loc=cls.objects.filter(is_dispensing=True,active=True).order_by('pk').first()
+        return loc or cls.objects.get_or_create(name='Main Pharmacy',defaults={'kind':'pharmacy','is_dispensing':True})[0]
+
+class Supplier(Tracked):
+    name=models.CharField(max_length=160,unique=True)
+    contact_person=models.CharField(max_length=120,blank=True)
+    phone=models.CharField(max_length=40,blank=True)
+    email=models.EmailField(blank=True)
+    address=models.CharField(max_length=250,blank=True)
+    lead_time_days=models.PositiveSmallIntegerField(default=14,help_text='Usual days from order to delivery')
+    active=models.BooleanField(default=True)
+    notes=models.TextField(blank=True)
+    class Meta: ordering=['name']
+    def __str__(self):return self.name
+
 class Medication(Tracked):
     name=models.CharField(max_length=180)
     generic_name=models.CharField(max_length=180,blank=True)
     form=models.CharField(max_length=100,blank=True)
     strength=models.CharField(max_length=100,blank=True)
-    reorder_level=models.PositiveIntegerField(default=50)
+    reorder_level=models.PositiveIntegerField(default=50,help_text='Order more when stock falls to this level')
+    max_level=models.PositiveIntegerField(default=0,help_text='Top-up target when ordering (0 = three times the reorder level)')
     unit_price=models.DecimalField(max_digits=10,decimal_places=2,default=0,help_text='Price per tablet, capsule, sachet or unit')
+    category=models.CharField(max_length=20,choices=MED_CATEGORIES,default='other')
+    unit=models.CharField(max_length=12,choices=MED_UNITS,default='tablet',help_text='Smallest unit counted and issued')
+    pack_size=models.PositiveIntegerField(default=1,help_text='Units per pack as supplied, e.g. 1000 tablets per tin')
+    essential=models.BooleanField(default=True,help_text='On the national essential medicines list')
+    controlled=models.BooleanField(default=False,help_text='Controlled drug: issues need a witness and are kept in the register')
+    cold_chain=models.BooleanField(default=False,help_text='Store at 2-8 °C')
+    default_supplier=models.ForeignKey(Supplier,on_delete=models.SET_NULL,null=True,blank=True,related_name='medications')
     active=models.BooleanField(default=True)
     def __str__(self):return f'{self.name} {self.strength}'
+    @property
+    def target_level(self):return self.max_level or self.reorder_level*3
 
 class StockBatch(Tracked):
     medication=models.ForeignKey(Medication,on_delete=models.PROTECT,related_name='batches')
     batch_number=models.CharField(max_length=100)
     expiry=models.DateField()
     quantity=models.PositiveIntegerField(default=0)
-    location=models.CharField(max_length=100,default='Main Pharmacy')
-    class Meta: unique_together=[('medication','batch_number','location')]
+    store=models.ForeignKey(StockLocation,on_delete=models.PROTECT,related_name='batches',null=True,blank=True)
+    unit_cost=models.DecimalField(max_digits=10,decimal_places=2,default=0,help_text='Purchase cost per unit')
+    supplier=models.ForeignKey(Supplier,on_delete=models.SET_NULL,null=True,blank=True,related_name='+')
+    quarantined=models.BooleanField(default=False,help_text='Held back: recalled, damaged or awaiting a quality check')
+    class Meta: unique_together=[('medication','batch_number','store')]
+    def save(self,*a,**kw):
+        if not self.store_id:self.store=StockLocation.dispensing()   # batches without a store belong to the dispensing pharmacy
+        super().save(*a,**kw)
+    @property
+    def expired(self):return self.expiry<timezone.localdate()
     def __str__(self):return f'{self.medication} / {self.batch_number} ({self.quantity})'
 
 FREQUENCIES=[
@@ -422,6 +474,106 @@ class Dispense(Tracked):
     quantity=models.PositiveIntegerField(validators=[MinValueValidator(1)])
     dispensed_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
 
+class StockMovement(Tracked):
+    """One line of the stock ledger. Every change to a batch quantity writes one of these, so each medicine has a full stock card."""
+    KINDS=[('receipt','Received from supplier'),('dispense','Dispensed to patient'),('issue_out','Issued to ward'),('issue_in','Received from pharmacy'),
+           ('return','Returned to stock'),('adjust','Stock-take adjustment'),('expired','Expired · written off'),('damaged','Damaged · written off'),
+           ('quarantine','Quarantined'),('ward_use','Used on ward'),('opening','Opening balance')]
+    medication=models.ForeignKey(Medication,on_delete=models.PROTECT,related_name='movements')
+    batch=models.ForeignKey(StockBatch,on_delete=models.PROTECT,related_name='movements')
+    location=models.ForeignKey(StockLocation,on_delete=models.PROTECT,related_name='movements')
+    kind=models.CharField(max_length=12,choices=KINDS)
+    quantity=models.IntegerField(help_text='Positive into stock, negative out of stock')
+    balance_after=models.IntegerField(default=0,help_text='This medicine\'s balance at this location after the movement')
+    unit_cost=models.DecimalField(max_digits=10,decimal_places=2,default=0)
+    reference=models.CharField(max_length=40,blank=True,help_text='RX-, PO-, REQ- or SC- number')
+    note=models.CharField(max_length=250,blank=True)
+    actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='+')
+    witness=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,null=True,blank=True,related_name='+',help_text='Second person for controlled drugs')
+    patient=models.ForeignKey('Patient',on_delete=models.SET_NULL,null=True,blank=True,related_name='+')
+    class Meta: ordering=['-created_at','-id']; indexes=[models.Index(fields=['medication','location','created_at']),models.Index(fields=['kind','created_at'])]
+
+class PurchaseOrder(Tracked):
+    STATUS=[('draft','Draft'),('sent','Sent to supplier'),('partial','Partly received'),('received','Received'),('cancelled','Cancelled')]
+    FUNDING=[('budget','Hospital budget'),('programme','National programme'),('donor','Donor'),('emergency','Emergency purchase')]
+    supplier=models.ForeignKey(Supplier,on_delete=models.PROTECT,related_name='orders')
+    status=models.CharField(max_length=10,choices=STATUS,default='draft')
+    funding=models.CharField(max_length=10,choices=FUNDING,default='budget')
+    deliver_to=models.ForeignKey(StockLocation,on_delete=models.PROTECT,related_name='+',null=True,blank=True)
+    expected_date=models.DateField(null=True,blank=True)
+    sent_at=models.DateTimeField(null=True,blank=True)
+    notes=models.TextField(blank=True)
+    created_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name='+')
+    class Meta: ordering=['-created_at']
+    @property
+    def number(self):return f'PO-{self.pk:05d}'
+    @property
+    def total(self):return sum((l.quantity*l.unit_cost for l in self.lines.all()),Decimal('0'))
+    def __str__(self):return f'{self.number} · {self.supplier}'
+
+class PurchaseOrderLine(Tracked):
+    order=models.ForeignKey(PurchaseOrder,on_delete=models.CASCADE,related_name='lines')
+    medication=models.ForeignKey(Medication,on_delete=models.PROTECT)
+    quantity=models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    unit_cost=models.DecimalField(max_digits=10,decimal_places=2,default=0)
+    received_quantity=models.PositiveIntegerField(default=0)
+    class Meta: ordering=['id']
+    @property
+    def outstanding(self):return max(0,self.quantity-self.received_quantity)
+    @property
+    def line_total(self):return self.quantity*self.unit_cost
+
+class Requisition(Tracked):
+    """A ward or department asking the pharmacy for stock."""
+    STATUS=[('submitted','Submitted'),('approved','Approved'),('partial','Partly issued'),('issued','Issued'),('rejected','Rejected'),('cancelled','Cancelled')]
+    supply_from=models.ForeignKey(StockLocation,on_delete=models.PROTECT,related_name='requisitions_out')
+    deliver_to=models.ForeignKey(StockLocation,on_delete=models.PROTECT,related_name='requisitions_in')
+    status=models.CharField(max_length=10,choices=STATUS,default='submitted')
+    priority=models.CharField(max_length=10,choices=[('routine','Routine'),('urgent','Urgent')],default='routine')
+    needed_by=models.DateField(null=True,blank=True)
+    notes=models.CharField(max_length=300,blank=True)
+    requested_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name='+')
+    approved_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='+')
+    issued_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='+')
+    issued_at=models.DateTimeField(null=True,blank=True)
+    class Meta: ordering=['-created_at']
+    @property
+    def number(self):return f'REQ-{self.pk:05d}'
+    def __str__(self):return f'{self.number} · {self.deliver_to}'
+
+class RequisitionLine(Tracked):
+    requisition=models.ForeignKey(Requisition,on_delete=models.CASCADE,related_name='lines')
+    medication=models.ForeignKey(Medication,on_delete=models.PROTECT)
+    requested=models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    approved=models.PositiveIntegerField(null=True,blank=True)
+    issued=models.PositiveIntegerField(default=0)
+    class Meta: ordering=['id']
+    @property
+    def to_issue(self):return max(0,(self.approved if self.approved is not None else self.requested)-self.issued)
+
+class StockCount(Tracked):
+    """A stock take for one location: count every batch, then post the differences as adjustments."""
+    STATUS=[('open','Counting'),('posted','Posted'),('cancelled','Cancelled')]
+    location=models.ForeignKey(StockLocation,on_delete=models.PROTECT,related_name='counts')
+    status=models.CharField(max_length=10,choices=STATUS,default='open')
+    started_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name='+')
+    posted_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='+')
+    posted_at=models.DateTimeField(null=True,blank=True)
+    notes=models.CharField(max_length=300,blank=True)
+    class Meta: ordering=['-created_at']
+    @property
+    def number(self):return f'SC-{self.pk:05d}'
+
+class StockCountLine(Tracked):
+    count=models.ForeignKey(StockCount,on_delete=models.CASCADE,related_name='lines')
+    batch=models.ForeignKey(StockBatch,on_delete=models.PROTECT,related_name='+')
+    system_quantity=models.IntegerField()
+    counted=models.PositiveIntegerField(null=True,blank=True)
+    reason=models.CharField(max_length=120,blank=True)
+    class Meta: ordering=['batch__medication__name','batch__expiry']
+    @property
+    def variance(self):return None if self.counted is None else self.counted-self.system_quantity
+
 MODALITIES=[('xray','X-ray'),('ct','CT scan'),('mri','MRI'),('ultrasound','Ultrasound'),('ecg','ECG'),('echo','Echocardiogram'),
             ('mammogram','Mammogram'),('fluoro','Fluoroscopy'),('eeg','EEG (brain waves)')]
 
@@ -458,6 +610,10 @@ class ImagingImage(Tracked):
     file=models.FileField(upload_to=imaging_upload_path)
     caption=models.CharField(max_length=120,blank=True)
     uploaded_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name='+')
+    derived_from=models.ForeignKey('self',on_delete=models.SET_NULL,null=True,blank=True,related_name='derivatives',help_text='The original this processed copy was made from; originals are never changed')
+    processing=models.JSONField(default=dict,blank=True,help_text='Steps applied to make this copy')
+    annotations=models.JSONField(default=list,blank=True,help_text='Rulers, angles, regions, arrows and notes drawn on the image')
+    mm_per_pixel=models.FloatField(null=True,blank=True,help_text='Calibration for real-world measurements')
     class Meta: ordering=['id']
 
 class Ward(Tracked):

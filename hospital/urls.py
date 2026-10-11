@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views as v
+from . import pharmacy_views as pv
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -81,6 +82,30 @@ urlpatterns = [
     path('patients/<int:pk>/story/', v.patient_story, name='patient_story'),
 
     path('pharmacy/', v.pharmacy, name='pharmacy'),
+    path('pharmacy/overview/', pv.overview, name='pharm_overview'),
+    path('pharmacy/stock/', pv.stock, name='pharm_stock'),
+    path('pharmacy/stock/<int:pk>/', pv.stock_card, name='pharm_card'),
+    path('pharmacy/batches/<int:pk>/<str:action>/', pv.batch_action, name='pharm_batch_action'),
+    path('pharmacy/requisitions/', pv.requisitions, name='pharm_requisitions'),
+    path('pharmacy/requisitions/new/', pv.requisition_new, name='pharm_requisition_new'),
+    path('pharmacy/requisitions/<int:pk>/', pv.requisition_detail, name='pharm_requisition'),
+    path('pharmacy/requisitions/<int:pk>/<str:action>/', pv.requisition_action, name='pharm_requisition_action'),
+    path('pharmacy/orders/', pv.orders, name='pharm_orders'),
+    path('pharmacy/orders/new/', pv.order_new, name='pharm_order_new'),
+    path('pharmacy/orders/<int:pk>/', pv.order_detail, name='pharm_order'),
+    path('pharmacy/orders/<int:pk>/<str:action>/', pv.order_action, name='pharm_order_action'),
+    path('pharmacy/stock-takes/', pv.counts, name='pharm_counts'),
+    path('pharmacy/stock-takes/<int:pk>/', pv.count_detail, name='pharm_count'),
+    path('pharmacy/expiry/', pv.expiry, name='pharm_expiry'),
+    path('pharmacy/controlled-drugs/', pv.controlled, name='pharm_controlled'),
+    path('pharmacy/reports/', pv.reports, name='pharm_reports'),
+    path('pharmacy/suppliers/', pv.suppliers, name='pharm_suppliers'),
+    path('pharmacy/suppliers/new/', pv.supplier_edit, name='pharm_supplier_new'),
+    path('pharmacy/suppliers/<int:pk>/edit/', pv.supplier_edit, name='pharm_supplier_edit'),
+    path('pharmacy/locations/new/', pv.location_edit, name='pharm_location_new'),
+    path('pharmacy/locations/<int:pk>/edit/', pv.location_edit, name='pharm_location_edit'),
+    path('pharmacy/medicines/new/', pv.medication_edit, name='pharm_med_new'),
+    path('pharmacy/medicines/<int:pk>/edit/', pv.medication_edit, name='pharm_med_edit'),
     path('prescriptions/new/', v.prescription_new, name='prescription_new'),
     path('prescriptions/<int:pk>/', v.prescription_detail, name='prescription_detail'),
     path('prescriptions/<int:pk>/edit/', v.prescription_edit, name='prescription_edit'),
@@ -94,6 +119,8 @@ urlpatterns = [
     path('imaging/<int:pk>/report/', v.imaging_report, name='imaging_report'),
     path('imaging/<int:pk>/cancel/', v.imaging_cancel, name='imaging_cancel'),
     path('imaging/files/<int:pk>/', v.imaging_file, name='imaging_file'),
+    path('imaging/images/<int:pk>/annotations/', v.imaging_annotations, name='imaging_annotations'),
+    path('imaging/images/<int:pk>/process/', v.imaging_process, name='imaging_process'),
     path('cases/<str:token>/', v.case_detail, name='case_detail'),
     path('prescriptions/<int:pk>/sign/', v.prescription_sign, name='prescription_sign'),
     path('prescriptions/<int:pk>/dispense/', v.prescription_dispense, name='prescription_dispense'),

@@ -1,0 +1,39 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Pharmacy · Stock{% endblock %}
+{% block heading %}Stock{% endblock %}
+{% block subheading %}<p class="sub">{% if loc %}{{ loc }}{% else %}All locations{% endif %} · usable stock only (in date, not quarantined) · value {{ total_value|money }}</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="?{{ request.GET.urlencode }}&format=csv"><i class="bi bi-filetype-csv"></i>Export</a>{% if can_stock %}<a class="btn btn-ghost" href="{% url 'pharm_med_new' %}"><i class="bi bi-plus"></i>New medicine</a><a class="btn btn-primary" href="{% url 'pharm_counts' %}"><i class="bi bi-list-check"></i>Stock take</a>{% endif %}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+<form class="filter-row" method="get">
+  <input class="form-control" name="q" value="{{ f.q }}" placeholder="Search medicine" style="max-width:220px" aria-label="Search">
+  <select class="form-select" name="location" onchange="this.form.submit()" aria-label="Location"><option value="">All locations</option>{% for l in locations %}<option value="{{ l.pk }}" {% if loc.pk == l.pk %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <select class="form-select" name="cat" onchange="this.form.submit()" aria-label="Group"><option value="">All groups</option>{% for k, v in categories %}<option value="{{ k }}" {% if f.cat == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+  <div class="seg">
+    <a class="segl {% if not f.level %}on{% endif %}" href="?q={{ f.q }}&location={{ f.location }}&cat={{ f.cat }}">All</a>
+    <a class="segl {% if f.level == 'reorder' %}on{% endif %}" href="?q={{ f.q }}&location={{ f.location }}&cat={{ f.cat }}&level=reorder">Needs ordering</a>
+    <a class="segl {% if f.level == 'out' %}on{% endif %}" href="?q={{ f.q }}&location={{ f.location }}&cat={{ f.cat }}&level=out">Out</a>
+    <a class="segl {% if f.level == 'over' %}on{% endif %}" href="?q={{ f.q }}&location={{ f.location }}&cat={{ f.cat }}&level=over">Overstocked</a>
+  </div>
+  <button class="btn btn-ghost">Search</button>
+</form>
+<section class="panel">
+  <div class="scroll-x"><table class="mini-table ph-table">
+    <thead><tr><th>Medicine</th><th>Group</th><th class="text-end">Usable</th><th style="width:16%">Level</th><th class="text-end">Daily use</th><th class="text-end">Days left</th><th class="text-end">Value</th><th></th></tr></thead><tbody>
+    {% for r in rows %}<tr class="{% if r.level == 'out' %}row-out{% endif %}">
+      <td><a href="{% url 'pharm_card' r.m.pk %}{% if loc %}?location={{ loc.pk }}{% endif %}"><b>{{ r.m.name }}</b></a> <span class="muted">{{ r.m.strength }} {{ r.m.form }}</span>
+        {% if r.m.controlled %}<span class="tag plum" title="Controlled drug"><i class="bi bi-shield-lock"></i>CD</span>{% endif %}{% if r.m.cold_chain %}<span class="tag indigo" title="2–8 °C"><i class="bi bi-snow2"></i></span>{% endif %}{% if not r.m.essential %}<span class="tag" title="Not on the essential medicines list">non-EML</span>{% endif %}
+        {% if r.expiring %}<div class="small text-warning-emphasis"><i class="bi bi-hourglass-split"></i> {{ r.expiring }} expire within 90 days</div>{% endif %}</td>
+      <td class="small muted">{{ r.m.get_category_display }}</td>
+      <td class="text-end"><b>{{ r.qty }}</b> <small class="muted">{{ r.m.get_unit_display|lower }}{{ r.qty|pluralize }}</small></td>
+      <td><div class="meter {% if r.level == 'out' %}red{% elif r.level == 'low' %}amber{% endif %}" title="Reorder at {{ r.m.reorder_level }}, top up to {{ r.m.target_level }}"><i style="--w:{{ r.pct }}%"></i></div>
+        <small class="muted">{% if r.level == 'out' %}Out of stock{% elif r.level == 'low' %}Reorder (at {{ r.m.reorder_level }}){% elif r.level == 'over' %}Overstocked{% else %}OK{% endif %}</small></td>
+      <td class="text-end">{{ r.daily|default:'—' }}</td>
+      <td class="text-end">{% if r.days_left is not None %}<span class="{% if r.days_left < 14 %}text-danger fw-bold{% elif r.days_left < 30 %}text-warning-emphasis{% endif %}">{{ r.days_left }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="text-end">{{ r.value|money }}</td>
+      <td class="text-end text-nowrap">{% if can_stock %}<a class="icon-btn" href="{% url 'pharm_med_edit' r.m.pk %}" title="Edit medicine" aria-label="Edit {{ r.m.name }}"><i class="bi bi-pencil"></i></a>{% endif %}</td>
+    </tr>{% empty %}<tr><td colspan="8" class="empty">No medicines match.</td></tr>{% endfor %}
+    </tbody></table></div>
+</section>
+{% endblock %}

@@ -5,7 +5,9 @@ from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
+from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
 
 from .models import (AuditEvent, Notification, Condition, Location, MedicationAdministration, QueueTicket, Allergy, Invoice, Payment, Admission, Bed, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingOrder, StockRequest, LabRequest, PrescriptionItem, LabParameter, LabResultValue, Admission, Allergy, Bed, Department, Encounter, FormDefinition, FormSubmission, LabOrder, LabTest,
                      Medication, Patient, Prescription, QueueTicket, Referral, Signature, StaffProfile, StockBatch,
@@ -1035,3 +1037,151 @@ class PregnancyAnatomyTests(Base):
         self.assertEqual(e.labs.get(test__code='HCG').values.first().display, 'Positive')
         self.assertTrue(ImagingOrder.objects.filter(encounter=e, measurements__icontains='Fetal heart rate').exists())
         self.assertEqual(Encounter.objects.get(diagnosis__icontains='Ectopic').category, 'maternal')
+
+
+# ---------------------------------------------------------------- pharmacy stock management
+
+class PharmacyStockTests(Base):
+    def setUp(self):
+        from .models import StockLocation, Supplier
+        self.pharm, self.nurse = self.users['pharmacy'], self.users['nurse']
+        self.disp = StockLocation.dispensing()
+        self.store = StockLocation.objects.create(name='Central Store', kind='store')
+        self.ward = StockLocation.objects.create(name='Ward A Stock', kind='ward')
+        self.sup = Supplier.objects.create(name='Test Supplier', lead_time_days=5)
+
+    def test_every_change_is_on_the_ledger_with_running_balance(self):
+        from . import pharmacy as ph
+        from .models import StockMovement
+        ph.take(self.med, self.disp, 7, 'dispense', self.pharm, 'RX-1')
+        moves = list(StockMovement.objects.filter(medication=self.med).order_by('id'))
+        self.assertEqual([m.quantity for m in moves], [-5, -2])           # earliest expiry first: A1 emptied, then A2
+        self.assertEqual(moves[-1].balance_after, 48)
+        self.assertEqual(StockBatch.objects.get(batch_number='A1').quantity, 0)
+
+    def test_receive_purchase_order_creates_batch_and_closes_order(self):
+        from . import pharmacy as ph
+        from .models import PurchaseOrder, PurchaseOrderLine
+        po = PurchaseOrder.objects.create(supplier=self.sup, status='sent', deliver_to=self.store)
+        line = PurchaseOrderLine.objects.create(order=po, medication=self.med, quantity=100, unit_cost=Decimal('3.50'))
+        ph.receive_order(po, self.pharm, [{'line': line, 'quantity': 60, 'batch_number': 'P1', 'expiry': date.today() + timedelta(days=400)}])
+        po.refresh_from_db(); self.assertEqual(po.status, 'partial')
+        ph.receive_order(po, self.pharm, [{'line': line, 'quantity': 40, 'batch_number': 'P1', 'expiry': date.today() + timedelta(days=400)}])
+        po.refresh_from_db(); self.assertEqual(po.status, 'received')
+        b = StockBatch.objects.get(batch_number='P1', store=self.store)
+        self.assertEqual((b.quantity, b.unit_cost, b.supplier), (100, Decimal('3.50'), self.sup))
+        with self.assertRaises(ValidationError):                            # nothing more expected
+            ph.receive_order(po, self.pharm, [{'line': line, 'quantity': 1, 'batch_number': 'P2', 'expiry': date.today() + timedelta(days=400)}])
+
+    def test_requisition_moves_stock_to_ward_earliest_expiry_first(self):
+        from . import pharmacy as ph
+        from .models import Requisition, RequisitionLine, StockMovement
+        r = Requisition.objects.create(supply_from=self.disp, deliver_to=self.ward, requested_by=self.nurse, status='approved')
+        l = RequisitionLine.objects.create(requisition=r, medication=self.med, requested=8, approved=8)
+        ph.issue_requisition(r, self.pharm, {l.pk: 8})
+        r.refresh_from_db(); self.assertEqual(r.status, 'issued')
+        self.assertEqual(ph.location_balance(self.med, self.ward), 8)
+        self.assertEqual(ph.location_balance(self.med, self.disp), 47)
+        self.assertEqual(set(StockBatch.objects.filter(store=self.ward).values_list('batch_number', flat=True)), {'A1', 'A2'})   # batch identity kept
+        self.assertEqual(StockMovement.objects.filter(reference=r.number).count(), 4)               # out and in for each batch
+
+    def test_controlled_drug_needs_a_different_witness(self):
+        from . import pharmacy as ph
+        m = Medication.objects.create(name='Morphine', strength='10 mg/mL', controlled=True)
+        StockBatch.objects.create(medication=m, batch_number='M1', expiry=date.today() + timedelta(days=200), quantity=10)
+        with self.assertRaises(ValidationError):
+            ph.take(m, self.disp, 1, 'dispense', self.pharm)
+        with self.assertRaises(ValidationError):
+            ph.take(m, self.disp, 1, 'dispense', self.pharm, witness=self.pharm)
+        ph.take(m, self.disp, 1, 'dispense', self.pharm, witness=self.nurse)
+        self.assertEqual(ph.location_balance(m, self.disp), 9)
+
+    def test_quarantined_and_expired_stock_is_never_issued(self):
+        from . import pharmacy as ph
+        a2 = StockBatch.objects.get(batch_number='A2')
+        ph.set_quarantine(a2, True, self.pharm)
+        StockBatch.objects.create(medication=self.med, batch_number='OLD', expiry=date.today() - timedelta(days=1), quantity=100)
+        self.assertEqual(availability(self.med), 5)
+        with self.assertRaises(ValidationError):
+            ph.take(self.med, self.disp, 6, 'dispense', self.pharm)
+
+    def test_stock_take_posts_only_differences(self):
+        from . import pharmacy as ph
+        from .models import StockMovement
+        c = ph.start_count(self.disp, self.pharm)
+        for line in c.lines.all():
+            line.counted = line.system_quantity - (2 if line.batch.batch_number == 'A2' else 0); line.save()
+        self.assertEqual(ph.post_count(c, self.pharm), 1)
+        self.assertEqual(StockBatch.objects.get(batch_number='A2').quantity, 48)
+        self.assertEqual(StockMovement.objects.get(reference=c.number).quantity, -2)
+
+    def test_reorder_suggestion_counts_stock_on_order(self):
+        from . import pharmacy as ph
+        from .models import PurchaseOrder, PurchaseOrderLine
+        self.med.reorder_level = 100; self.med.save()
+        self.assertIn(self.med, [s['m'] for s in ph.reorder_suggestions()])
+        po = PurchaseOrder.objects.create(supplier=self.sup, status='sent')
+        PurchaseOrderLine.objects.create(order=po, medication=self.med, quantity=200)
+        self.assertNotIn(self.med, [s['m'] for s in ph.reorder_suggestions()])
+
+    def test_pharmacy_pages_render_and_nurse_cannot_adjust_stock(self):
+        from . import pharmacy as ph
+        ph.take(self.med, self.disp, 3, 'dispense', self.pharm, 'RX-9')
+        c = self.as_('pharmacy')
+        for name in ['pharm_overview', 'pharm_stock', 'pharm_requisitions', 'pharm_orders', 'pharm_counts', 'pharm_expiry', 'pharm_controlled', 'pharm_reports', 'pharm_suppliers', 'pharmacy']:
+            self.assertEqual(c.get(reverse(name)).status_code, 200, name)
+        self.assertEqual(c.get(reverse('pharm_card', args=[self.med.pk])).status_code, 200)
+        self.assertContains(c.get(reverse('pharm_stock') + '?format=csv'), 'Amoxicillin')
+        n = self.as_('nurse')
+        b = StockBatch.objects.get(batch_number='A2')
+        self.assertEqual(n.post(reverse('pharm_batch_action', args=[b.pk, 'damaged']), {'quantity': 1, 'note': 'x'}).status_code, 403)
+        self.assertEqual(n.get(reverse('pharm_requisition_new')).status_code, 200)
+
+    def test_controlled_drug_and_expiry_pages_render(self):
+        m = Medication.objects.create(name='Pethidine', strength='50 mg/mL', controlled=True)
+        StockBatch.objects.create(medication=m, batch_number='PX', expiry=date.today() - timedelta(days=3), quantity=4)
+        c = self.as_('pharmacy')
+        self.assertContains(c.get(reverse('pharm_card', args=[m.pk])), 'Witness')            # witness picker on the write-off form
+        self.assertContains(c.get(reverse('pharm_expiry')), 'PX')
+        self.assertContains(c.get(reverse('pharm_controlled') + f'?med={m.pk}'), 'Pethidine')
+
+
+# ---------------------------------------------------------------- imaging tools
+
+class ImagingToolTests(Base):
+    def setUp(self):
+        import io
+        from PIL import Image
+        from django.core.files.base import ContentFile
+        from .models import ImagingImage
+        rad = get_user_model().objects.create_user(username='rad', password=PW)
+        StaffProfile.objects.create(user=rad, role='radiology')
+        self.order = ImagingOrder.objects.create(encounter=self.encounter(), modality='xray', region='Chest', status='acquired')
+        buf = io.BytesIO(); Image.new('RGB', (400, 300), (200, 200, 200)).save(buf, 'JPEG')
+        self.img = ImagingImage(order=self.order, caption='PA')
+        self.img.file.save('t.jpg', ContentFile(buf.getvalue()), save=True)
+
+    def test_processing_keeps_the_original_and_saves_a_linked_copy(self):
+        self.client.login(username='rad', password=PW)
+        url = reverse('imaging_process', args=[self.img.pk])
+        preview = self.client.post(url, json.dumps({'corners': [[.1, .1], [.9, .1], [.9, .9], [.1, .9]], 'enhance': 2}), content_type='application/json')
+        self.assertEqual(preview['Content-Type'], 'image/png')
+        self.assertEqual(self.order.images.count(), 1)                         # a preview saves nothing
+        saved = self.client.post(url, json.dumps({'level': True, 'enhance': 1.5, 'save': True}), content_type='application/json').json()
+        self.assertTrue(saved['ok'])
+        new = self.order.images.get(pk=saved['id'])
+        self.assertEqual(new.derived_from, self.img)
+        self.assertIn('enhance', new.processing)
+        bad = self.client.post(url, json.dumps({'corners': [[.5, .5], [.5, .5], [.5, .5], [.5, .5]]}), content_type='application/json')
+        self.assertEqual(bad.status_code, 400)
+
+    def test_annotations_are_cleaned_and_saved(self):
+        self.client.login(username='rad', password=PW)
+        r = self.client.post(reverse('imaging_annotations', args=[self.img.pk]), json.dumps({'mm_per_pixel': .25, 'annotations': [
+            {'type': 'ruler', 'points': [[10, 10], [110, 10]], 'label': 'Length'}, {'type': 'angle', 'points': [[0, 0]]}, {'type': 'script', 'points': [[0, 0]]}]}),
+            content_type='application/json')
+        self.assertEqual(r.json()['count'], 1)
+        self.img.refresh_from_db()
+        self.assertEqual((self.img.mm_per_pixel, self.img.annotations[0]['type']), (.25, 'ruler'))
+        self.client.login(username='nurse', password=PW)
+        self.assertEqual(self.client.post(reverse('imaging_annotations', args=[self.img.pk]), '{}', content_type='application/json').status_code, 403)

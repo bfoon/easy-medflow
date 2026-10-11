@@ -1,0 +1,48 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ m }} · Stock card{% endblock %}
+{% block heading %}{{ m.name }} <span class="muted fw-normal">{{ m.strength }}</span>{% endblock %}
+{% block subheading %}<p class="sub">{{ m.generic_name|default:m.name }} · {{ m.form }} · {{ m.get_category_display }} · counted in {{ m.get_unit_display|lower }}s{% if m.pack_size > 1 %}, packs of {{ m.pack_size }}{% endif %}
+  {% if m.controlled %}<span class="tag plum"><i class="bi bi-shield-lock"></i>Controlled drug</span>{% endif %}{% if m.cold_chain %}<span class="tag indigo"><i class="bi bi-snow2"></i>2–8 °C</span>{% endif %}{% if m.essential %}<span class="tag teal">Essential medicine</span>{% endif %}</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'pharm_stock' %}"><i class="bi bi-arrow-left"></i>Stock</a>{% if can_stock %}<a class="btn btn-ghost" href="{% url 'pharm_med_edit' m.pk %}"><i class="bi bi-pencil"></i>Edit</a>{% endif %}{% if m.controlled %}<a class="btn btn-ghost" href="{% url 'pharm_controlled' %}?med={{ m.pk }}"><i class="bi bi-shield-lock"></i>Register</a>{% endif %}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+<div class="kpis ph-kpis">
+  <div class="kpi {% if usable == 0 %}crit{% elif usable <= m.reorder_level %}abn{% else %}good{% endif %}"><b>{{ usable }}</b><span>usable {{ m.get_unit_display|lower }}s, all locations</span></div>
+  <div class="kpi"><b>{{ daily|default:'0' }}</b><span>average used per day (30 days)</span></div>
+  <div class="kpi {% if days_left is not None and days_left < 14 %}crit{% elif days_left is not None and days_left < 30 %}abn{% endif %}"><b>{% if days_left is not None %}{{ days_left }}{% else %}—{% endif %}</b><span>days of stock left</span></div>
+  <div class="kpi"><b>{{ m.reorder_level }}</b><span>reorder level · top up to {{ m.target_level }}</span></div>
+  <div class="kpi"><b>{{ m.unit_price|money }}</b><span>price per {{ m.get_unit_display|lower }}</span></div>
+</div>
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel"><div class="panel-head"><h2>Daily use</h2><span class="hint">Last 60 days</span></div>{{ chart }}</section>
+    <section class="panel">
+      <div class="panel-head"><h2>Stock card</h2><span class="hint">Every movement, newest first</span>
+        <form method="get" class="ms-auto"><select class="form-select form-select-sm" name="location" onchange="this.form.submit()" aria-label="Location"><option value="">All locations</option>{% for l in locations %}<option value="{{ l.pk }}" {% if loc.pk == l.pk %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></form></div>
+      <div class="scroll-y" style="max-height:560px"><table class="mini-table ph-ledger"><thead><tr><th>When</th><th>Movement</th><th>Batch</th><th>Location</th><th class="text-end">In / out</th><th class="text-end">Balance</th><th>By</th><th>Reference</th></tr></thead><tbody>
+      {% for mv in ledger %}<tr><td class="text-nowrap small">{{ mv.created_at|date:'j M y H:i' }}</td><td><span class="ph-k k-{{ mv.kind }}">{{ mv.get_kind_display }}</span>{% if mv.note %}<div class="small muted">{{ mv.note }}</div>{% endif %}</td>
+        <td class="mono small">{{ mv.batch.batch_number }}</td><td class="small">{{ mv.location }}</td>
+        <td class="text-end fw-bold {% if mv.quantity < 0 %}text-danger{% else %}text-success{% endif %}">{% if mv.quantity > 0 %}+{% endif %}{{ mv.quantity }}</td><td class="text-end">{{ mv.balance_after }}</td>
+        <td class="small">{{ mv.actor|display_name }}{% if mv.witness %}<div class="muted"><i class="bi bi-eye"></i> {{ mv.witness|display_name }}</div>{% endif %}</td>
+        <td class="small">{% if mv.reference|slice:':3' == 'RX-' %}{{ mv.reference }}{% elif mv.reference|slice:':4' == 'REQ-' %}<a href="{% url 'pharm_requisitions' %}">{{ mv.reference }}</a>{% else %}{{ mv.reference }}{% endif %}{% if mv.patient %}<div class="muted">{{ mv.patient.mrn }}</div>{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="8" class="empty">No movements yet.</td></tr>{% endfor %}</tbody></table></div>
+    </section>
+  </div>
+  <div class="stack align-self-start">
+    <section class="panel"><div class="panel-head"><h2>Where it is</h2></div>
+      {% for l, q in per_loc %}<div class="ph-barrow"><span>{{ l }}{% if l.is_dispensing %} <span class="tag teal">dispensing</span>{% endif %}</span><b>{{ q }}</b></div>{% empty %}<div class="empty">No usable stock anywhere.</div>{% endfor %}</section>
+    <section class="panel"><div class="panel-head"><h2>Batches</h2><span class="hint">Earliest expiry is issued first</span></div>
+      {% for b in batches %}<div class="ph-batch {% if b.expired %}expired{% elif b.quarantined %}quar{% endif %}">
+        <div class="d-flex align-items-baseline gap-2"><b class="mono">{{ b.batch_number }}</b><span class="small muted">{{ b.store }}</span><b class="ms-auto">{{ b.quantity }}</b></div>
+        <div class="small">{% if b.expired %}<span class="tag red">Expired {{ b.expiry|date:'j M Y' }}</span>{% else %}Expires {{ b.expiry|date:'j M Y' }} <span class="muted">({{ b.expiry|timeuntil }})</span>{% endif %}
+          {% if b.quarantined %}<span class="tag indigo">Quarantined</span>{% endif %} · cost {{ b.unit_cost|money }}{% if b.supplier %} · {{ b.supplier }}{% endif %}</div>
+        {% if can_stock and b.quantity %}<details class="ph-acts"><summary class="small">Actions</summary>
+          {% if b.expired %}<form method="post" action="{% url 'pharm_batch_action' b.pk 'expired' %}" class="ph-inline">{% csrf_token %}{% if witnesses is not None %}{% include 'hospital/pharmacy/_witness.html' %}{% endif %}<button class="btn btn-sm btn-danger-soft">Write off expired ({{ b.quantity }})</button></form>
+          {% else %}<form method="post" action="{% url 'pharm_batch_action' b.pk 'damaged' %}" class="ph-inline">{% csrf_token %}<input type="number" name="quantity" min="1" max="{{ b.quantity }}" value="1" class="form-control form-control-sm" style="width:80px" aria-label="Quantity"><input name="note" class="form-control form-control-sm" placeholder="What happened?" required>{% if witnesses is not None %}{% include 'hospital/pharmacy/_witness.html' %}{% endif %}<button class="btn btn-sm btn-danger-soft">Write off damaged</button></form>{% endif %}
+          <form method="post" action="{% url 'pharm_batch_action' b.pk b.quarantined|yesno:'release,quarantine' %}" class="ph-inline">{% csrf_token %}<input name="note" class="form-control form-control-sm" placeholder="Reason (recall, quality check…)">{% if b.quarantined %}<button class="btn btn-sm btn-ghost">Release to use</button>{% else %}<button class="btn btn-sm btn-ghost">Quarantine</button>{% endif %}</form>
+        </details>{% endif %}
+      </div>{% empty %}<div class="empty">No batches.</div>{% endfor %}</section>
+  </div>
+</div>
+{% endblock %}

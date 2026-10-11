@@ -1,0 +1,25 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ c.number }}{% endblock %}
+{% block heading %}{{ c.number }} · {{ c.location }}{% endblock %}
+{% block subheading %}<p class="sub">{{ n_counted }} of {{ lines|length }} batches counted · {{ n_diff }} with a difference{% if value_diff %} · net {{ value_diff|money }}{% endif %} ·
+  <span class="tag {% if c.status == 'open' %}amber{% else %}teal{% endif %}">{{ c.get_status_display }}</span>{% if c.notes %} · {{ c.notes }}{% endif %}</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'pharm_counts' %}"><i class="bi bi-arrow-left"></i>Stock takes</a><button class="btn btn-ghost" onclick="window.print()"><i class="bi bi-printer"></i>Count sheet</button>{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+<form method="post" class="panel print-area">{% csrf_token %}
+  <table class="mini-table ph-count"><thead><tr><th>Medicine</th><th>Batch</th><th>Expiry</th><th class="text-end">System</th><th style="width:110px">Counted</th><th class="text-end">Difference</th><th>Reason</th></tr></thead><tbody>
+  {% for l in lines %}<tr class="{% if l.variance %}diff{% endif %}"><td><b>{{ l.batch.medication.name }}</b> <span class="muted">{{ l.batch.medication.strength }}</span></td><td class="mono small">{{ l.batch.batch_number }}</td><td class="small">{{ l.batch.expiry|date:'M Y' }}</td>
+    <td class="text-end">{{ l.system_quantity }}</td>
+    <td>{% if c.status == 'open' and can_stock %}<input type="number" min="0" name="count_{{ l.pk }}" class="form-control form-control-sm ph-cnt" data-sys="{{ l.system_quantity }}" value="{{ l.counted|default_if_none:'' }}">{% else %}{{ l.counted|default_if_none:'—' }}{% endif %}</td>
+    <td class="text-end fw-bold var">{% if l.variance %}<span class="{% if l.variance < 0 %}text-danger{% else %}text-success{% endif %}">{% if l.variance > 0 %}+{% endif %}{{ l.variance }}</span>{% endif %}</td>
+    <td>{% if c.status == 'open' and can_stock %}<input name="reason_{{ l.pk }}" class="form-control form-control-sm" value="{{ l.reason }}" list="reasons" placeholder="If different">{% else %}<span class="small">{{ l.reason }}</span>{% endif %}</td></tr>{% endfor %}
+  </tbody></table>
+  <datalist id="reasons"><option value="Breakage"><option value="Dispensing not recorded"><option value="Found on another shelf"><option value="Counting error last time"><option value="Missing · under investigation"></datalist>
+  {% if c.status == 'open' and can_stock %}<div class="d-flex gap-2 mt-3"><button class="btn btn-ghost" name="action" value="save"><i class="bi bi-save"></i>Save counts</button>
+    <button class="btn btn-primary" name="action" value="post" data-confirm="Post every difference to the stock ledger? This cannot be undone."><i class="bi bi-check2-all"></i>Post differences</button>
+    <span class="small muted align-self-center">Blank lines are left unchanged.</span></div>{% endif %}
+</form>
+<script>document.querySelectorAll('.ph-cnt').forEach(i => i.addEventListener('input', () => { const td = i.closest('tr').querySelector('.var'), v = i.value === '' ? null : +i.value - +i.dataset.sys;
+  td.innerHTML = v ? `<span class="${v < 0 ? 'text-danger' : 'text-success'}">${v > 0 ? '+' : ''}${v}</span>` : ''; i.closest('tr').classList.toggle('diff', !!v); }));</script>
+{% endblock %}

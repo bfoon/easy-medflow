@@ -5,11 +5,12 @@ from datetime import date, timedelta
 
 from django import forms
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Count, Q
-from django.http import HttpResponseBadRequest, JsonResponse
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -801,7 +802,8 @@ def pharmacy(request):
     lanes = [('draft', 'Drafts awaiting prescriber', [x for x in rx if x.state == 'draft']),
              ('signed', 'Signed · ready to dispense', [x for x in rx if x.state in ('signed', 'partial')]),
              ('dispensed', 'Dispensed', [x for x in rx if x.state == 'dispensed'][:12])]
-    return render(request, 'hospital/pharmacy.html', {'stock': stock, 'lanes': lanes,
+    from .pharmacy_views import nav, witnesses
+    return render(request, 'hospital/pharmacy.html', {**nav('dispense'), 'stock': stock, 'lanes': lanes, 'witnesses': witnesses(request.user),
                                                       'can_sign': role_of(request.user) in ('doctor', 'admin'),
                                                       'can_dispense': role_of(request.user) in ('pharmacy', 'admin'),
                                                       'supplier': StockRequest.objects.select_related('medication', 'prescription_item__prescription', 'requested_by').exclude(status__in=['received', 'cancelled'])[:50],
@@ -880,7 +882,9 @@ def prescription_sign(request, pk):
 def prescription_dispense(request, pk):
     authorize(request, 'pharmacy')
     try:
-        p = dispense(get_object_or_404(Prescription, pk=pk), request.user)
+        wid = request.POST.get('witness')
+        witness = get_user_model().objects.filter(pk=wid, hospital_staff__active=True).first() if wid else None
+        p = dispense(get_object_or_404(Prescription, pk=pk), request.user, witness)
         messages.success(request, f'{p.number} dispensed. Stock was drawn from the earliest-expiring batches first.')
     except ValidationError as e:
         messages.error(request, '; '.join(e.messages))
@@ -1280,7 +1284,80 @@ def imaging_detail(request, pk):
     authorize(request)
     o = get_object_or_404(ImagingOrder.objects.select_related('encounter__patient', 'requested_by', 'reported_by').prefetch_related('images'), pk=pk)
     audit(request, 'view_chart', f'imaging:{o.pk}')
-    return render(request, 'hospital/imaging_detail.html', {'o': o, 'p': o.encounter.patient, 'can_image': role_of(request.user) in ROLES['imaging']})
+    images = list(o.images.all())
+    start = next((i for i in images if str(i.pk) == request.GET.get('img')), images[0] if images else None)
+    # earlier studies of the same patient, for side-by-side comparison
+    priors = (ImagingImage.objects.filter(order__encounter__patient=o.encounter.patient).exclude(order=o).exclude(order__status='cancelled')
+              .select_related('order').order_by('-order__created_at', 'id')[:40])
+    viewer = {'images': [{'id': i.pk, 'url': reverse('imaging_file', args=[i.pk]), 'caption': i.caption or f'Image {n}', 'annotations': i.annotations,
+                          'mm': i.mm_per_pixel, 'processed': bool(i.derived_from_id or i.processing), 'steps': i.processing} for n, i in enumerate(images, 1)],
+              'priors': [{'id': i.pk, 'url': reverse('imaging_file', args=[i.pk]), 'caption': f"{i.order.created_at:%d %b %Y} · {i.order.get_modality_display()} {i.order.region} · {i.caption or 'image'}"} for i in priors],
+              'start': start.pk if start else None}
+    return render(request, 'hospital/imaging_detail.html', {'o': o, 'p': o.encounter.patient, 'can_image': role_of(request.user) in ROLES['imaging'],
+                                                            'viewer': viewer, 'start': start})
+
+
+ANNOTATION_TYPES = {'ruler': 2, 'angle': 3, 'cobb': 4, 'ellipse': 2, 'arrow': 2, 'text': 1}
+
+
+@login_required
+@require_POST
+def imaging_annotations(request, pk):
+    """Save the rulers, angles, regions, arrows and notes drawn on one image, and its calibration."""
+    authorize(request, 'imaging')
+    img = get_object_or_404(ImagingImage.objects.select_related('order'), pk=pk)
+    try:
+        data = json.loads(request.body or '{}')
+        clean = []
+        for a in (data.get('annotations') or [])[:200]:
+            kind, pts = a.get('type'), a.get('points') or []
+            if kind not in ANNOTATION_TYPES or len(pts) != ANNOTATION_TYPES[kind]:
+                continue
+            clean.append({'type': kind, 'points': [[round(float(x), 2), round(float(y), 2)] for x, y in pts],
+                          'text': str(a.get('text') or '')[:200], 'label': str(a.get('label') or '')[:60]})
+        mm = data.get('mm_per_pixel')
+        mm = float(mm) if mm not in (None, '') else None
+        if mm is not None and not (0 < mm < 50):
+            raise ValueError
+    except (ValueError, TypeError, AttributeError):
+        return JsonResponse({'ok': False, 'error': 'Could not read the annotations.'}, status=400)
+    img.annotations, img.mm_per_pixel = clean, mm
+    img.save(update_fields=['annotations', 'mm_per_pixel', 'updated_at'])
+    audit(request, 'imaging_annotate', f'imaging_image:{img.pk}', {'count': len(clean), 'calibrated': mm is not None})
+    return JsonResponse({'ok': True, 'count': len(clean)})
+
+
+@login_required
+@require_POST
+def imaging_process(request, pk):
+    """Straighten and enhance a scan photo. With save=false it returns a PNG preview; with save=true it stores a new
+    image linked to the original (which is never changed)."""
+    authorize(request, 'imaging')
+    img = get_object_or_404(ImagingImage.objects.select_related('order'), pk=pk)
+    if img.order.status == 'cancelled':
+        return JsonResponse({'ok': False, 'error': 'Study cancelled'}, status=400)
+    from django.core.files.base import ContentFile
+    from .imaging_tools import describe, process
+    try:
+        opts = json.loads(request.body or '{}')
+        with img.file.open('rb') as f:
+            png, applied = process(f, opts)
+    except (ValueError, TypeError, OSError, ArithmeticError) as e:
+        return JsonResponse({'ok': False, 'error': str(e) if isinstance(e, ValueError) else 'Could not process this image.'}, status=400)
+    except Exception:                                   # numpy LinAlgError for impossible corner shapes, and similar
+        return JsonResponse({'ok': False, 'error': 'Those corners do not form a usable shape. Drag them to the four corners of the film.'}, status=400)
+    if not opts.get('save'):
+        resp = HttpResponse(png, content_type='image/png'); resp['Cache-Control'] = 'no-store'
+        return resp
+    if img.order.images.count() >= 40:
+        return JsonResponse({'ok': False, 'error': 'This study already has 40 images.'}, status=400)
+    root = img.derived_from or img
+    new = ImagingImage(order=img.order, uploaded_by=request.user, derived_from=root, processing={**applied, 'source_image': img.pk},
+                       caption=f"{(root.caption or 'Image')[:70]} · {describe(applied)}"[:120])
+    new.file.save(f'processed-{root.pk}.png', ContentFile(png), save=False)
+    new.save()
+    audit(request, 'imaging_process', f'imaging:{img.order_id}', {'source': img.pk, 'new': new.pk, 'steps': list(applied)})
+    return JsonResponse({'ok': True, 'id': new.pk, 'redirect': reverse('imaging_detail', args=[img.order_id]) + f'?img={new.pk}'})
 
 
 @login_required

@@ -1,0 +1,15 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Pharmacy · Ward requisitions{% endblock %}
+{% block heading %}Ward requisitions{% endblock %}
+{% block subheading %}<p class="sub">Wards ask for stock; the pharmacy approves, packs and issues it. Issued stock moves into the ward's cupboard on the ledger.</p>{% endblock %}
+{% block actions %}{% if can_request %}<a class="btn btn-primary" href="{% url 'pharm_requisition_new' %}"><i class="bi bi-clipboard-plus"></i>New requisition</a>{% endif %}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+<div class="filter-row"><div class="seg"><a class="segl {% if status == 'open' %}on{% endif %}" href="?status=open">Open</a><a class="segl {% if status == 'issued' %}on{% endif %}" href="?status=issued">Issued</a><a class="segl {% if status == 'rejected' %}on{% endif %}" href="?status=rejected">Rejected</a><a class="segl {% if status == 'all' %}on{% endif %}" href="?status=all">All</a></div></div>
+<section class="panel"><table class="mini-table"><thead><tr><th>Number</th><th>For</th><th>From</th><th>Lines</th><th>Requested</th><th>Status</th></tr></thead><tbody>
+{% for r in reqs %}<tr><td><a href="{% url 'pharm_requisition' r.pk %}"><b>{{ r.number }}</b></a>{% if r.priority == 'urgent' %} <span class="tag red">Urgent</span>{% endif %}</td><td>{{ r.deliver_to }}</td><td class="muted">{{ r.supply_from }}</td><td>{{ r.n }}</td>
+  <td class="small">{{ r.requested_by|display_name }}<div class="muted">{{ r.created_at|date:'j M H:i' }}{% if r.needed_by %} · needed {{ r.needed_by|date:'j M' }}{% endif %}</div></td>
+  <td><span class="tag {% if r.status == 'submitted' %}amber{% elif r.status == 'approved' %}indigo{% elif r.status == 'issued' %}teal{% elif r.status == 'partial' %}amber{% else %}red{% endif %}">{{ r.get_status_display }}</span></td></tr>
+{% empty %}<tr><td colspan="6" class="empty"><i class="bi bi-clipboard"></i>No requisitions here.</td></tr>{% endfor %}</tbody></table></section>
+{% endblock %}

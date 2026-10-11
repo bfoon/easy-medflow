@@ -1,0 +1,21 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Pharmacy · Controlled drugs register{% endblock %}
+{% block heading %}Controlled drugs register{% endblock %}
+{% block subheading %}<p class="sub">A running record for each controlled drug: every receipt, issue, dispense and write-off with who did it and who witnessed it.</p>{% endblock %}
+{% block actions %}<button class="btn btn-ghost" onclick="window.print()"><i class="bi bi-printer"></i>Print register</button>{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+{% if not meds %}<div class="empty panel"><i class="bi bi-shield-lock"></i>No medicines are marked as controlled drugs.</div>{% else %}
+<form class="filter-row" method="get"><select name="med" class="form-select" onchange="this.form.submit()" aria-label="Drug">{% for x in meds %}<option value="{{ x.pk }}" {% if x.pk == m.pk %}selected{% endif %}>{{ x }} {{ x.form }}</option>{% endfor %}</select>
+  <select name="location" class="form-select" onchange="this.form.submit()" aria-label="Location"><option value="">All locations</option>{% for l in locations %}<option value="{{ l.pk }}" {% if loc.pk == l.pk %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></form>
+<div class="kpis ph-kpis">{% for l, q in balances %}<div class="kpi"><b>{{ q }}</b><span>{{ l }}</span></div>{% endfor %}
+  <div class="kpi {% if unwitnessed %}crit{% else %}good{% endif %}"><b>{{ unwitnessed }}</b><span>movements out without a witness</span></div></div>
+<section class="panel print-area"><div class="panel-head"><h2>{{ m }} {{ m.form }}</h2>{% if loc %}<span class="hint">{{ loc }}</span>{% endif %}</div>
+  <div class="scroll-x"><table class="mini-table ph-ledger"><thead><tr><th>Date</th><th>Entry</th><th>Patient / ward</th><th>Batch</th><th>Location</th><th class="text-end">In</th><th class="text-end">Out</th><th class="text-end">Balance</th><th>By</th><th>Witness</th></tr></thead><tbody>
+  {% for e in entries %}<tr class="{% if e.quantity < 0 and not e.witness %}row-out{% endif %}"><td class="small text-nowrap">{{ e.created_at|date:'j M y H:i' }}</td><td><span class="ph-k k-{{ e.kind }}">{{ e.get_kind_display }}</span> <span class="small muted">{{ e.reference }}</span></td>
+    <td class="small">{% if e.patient %}{{ e.patient.full_name }} <span class="muted">{{ e.patient.mrn }}</span>{% else %}{{ e.note }}{% endif %}</td><td class="mono small">{{ e.batch.batch_number }}</td><td class="small">{{ e.location }}</td>
+    <td class="text-end text-success">{% if e.quantity > 0 %}{{ e.quantity }}{% endif %}</td><td class="text-end text-danger">{% if e.quantity < 0 %}{{ e.quantity|stringformat:'d'|slice:'1:' }}{% endif %}</td><td class="text-end fw-bold">{{ e.balance_after }}</td>
+    <td class="small">{{ e.actor|display_name }}</td><td class="small">{% if e.witness %}{{ e.witness|display_name }}{% elif e.quantity < 0 %}<span class="tag red">None</span>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="10" class="empty">No entries.</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
+{% endblock %}

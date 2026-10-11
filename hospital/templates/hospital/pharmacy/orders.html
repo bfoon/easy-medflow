@@ -1,0 +1,26 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Pharmacy · Purchase orders{% endblock %}
+{% block heading %}Purchase orders{% endblock %}
+{% block subheading %}<p class="sub">Order from suppliers, then book each delivery in with its batch numbers and expiry dates.</p>{% endblock %}
+{% block actions %}{% if can_stock %}<a class="btn btn-ghost" href="{% url 'pharm_order_new' %}"><i class="bi bi-plus"></i>Blank order</a>{% if suggest %}<a class="btn btn-primary" href="{% url 'pharm_order_new' %}?from=suggestions"><i class="bi bi-magic"></i>Order all {{ suggest|length }} suggestions</a>{% endif %}{% endif %}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+<div class="grid g-main">
+  <section class="panel align-self-start">
+    <div class="panel-head"><h2>Orders</h2><div class="seg ms-auto"><a class="segl {% if status == 'open' %}on{% endif %}" href="?status=open">Open</a><a class="segl {% if status == 'received' %}on{% endif %}" href="?status=received">Received</a><a class="segl {% if status == 'all' %}on{% endif %}" href="?status=all">All</a></div></div>
+    <table class="mini-table"><thead><tr><th>Order</th><th>Supplier</th><th>Lines</th><th class="text-end">Value</th><th>Expected</th><th>Status</th></tr></thead><tbody>
+    {% for po in orders %}<tr><td><a href="{% url 'pharm_order' po.pk %}"><b>{{ po.number }}</b></a><div class="small muted">{{ po.get_funding_display }}</div></td><td>{{ po.supplier }}</td><td>{{ po.lines.all|length }}</td><td class="text-end">{{ po.total|money }}</td>
+      <td class="small">{{ po.expected_date|date:'j M'|default:'—' }}</td>
+      <td><span class="tag {% if po.status == 'draft' %}{% elif po.status == 'sent' %}indigo{% elif po.status == 'partial' %}amber{% elif po.status == 'received' %}teal{% else %}red{% endif %}">{{ po.get_status_display }}</span></td></tr>
+    {% empty %}<tr><td colspan="6" class="empty"><i class="bi bi-truck"></i>No orders here.</td></tr>{% endfor %}</tbody></table>
+  </section>
+  <section class="panel align-self-start">
+    <div class="panel-head"><h2>Reorder suggestions</h2><span class="hint">At or below reorder level, counting stock already on order</span></div>
+    {% for s in suggest %}<div class="ph-sugg"><div><a href="{% url 'pharm_card' s.m.pk %}"><b>{{ s.m.name }}</b></a> <span class="muted">{{ s.m.strength }}</span>
+        <div class="small muted">Have {{ s.have }}{% if s.on_order %} · {{ s.on_order }} on order{% endif %} · reorder at {{ s.m.reorder_level }}{% if s.m.default_supplier %} · {{ s.m.default_supplier }}{% endif %}</div></div>
+      <b class="text-nowrap">+{{ s.suggest }}</b></div>
+    {% empty %}<div class="empty"><i class="bi bi-check2-circle"></i>Everything is above its reorder level.</div>{% endfor %}
+  </section>
+</div>
+{% endblock %}

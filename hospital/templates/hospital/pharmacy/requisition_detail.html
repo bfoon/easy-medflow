@@ -1,0 +1,28 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ r.number }}{% endblock %}
+{% block heading %}{{ r.number }} · {{ r.deliver_to }}{% endblock %}
+{% block subheading %}<p class="sub">From {{ r.supply_from }} · requested by {{ r.requested_by|display_name }} {{ r.created_at|date:'j M H:i' }}{% if r.needed_by %} · needed by {{ r.needed_by|date:'j M' }}{% endif %} ·
+  <span class="tag {% if r.status == 'submitted' %}amber{% elif r.status == 'approved' %}indigo{% elif r.status == 'issued' %}teal{% elif r.status == 'partial' %}amber{% else %}red{% endif %}">{{ r.get_status_display }}</span>{% if r.priority == 'urgent' %} <span class="tag red">Urgent</span>{% endif %}</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'pharm_requisitions' %}"><i class="bi bi-arrow-left"></i>Requisitions</a><button class="btn btn-ghost" onclick="window.print()"><i class="bi bi-printer"></i>Pick list</button>{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+{% if r.notes %}<div class="alert-mf info mb-3"><i class="bi bi-chat-left-text"></i><div>{{ r.notes }}</div></div>{% endif %}
+<section class="panel print-area">
+  {% if can_stock and r.status == 'submitted' %}<form method="post" action="{% url 'pharm_requisition_action' r.pk 'approve' %}">{% csrf_token %}{% endif %}
+  {% if can_stock and r.status in 'approved partial' %}<form method="post" action="{% url 'pharm_requisition_action' r.pk 'issue' %}" data-confirm="Issue this stock to {{ r.deliver_to }}?">{% csrf_token %}{% endif %}
+  <table class="mini-table"><thead><tr><th>Medicine</th><th class="text-end">Requested</th><th class="text-end">Approved</th><th class="text-end">Issued</th><th class="text-end">Available at {{ r.supply_from }}</th>{% if can_stock and r.status in 'submitted approved partial' %}<th style="width:120px">{% if r.status == 'submitted' %}Approve{% else %}Issue now{% endif %}</th>{% endif %}</tr></thead><tbody>
+  {% for l in lines %}<tr><td><a href="{% url 'pharm_card' l.medication_id %}">{{ l.medication }}</a> <span class="muted">{{ l.medication.form }}</span>{% if l.medication.controlled %} <span class="tag plum">CD</span>{% endif %}</td>
+    <td class="text-end">{{ l.requested }}</td><td class="text-end">{{ l.approved|default_if_none:'—' }}</td><td class="text-end">{{ l.issued }}</td>
+    <td class="text-end {% if l.available < l.to_issue %}text-danger fw-bold{% endif %}">{{ l.available }}</td>
+    {% if can_stock and r.status == 'submitted' %}<td><input type="number" class="form-control form-control-sm" name="approve_{{ l.pk }}" min="0" value="{{ l.requested }}"></td>
+    {% elif can_stock and r.status in 'approved partial' %}<td><input type="number" class="form-control form-control-sm" name="issue_{{ l.pk }}" min="0" max="{{ l.to_issue }}" value="{% if l.available < l.to_issue %}{{ l.available }}{% else %}{{ l.to_issue }}{% endif %}"></td>{% endif %}</tr>{% endfor %}
+  </tbody></table>
+  {% if can_stock and r.status == 'submitted' %}<div class="d-flex gap-2 mt-3"><button class="btn btn-primary"><i class="bi bi-check2"></i>Approve</button></form>
+    <form method="post" action="{% url 'pharm_requisition_action' r.pk 'reject' %}" class="d-flex gap-2" data-confirm="Reject {{ r.number }}?">{% csrf_token %}<input name="reason" class="form-control form-control-sm" placeholder="Reason" required><button class="btn btn-ghost">Reject</button></form></div>
+  {% elif can_stock and r.status in 'approved partial' %}<div class="d-flex gap-2 mt-3 align-items-center">{% if any_controlled %}{% include 'hospital/pharmacy/_witness.html' %}{% endif %}<button class="btn btn-primary"><i class="bi bi-box-arrow-right"></i>Issue to {{ r.deliver_to }}</button><span class="small muted">Stock leaves {{ r.supply_from }} earliest expiry first.</span></div></form>{% endif %}
+  {% if r.status == 'submitted' %}<form method="post" action="{% url 'pharm_requisition_action' r.pk 'cancel' %}" class="mt-2" data-confirm="Cancel {{ r.number }}?">{% csrf_token %}<button class="btn btn-sm btn-ghost">Cancel requisition</button></form>{% endif %}
+</section>
+{% if movements %}<section class="panel mt-3"><div class="panel-head"><h2>Issued</h2></div><table class="mini-table"><thead><tr><th>When</th><th>Medicine</th><th>Batch</th><th>Expiry</th><th>Location</th><th class="text-end">Qty</th><th>By</th></tr></thead><tbody>
+{% for mv in movements %}<tr><td class="small">{{ mv.created_at|date:'j M H:i' }}</td><td>{{ mv.medication }}</td><td class="mono small">{{ mv.batch.batch_number }}</td><td class="small">{{ mv.batch.expiry|date:'M Y' }}</td><td class="small">{{ mv.location }}</td><td class="text-end {% if mv.quantity < 0 %}text-danger{% else %}text-success{% endif %}">{% if mv.quantity > 0 %}+{% endif %}{{ mv.quantity }}</td><td class="small">{{ mv.actor|display_name }}{% if mv.witness %} · w: {{ mv.witness|display_name }}{% endif %}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
+{% endblock %}

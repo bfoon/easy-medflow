@@ -1,0 +1,20 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Pharmacy · Expiry{% endblock %}
+{% block heading %}Expiry &amp; write-offs{% endblock %}
+{% block subheading %}<p class="sub">"At risk" estimates how much will not be used before it expires, at the current rate of use. Move it to a busier ward or return it to the supplier while you can. Written off in the last 90 days: <b>{{ lost90|money }}</b>.</p>{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block content %}
+{% include 'hospital/pharmacy/_nav.html' %}
+{% for g in groups %}<section class="panel mb-3">
+  <div class="panel-head"><h2><span class="tag {{ g.colour }}">{{ g.rows|length }}</span> {{ g.label }}</h2><span class="hint">{{ g.value|money }}</span>
+    {% if forloop.first and g.rows and can_stock %}<form method="post" class="ms-auto d-flex gap-2" data-confirm="Write off all {{ g.rows|length }} expired batches?">{% csrf_token %}<input type="hidden" name="action" value="writeoff_all">{% include 'hospital/pharmacy/_witness.html' with witnesses=witnesses %}<button class="btn btn-sm btn-danger-soft"><i class="bi bi-trash"></i>Write off all expired</button></form>{% endif %}</div>
+  {% if g.rows %}<table class="mini-table"><thead><tr><th>Medicine</th><th>Batch</th><th>Where</th><th class="text-end">Qty</th><th>Expiry</th><th class="text-end">At risk</th><th class="text-end">Value</th><th></th></tr></thead><tbody>
+  {% for r in g.rows %}<tr><td><a href="{% url 'pharm_card' r.b.medication_id %}">{{ r.b.medication }}</a>{% if r.b.medication.controlled %} <span class="tag plum">CD</span>{% endif %}</td><td class="mono small">{{ r.b.batch_number }}</td><td class="small">{{ r.b.store }}</td><td class="text-end">{{ r.b.quantity }}</td>
+    <td class="small">{{ r.b.expiry|date:'j M Y' }}<div class="muted">{% if r.days < 0 %}{{ r.days|stringformat:'d'|slice:'1:' }} days ago{% else %}in {{ r.days }} days{% endif %}</div></td>
+    <td class="text-end {% if r.at_risk %}text-danger fw-bold{% endif %}">{{ r.at_risk|default:'—' }}</td><td class="text-end">{{ r.value|money }}</td>
+    <td class="text-end"><a class="btn btn-sm btn-ghost" href="{% url 'pharm_card' r.b.medication_id %}">Open</a></td></tr>{% endfor %}</tbody></table>
+  {% else %}<div class="empty">None.</div>{% endif %}
+</section>{% endfor %}
+{% if written %}<section class="panel"><div class="panel-head"><h2>Recent write-offs</h2></div><table class="mini-table"><thead><tr><th>When</th><th>Medicine</th><th>Why</th><th class="text-end">Qty</th><th>By</th></tr></thead><tbody>
+{% for mv in written %}<tr><td class="small">{{ mv.created_at|date:'j M' }}</td><td>{{ mv.medication }}</td><td class="small"><span class="ph-k k-{{ mv.kind }}">{{ mv.get_kind_display }}</span> {{ mv.note }}</td><td class="text-end text-danger">{{ mv.quantity }}</td><td class="small">{{ mv.actor|display_name }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
+{% endblock %}

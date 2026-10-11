@@ -1,0 +1,12 @@
+<nav class="ph-nav" aria-label="Pharmacy">
+  <a class="{% if pnav == 'overview' %}on{% endif %}" href="{% url 'pharm_overview' %}"><i class="bi bi-speedometer2"></i>Overview</a>
+  <a class="{% if pnav == 'dispense' %}on{% endif %}" href="{% url 'pharmacy' %}"><i class="bi bi-bag-check"></i>Dispensing</a>
+  <a class="{% if pnav == 'stock' %}on{% endif %}" href="{% url 'pharm_stock' %}"><i class="bi bi-box-seam"></i>Stock</a>
+  <a class="{% if pnav == 'req' %}on{% endif %}" href="{% url 'pharm_requisitions' %}"><i class="bi bi-clipboard-check"></i>Ward requisitions{% if pnav_counts.req %}<span class="n">{{ pnav_counts.req }}</span>{% endif %}</a>
+  <a class="{% if pnav == 'po' %}on{% endif %}" href="{% url 'pharm_orders' %}"><i class="bi bi-truck"></i>Purchase orders{% if pnav_counts.po %}<span class="n">{{ pnav_counts.po }}</span>{% endif %}</a>
+  <a class="{% if pnav == 'count' %}on{% endif %}" href="{% url 'pharm_counts' %}"><i class="bi bi-list-check"></i>Stock take{% if pnav_counts.count %}<span class="n">{{ pnav_counts.count }}</span>{% endif %}</a>
+  <a class="{% if pnav == 'exp' %}on{% endif %}" href="{% url 'pharm_expiry' %}"><i class="bi bi-hourglass-split"></i>Expiry{% if pnav_counts.exp %}<span class="n warn">{{ pnav_counts.exp }}</span>{% endif %}</a>
+  <a class="{% if pnav == 'cd' %}on{% endif %}" href="{% url 'pharm_controlled' %}"><i class="bi bi-shield-lock"></i>Controlled drugs</a>
+  <a class="{% if pnav == 'rep' %}on{% endif %}" href="{% url 'pharm_reports' %}"><i class="bi bi-graph-up"></i>Reports</a>
+  <a class="{% if pnav == 'sup' %}on{% endif %}" href="{% url 'pharm_suppliers' %}"><i class="bi bi-buildings"></i>Suppliers &amp; stores</a>
+</nav>
