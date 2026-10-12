@@ -1,0 +1,88 @@
+{% extends 'hospital/base.html' %}{% load medflow evidence_tags %}
+{% block title %}Reference values{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/guidance.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}WHO &amp; guideline reference values{% endblock %}
+{% block subheading %}<p class="sub">Shown to doctors beside the hospital range on every result. The hospital range (Configuration → Lab tests) still decides the flag; these values add the WHO view for the patient's group.</p>{% endblock %}
+{% block actions %}
+  {% if can_edit %}
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="check_sources"><button class="btn btn-ghost" {% if not fetch_on %}disabled title="MEDICAL_EVIDENCE_FETCH is off"{% endif %}><i class="bi bi-cloud-check"></i>Check cited pages now</button></form>
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="seed"><button class="btn btn-ghost"><i class="bi bi-plus-square-dotted"></i>Add missing WHO values</button></form>
+  {% endif %}
+{% endblock %}
+{% block content %}
+{% include 'hospital/lab/_nav.html' %}
+{% if review %}<div class="alert-mf warn mb-3"><i class="bi bi-exclamation-triangle"></i><div><b>{{ review|length }} reference{{ review|length|pluralize }} need{{ review|length|pluralize:'s,' }} review</b>: the page they cite has changed or gone. Open the source, compare the values and mark them verified (or retire them).</div></div>{% endif %}
+
+<div class="grid g-main">
+  <div class="stack">
+    {% for code, name, rows in groups %}
+    <section class="panel flush">
+      <div class="panel-head"><h2>{{ name }}</h2><span class="hint">{{ code }}</span></div>
+      <div class="scroll-x"><table class="mini-table"><thead><tr><th>Reference</th><th>Patients</th><th>Value</th><th>Source</th><th>Status</th>{% if can_edit %}<th></th>{% endif %}</tr></thead><tbody>
+      {% for r in rows %}
+        <tr class="{% if r.status == 'retired' %}text-muted{% endif %}">
+          <td><b>{{ r.label }}</b><div class="small muted">{{ r.get_kind_display }}</div>{% if r.bands %}<div class="small">{% for b in r.bands %}<span class="tag {{ b.tone|default:'' }}">{{ b.label }}{% if b.low is not None %} ≥ {{ b.low }}{% endif %}</span> {% endfor %}</div>{% endif %}{% if r.note %}<div class="small muted">{{ r.note }}</div>{% endif %}</td>
+          <td class="small">{{ r.population }}</td>
+          <td class="text-nowrap"><b>{{ r.range_label }}</b>{% if r.unit_mismatch %}<div class="small text-danger">Unit differs from the catalogue: not compared</div>{% endif %}</td>
+          <td class="small">{{ r.source_name|source_short }}{% if r.citation_year %} {{ r.citation_year }}{% endif %}{% if r.citation_url %} · <a href="{{ r.citation_url }}" target="_blank" rel="noopener noreferrer">open</a>{% endif %}<div class="muted" title="{{ r.citation_title }}">{{ r.citation_title|truncatechars:70 }}</div>
+            {% if r.source_checked_at %}<div class="muted">checked {{ r.source_checked_at|date:'j M Y' }}</div>{% endif %}</td>
+          <td class="small">{% if r.status == 'verified' %}<span class="tag teal">Verified</span><div class="muted">{{ r.verified_by|display_name }}, {{ r.verified_at|date:'j M Y' }}</div>
+            {% elif r.status == 'review' %}<span class="tag amber">Review</span><div class="muted">{{ r.source_note }}</div>
+            {% elif r.status == 'retired' %}<span class="tag">Retired</span>{% else %}<span class="tag indigo">From guideline</span><div class="muted">not yet verified here</div>{% endif %}</td>
+          {% if can_edit %}<td class="text-nowrap"><form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="pk" value="{{ r.pk }}">
+            {% if r.status != 'retired' %}{% if r.status != 'verified' %}<button class="btn btn-sm btn-primary" name="action" value="verify">Verify</button>{% endif %}
+            <button class="btn btn-sm btn-ghost" name="action" value="retire" data-confirm="Retire this reference? Doctors will no longer see it.">Retire</button>
+            {% else %}<button class="btn btn-sm btn-ghost" name="action" value="restore">Restore</button>{% endif %}</form></td>{% endif %}
+        </tr>
+      {% endfor %}
+      </tbody></table></div>
+    </section>
+    {% empty %}
+    <section class="panel"><div class="empty"><i class="bi bi-journal-x"></i>No reference values yet. Use <b>Add missing WHO values</b>.</div></section>
+    {% endfor %}
+
+    <section class="panel flush">
+      <div class="panel-head"><h2>Trusted-source cache</h2><span class="hint">{% if fetch_on %}fetching on{% else %}fetching off (MEDICAL_EVIDENCE_FETCH){% endif %}</span></div>
+      <div class="scroll-x"><table class="mini-table"><thead><tr><th>Result</th><th>Status</th><th>Sources cached</th><th>Last fetched</th></tr></thead><tbody>
+        {% for f in fetches %}<tr><td><b>{{ f.name|default:f.code }}</b> <span class="muted small">{{ f.key }}</span></td>
+          <td class="small"><span class="tag {% if f.status == 'done' %}teal{% elif f.status == 'failed' %}red{% else %}amber{% endif %}">{{ f.get_status_display }}</span>{% if f.stale %} <span class="tag">stale</span>{% endif %}{% if f.error %}<div class="muted">{{ f.error }}</div>{% endif %}</td>
+          <td class="small">{{ f.items }}{% with s=counts|get_item:f.key %}{% if s %} · {{ s|join:', ' }}{% endif %}{% endwith %}</td>
+          <td class="small">{{ f.last_run_at|date:'j M Y H:i'|default:'—' }}</td></tr>
+        {% empty %}<tr><td colspan="4" class="empty">Nothing fetched yet. Sources are fetched when an abnormal result is submitted.</td></tr>{% endfor %}
+      </tbody></table></div>
+      <p class="form-text px-4 pb-3 mb-0">Allowed sites: {{ domains|join:', ' }}. MedlinePlus and PubMed are read through their official public APIs; WHO pages only where robots.txt allows. No patient data is sent.</p>
+    </section>
+  </div>
+
+  <aside class="stack align-self-start">
+    {% if can_edit %}
+    <section class="panel">
+      <div class="panel-head"><h2>Add a reference</h2></div>
+      <form method="post" class="gd-form">{% csrf_token %}<input type="hidden" name="action" value="add">
+        <label>Parameter<select class="form-select form-select-sm" name="code" required>{% for c, n in codes %}<option value="{{ c }}">{{ n }} ({{ c }})</option>{% endfor %}</select></label>
+        <label>Label<input class="form-control form-control-sm" name="label" placeholder="e.g. Anaemia cut-off" required></label>
+        <div class="row g-2"><div class="col"><label>Source<select class="form-select form-select-sm" name="source">{% for k, v in R.SOURCES %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label></div>
+          <div class="col"><label>Kind<select class="form-select form-select-sm" name="kind">{% for k, v in R.KINDS %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label></div></div>
+        <label>Organisation<input class="form-control form-control-sm" name="source_name" placeholder="World Health Organization"></label>
+        <div class="row g-2"><div class="col"><label>Low<input class="form-control form-control-sm" name="low" inputmode="decimal"></label></div>
+          <div class="col"><label>High<input class="form-control form-control-sm" name="high" inputmode="decimal"></label></div>
+          <div class="col"><label>Unit<input class="form-control form-control-sm" name="unit" placeholder="same as catalogue"></label></div></div>
+        <div class="row g-2"><div class="col"><label>Sex<select class="form-select form-select-sm" name="sex">{% for k, v in R.SEXES %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label></div>
+          <div class="col"><label>Condition<select class="form-select form-select-sm" name="condition">{% for k, v in R.CONDITIONS %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label></div></div>
+        <div class="row g-2"><div class="col"><label>From age (months)<input class="form-control form-control-sm" name="age_min_months" inputmode="numeric"></label></div>
+          <div class="col"><label>Under age (months)<input class="form-control form-control-sm" name="age_max_months" inputmode="numeric"></label></div></div>
+        <label>Guideline / document<input class="form-control form-control-sm" name="citation_title" required></label>
+        <div class="row g-2"><div class="col-8"><label>Link (https)<input class="form-control form-control-sm" name="citation_url" type="url"></label></div>
+          <div class="col-4"><label>Year<input class="form-control form-control-sm" name="citation_year" inputmode="numeric"></label></div></div>
+        <label>Note<input class="form-control form-control-sm" name="note"></label>
+        <p class="form-text">Interval: normal between low and high. Threshold: flagged below low or above high. Enter values in the catalogue's unit. A reference you add is recorded as verified by you.</p>
+        <button class="btn btn-primary btn-sm">Add reference</button>
+      </form>
+    </section>
+    {% endif %}
+    <section class="panel"><div class="panel-head"><h2>Hospital protocols</h2></div>
+      <p class="small mb-2">Your own steps for an abnormal result (e.g. high potassium) appear first in the doctor's guidance, above general guidance and online sources.</p>
+      <a class="btn btn-sm btn-ghost" href="/admin/hospital/parameterguidance/"><i class="bi bi-pencil-square"></i>Edit protocols</a></section>
+  </aside>
+</div>
+{% endblock %}

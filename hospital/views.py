@@ -650,6 +650,9 @@ def lab_results_entry(request, pk):
                     messages.success(request, f'Submitted for verification: {", ".join(completed)}.')
                 if partial:
                     messages.warning(request, f'Saved but not submitted (values missing): {", ".join(partial)}.')
+                if completed:
+                    from .evidence import prefetch_for_request
+                    transaction.on_commit(lambda: prefetch_for_request(lab_requests_qs().get(pk=lr.pk)))   # sources ready when the doctor opens it
                 if crit:
                     from . import lab_mgmt
                     lab_mgmt.register_criticals(lr, request.user)     # call-back task in Critical calls + bell/email to the clinician
@@ -751,7 +754,7 @@ def patient_lab_data(patient):
                 'id': prm.pk, 'test_id': o.test_id, 'code': prm.code, 'name': prm.name, 'unit': prm.unit, 'kind': prm.kind, 'system': prm.system, 'test': o.test.name,
                 'category': cat.name if cat else 'Other', 'color': cat.color if cat else '#5A6F7D', 'range': prm.range_label(patient.sex),
                 'lo': _f(lo), 'hi': _f(hi), 'clo': _f(prm.critical_low), 'chi': _f(prm.critical_high), 'history': []})
-            point = {'value_id': v.pk, 'order_id': o.pk, 'date': timezone.localtime(when).strftime('%Y-%m-%d %H:%M'), 'display': v.display,
+            point = {'value_id': v.pk, 'order_id': o.pk, 'request_id': o.request_id, 'date': timezone.localtime(when).strftime('%Y-%m-%d %H:%M'), 'display': v.display,
                      'num': _f(v.value_number), 'flag': v.flag, 'preliminary': o.status != 'verified',
                      'ack': bool(v.acknowledged_at), 'ack_by': (v.acknowledged_by.get_full_name() or v.acknowledged_by.username) if v.acknowledged_by else ''}
             entry['history'].append(point)
@@ -771,7 +774,8 @@ def patient_lab_data(patient):
     dx = [e.diagnosis for e in patient.encounters.exclude(status='cancelled').exclude(diagnosis='').order_by('-created_at')[:25]]
     dx += [c.name for c in patient.conditions.filter(status='active')]
     last_vitals = next((e.vitals for e in patient.encounters.exclude(vitals={}).order_by('-created_at')[:1]), {}) or {}
-    return {'dx': dx, 'vitals': last_vitals, 'open_encounter': open_enc.pk if open_enc else None, 'lab_new_url': reverse('lab_new'), 'imaging': imaging, 'patient': {'name': patient.full_name, 'sex': patient.sex, 'age': patient.age, 'mrn': patient.mrn},
+    return {'dx': dx, 'vitals': last_vitals, 'open_encounter': open_enc.pk if open_enc else None, 'lab_new_url': reverse('lab_new'), 'imaging': imaging,
+            'guidance_url': reverse('lab_request_detail', args=[0]), 'patient': {'name': patient.full_name, 'sex': patient.sex, 'age': patient.age, 'mrn': patient.mrn},
             'systems': dict(BODY_SYSTEMS), 'params': list(params.values()), 'orders': list(reversed(order_list))}
 
 
@@ -1025,8 +1029,12 @@ def lab_request_detail(request, pk):
     authorize(request)
     lr = get_object_or_404(lab_requests_qs(), pk=pk)
     audit(request, 'view_chart', f'lab_request:{lr.pk}')
-    return render(request, 'hospital/lab_request.html', {'lr': lr, 'p': lr.encounter.patient,
-                                                         'can_lab': role_of(request.user) in ROLES['lab'], 'sex': lr.encounter.patient.sex})
+    from .evidence import who_for_request
+    who, _ = who_for_request(lr)      # WHO references beside the hospital range, for the patient's group
+    reported = any(o.status in ('resulted', 'verified') for o in lr.orders.all())
+    return render(request, 'hospital/lab_request.html', {'lr': lr, 'p': lr.encounter.patient, 'who': who, 'any_who': any(who.values()),
+                                                         'can_lab': role_of(request.user) in ROLES['lab'], 'sex': lr.encounter.patient.sex,
+                                                         'show_guidance': reported and role_of(request.user) in ('doctor', 'nurse', 'lab', 'admin')})
 
 
 def rx_qs():

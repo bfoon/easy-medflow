@@ -11,6 +11,8 @@ class Command(BaseCommand):
         for name in ['Emergency', 'Outpatient', 'General Medicine', 'Pediatrics', 'Maternity', 'Laboratory', 'Pharmacy', 'Radiology', 'Surgery']:
             Department.objects.get_or_create(name=name)
         self.load_lab_catalog()
+        from hospital.evidence import seed_who_references
+        seed_who_references()     # WHO reference values beside the hospital ranges; never overwrites lab edits
         layout = [('General Ward', 'GW', 10, 'general'), ('Maternity Ward', 'MW', 6, 'maternity'),
                   ('Pediatric Ward', 'PW', 6, 'pediatric'), ('Intensive Care', 'ICU', 4, 'icu')]
         for ward_name, prefix, n, kind in layout:
@@ -31,7 +33,7 @@ class Command(BaseCommand):
         self.load_locations()
         self.load_prices()   # after medicines and tests exist, so their prices are filled in
         if kwargs.get('verbosity', 1):
-            self.stdout.write(self.style.SUCCESS('Seeded departments, standard lab catalogue, 4 wards / 26 beds, and a medication catalog.'))
+            self.stdout.write(self.style.SUCCESS('Seeded departments, standard lab catalogue, WHO reference values, 4 wards / 26 beds, and a medication catalog.'))
 
     def load_lab_catalog(self):
         """Add any missing standard categories, tests and parameters. Never overwrites local edits (e.g. your own ranges)."""

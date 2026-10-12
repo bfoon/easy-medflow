@@ -5,6 +5,7 @@ from . import pharmacy_views as pv
 from . import care_views as care
 from . import studio_views as sv
 from . import esign_views as ev
+from . import evidence_views as gv
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -83,6 +84,12 @@ urlpatterns = [
     path('labs/reagents/', lv.lab_reagents, name='lab_reagents'),
     path('labs/critical/', lv.lab_critical, name='lab_critical'),
     path('labs/requests/<int:pk>/label/', lv.lab_label, name='lab_label'),
+    path('labs/references/', gv.lab_references, name='lab_references'),
+    path('labs/requests/<int:pk>/guidance/', gv.lab_guidance, name='lab_guidance'),
+    path('labs/requests/<int:pk>/guidance/refresh/', gv.lab_guidance_refresh, name='lab_guidance_refresh'),
+    path('labs/requests/<int:pk>/ai/', gv.lab_ai_request, name='lab_ai_request'),
+    path('labs/requests/<int:pk>/ai-context/', gv.lab_ai_context, name='lab_ai_context'),
+    path('labs/ai/<int:pk>/rate/', gv.lab_ai_rate, name='lab_ai_rate'),
     path('labs/requests/<int:pk>/report/', lv.lab_report, name='lab_report'),
     path('labs/new/', v.lab_new, name='lab_new'),
     path('labs/mine/', v.lab_mine, name='lab_mine'),

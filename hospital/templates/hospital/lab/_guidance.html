@@ -1,0 +1,152 @@
+{% load medflow evidence_tags %}
+<div class="gd" data-pending="{% if pending %}1{% else %}0{% endif %}">
+  <div class="gd-head">
+    <div class="gd-who-for">
+      <span class="label-sm">Compared for</span>
+      <span class="tag ink">{{ p.get_sex_display }}</span>
+      {% if g.ctx.age_months is not None %}<span class="tag ink">{{ g.ctx.age_months|age_months }}</span>{% endif %}
+      {% if g.ctx.pregnant %}<span class="tag plum">Pregnant{% if g.ctx.trimester %} · trimester {{ g.ctx.trimester }}{% endif %}</span>{% endif %}
+      {% if g.ctx.inflammation %}<span class="tag amber">Infection / inflammation</span>{% endif %}
+      {% if g.ctx.malaria %}<span class="tag red">Malaria</span>{% endif %}
+      {% if g.ctx.why %}<span class="small muted" title="{{ g.ctx.why|join:'; ' }}"><i class="bi bi-info-circle"></i> why</span>{% endif %}
+    </div>
+    <div class="gd-actions">
+      {% if g.fetch_enabled and g.abnormal %}<button type="button" class="btn btn-sm btn-ghost" data-gd-post="{% url 'lab_guidance_refresh' lr.pk %}"><i class="bi bi-arrow-repeat"></i>Refresh sources</button>{% endif %}
+      {% if can_ai %}<a class="btn btn-sm btn-ghost" href="{% url 'lab_ai_context' lr.pk %}"><i class="bi bi-eye"></i>What AI would see</a>{% endif %}
+    </div>
+  </div>
+
+  {% if not g.rows %}
+    <div class="empty"><i class="bi bi-hourglass-split"></i>No results reported yet. Guidance appears here once the laboratory submits results.</div>
+  {% elif not g.abnormal %}
+    <div class="alert-mf info mb-3"><i class="bi bi-check2-circle"></i><div>Every reported result is within the hospital range. The WHO comparison is under <b>In-range results</b> below.</div></div>
+  {% endif %}
+
+  {% for r in g.abnormal %}
+  <article class="gd-card{% if r.critical %} crit{% endif %}" id="gd-{{ r.v.pk }}" style="--cat:{{ r.o.test.category.color|default:'#5A6F7D' }}">
+    <header class="gd-card-head">
+      <div>
+        <h3>{{ r.p.name }} <span class="muted small">· {{ r.o.test.name }}</span></h3>
+        <div class="gd-value"><b>{{ r.v.display }}</b> <span class="muted">{{ r.p.unit }}</span> {% include 'hospital/_flag.html' with flag=r.v.flag %}
+          {% if r.prev %}<span class="small muted ms-2">previous {{ r.prev.display }} {{ r.p.unit }} · {{ r.prev.order.resulted_at|date:'j M Y' }}</span>{% endif %}</div>
+      </div>
+      <div class="gd-card-actions">
+        {% if open_encounter %}<button type="button" class="btn btn-sm btn-ghost" data-drawer="{% url 'lab_new' %}?encounter={{ open_encounter.pk }}&test={{ r.o.test_id }}" data-title="Repeat {{ r.o.test.name }}"><i class="bi bi-arrow-repeat"></i>Repeat test</button>{% endif %}
+        {% if r.v.acknowledged_at %}<span class="small muted"><i class="bi bi-check2-circle"></i> Reviewed by {{ r.v.acknowledged_by|display_name }}</span>
+        {% elif can_ai %}<button type="button" class="btn btn-sm btn-ink" data-gd-post="{% url 'lab_ack' r.v.pk %}"><i class="bi bi-eye"></i>Mark reviewed</button>{% endif %}
+      </div>
+    </header>
+
+    <div class="gd-ranges">
+      <div class="gd-range hosp"><span class="label-sm">Hospital range</span><b>{{ r.range|default:'—' }}</b> <span class="muted small">{{ r.p.unit }}</span>
+        {% if r.p.critical_low is not None or r.p.critical_high is not None %}<span class="small muted d-block">critical {% if r.p.critical_low is not None %}&lt; {{ r.p.critical_low.normalize }}{% endif %}{% if r.p.critical_low is not None and r.p.critical_high is not None %} or {% endif %}{% if r.p.critical_high is not None %}&gt; {{ r.p.critical_high.normalize }}{% endif %}</span>{% endif %}</div>
+      {% for w in r.who %}
+      <div class="gd-range who{% if w.outside %} out{% endif %}">
+        <span class="label-sm">{{ w.ref.source_name|source_short }} · {{ w.ref.label }}</span>
+        <b>{{ w.label }}</b> <span class="small muted">{{ w.population }}</span>
+        {% if not w.same_unit %}<span class="tag amber">Unit differs from the hospital's ({{ r.p.unit|default:'none' }}): not compared</span>
+        {% elif w.band %}<span class="tag {{ w.band.tone|default:'ink' }}">{{ w.band.label }}</span>
+        {% elif w.outside and w.ref.kind == 'threshold' %}<span class="tag red">Criterion met</span>
+        {% elif w.outside %}<span class="tag red">Outside WHO reference</span>
+        {% elif w.outside is not None %}<span class="tag teal">{% if w.ref.kind == 'threshold' %}Criterion not met{% else %}Within WHO reference{% endif %}</span>{% endif %}
+        {% if w.ref.status == 'review' %}<span class="tag amber" title="{{ w.ref.source_note }}">Source changed · lab reviewing</span>{% elif w.ref.status == 'curated' %}<span class="tag" title="From the cited guideline; not yet verified by this laboratory">Not yet lab-verified</span>{% endif %}
+        {% if w.ref.note %}<span class="small muted d-block">{{ w.ref.note }}</span>{% endif %}
+        {% if w.ref.citation_url %}<a class="small d-block" href="{{ w.ref.citation_url }}" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right"></i> {{ w.ref.source_name|source_short }}{% if w.ref.citation_year %} {{ w.ref.citation_year }}{% endif %}</a>{% endif %}
+      </div>
+      {% empty %}
+      <div class="gd-range none"><span class="label-sm">WHO reference</span><span class="small muted">WHO publishes reference values for only a few tests (haemoglobin, ferritin, glucose, HbA1c and the severe-malaria criteria). For this test use the hospital range; the laboratory can add other guideline values under Laboratory → References.</span></div>
+      {% endfor %}
+    </div>
+    {% if r.agreement.agree is False %}<div class="alert-mf warn mt-2"><i class="bi bi-exclamation-triangle"></i><div>{{ r.agreement.text }}</div></div>
+    {% elif r.agreement.agree is None and r.agreement.text %}<p class="small muted mt-2 mb-0"><i class="bi bi-info-circle"></i> {{ r.agreement.text }}</p>{% endif %}
+
+    <div class="gd-grid">
+      <section>
+        {% for pr in r.protocol %}
+        <h4><i class="bi bi-hospital"></i> Hospital protocol · {{ pr.title }}</h4>
+        <ol class="kb-steps">{% for s in pr.step_list %}<li>{{ s }}</li>{% endfor %}</ol>
+        {% if pr.protocol_url %}<a class="small" href="{{ pr.protocol_url }}" target="_blank" rel="noopener noreferrer">Full protocol</a>{% endif %}
+        {% endfor %}
+        <h4><i class="bi bi-signpost-split"></i> Suggested next steps</h4>
+        <p class="small mb-1" data-kb-about="{{ r.p.code }}"></p>
+        <ol class="kb-steps" data-kb="{{ r.p.code }}" data-flag="{{ r.v.flag }}"></ol>
+      </section>
+      <section>
+        <h4><i class="bi bi-people"></i> What clinicians here did next</h4>
+        {% with pr=r.practice %}
+        {% if pr.tests or pr.meds %}
+          <p class="small muted mb-1">{{ pr.n }} other patients with a {% if r.dir == 'L' %}low{% elif r.dir == 'H' %}high{% else %}abnormal{% endif %} {{ r.p.name|lower }}; within {{ pr.days }} days:</p>
+          {% if pr.tests %}<div class="label-sm">Tests ordered</div><ul class="gd-bars">{% for t in pr.tests %}<li><span title="{{ t.name }}">{{ t.name }}</span><i style="--w:{{ t.pct }}%"></i><b>{{ t.pct }}%</b></li>{% endfor %}</ul>{% endif %}
+          {% if pr.meds %}<div class="label-sm mt-2">Medicines prescribed</div><ul class="gd-bars">{% for m in pr.meds %}<li><span title="{{ m.name }}">{{ m.name }}</span><i style="--w:{{ m.pct }}%"></i><b>{{ m.pct }}%</b><small title="Visits ending resolved or improved">{{ m.success }}% improved</small></li>{% endfor %}</ul>{% endif %}
+          {% if pr.outcomes %}<p class="small muted mt-2 mb-0">Outcomes: {% for o in pr.outcomes %}{{ o.label }} {{ o.pct }}%{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+          <p class="form-text mb-0">Observational data from this hospital, not evidence. Groups under {{ pr.min_group }} patients are hidden.</p>
+        {% else %}
+          <p class="small muted mb-0">Not enough similar cases in this hospital yet{% if pr %} ({{ pr.n }} so far; {{ pr.min_group }} needed){% endif %}.</p>
+        {% endif %}
+        {% endwith %}
+      </section>
+      <section class="wide">
+        <h4><i class="bi bi-globe2"></i> From trusted medical sources <span class="small muted fw-normal">· {{ r.term }}</span></h4>
+        {% if r.evidence %}
+        <ul class="gd-sources">
+          {% for it in r.evidence %}
+          <li class="src-{{ it.source }}">
+            <span class="gd-src">{{ it.get_source_display }}</span>{% if it.kind %} <span class="tag">{{ it.kind }}</span>{% endif %}
+            <a href="{{ it.url }}" target="_blank" rel="noopener noreferrer">{{ it.title }}</a>
+            {% if it.summary %}<details><summary class="small">Summary</summary><p class="small mb-0">{{ it.summary }}</p></details>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        <p class="form-text mb-0">Fetched {{ r.fetch.last_run_at|default:r.evidence.0.fetched_at|date:'j M Y' }}. Summaries are from the source sites; open the link before acting on them.</p>
+        {% endif %}
+        {% if r.fetch and r.fetch.busy %}<p class="small gd-busy mb-0"><span class="spinner-border spinner-border-sm"></span> Fetching from WHO, MedlinePlus and PubMed…</p>
+        {% elif r.fetch and r.fetch.status == 'failed' %}<p class="small text-danger mb-0"><i class="bi bi-wifi-off"></i> Could not reach the sources{% if r.fetch.error %} ({{ r.fetch.error }}){% endif %}. Cached results, if any, are shown.</p>
+        {% elif not r.evidence %}<p class="small muted mb-0">{% if g.fetch_enabled %}Not fetched yet. Use <b>Refresh sources</b>.{% else %}Fetching from medical sites is switched off on this server (MEDICAL_EVIDENCE_FETCH).{% endif %}</p>{% endif %}
+      </section>
+    </div>
+  </article>
+  {% endfor %}
+
+  {% if g.normal %}
+  <details class="gd-normal"{% if not g.abnormal %} open{% endif %}>
+    <summary>In-range results ({{ g.normal|length }}) · hospital and WHO</summary>
+    <div class="scroll-x"><table class="mini-table"><thead><tr><th>Parameter</th><th>Result</th><th>Hospital range</th><th>WHO</th></tr></thead><tbody>
+      {% for r in g.normal %}<tr><td>{{ r.p.name }}</td><td><b>{{ r.v.display }}</b> <span class="muted">{{ r.p.unit }}</span></td><td class="small">{{ r.range|default:'—' }}</td>
+        <td class="small">{% for w in r.who %}<div>{{ w.label }} <span class="muted">({{ w.ref.label|lower }})</span>{% if w.band %} · <span class="tag {{ w.band.tone|default:'ink' }}">{{ w.band.label }}</span>{% elif w.outside %} · <span class="tag red">{% if w.ref.kind == 'threshold' %}criterion met{% else %}outside WHO{% endif %}</span>{% endif %}</div>{% empty %}<span class="muted">—</span>{% endfor %}
+          {% if r.agreement.agree is False %}<div class="text-warning-emphasis"><i class="bi bi-exclamation-triangle"></i> {{ r.agreement.text }}</div>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+  </details>
+  {% endif %}
+
+  {% if g.rows %}
+  <section class="gd-ai">
+    <div class="gd-ai-head"><h3><i class="bi bi-stars"></i> AI suggestion</h3>
+      {% if ai_on and can_ai %}<button type="button" class="btn btn-sm btn-primary ms-auto" data-gd-post="{% url 'lab_ai_request' lr.pk %}" {% if ai and ai.busy %}disabled{% endif %}><i class="bi bi-stars"></i>{% if ai %}Ask again{% else %}Ask AI for next steps{% endif %}</button>{% endif %}
+    </div>
+    {% if not ai_on %}
+      <p class="small muted mb-0">AI is not connected on this server. An administrator can set <code>CLINICAL_AI_ENABLED=True</code> with <code>ANTHROPIC_API_KEY</code> (or <code>CLINICAL_AI_ENDPOINT</code>). Only de-identified data is sent; <a href="{% url 'lab_ai_context' lr.pk %}">see exactly what</a>.</p>
+    {% elif not ai %}
+      <p class="small muted mb-0">The AI reads this patient's de-identified results with the hospital and WHO ranges, what clinicians here did after similar results and the sources above{% if ai_web %}, may search WHO, NIH/PubMed, CDC, NICE and other trusted medical sites,{% endif %} then suggests next steps with sources.</p>
+    {% elif ai.busy %}
+      <p class="gd-busy mb-0"><span class="spinner-border spinner-border-sm"></span> Thinking{% if ai.provider == 'anthropic' %} and searching trusted medical sites{% endif %}… this usually takes under a minute.</p>
+    {% elif ai.status == 'failed' %}
+      <div class="alert-mf danger mb-0"><i class="bi bi-x-octagon"></i><div>The AI could not answer: {{ ai.error }}. The rest of this page is unaffected.</div></div>
+    {% else %}
+      <div class="gd-ai-text">{{ ai.text|simple_md }}</div>
+      {% if ai.sources %}
+      <div class="label-sm mt-3 mb-1">Sources the AI used</div>
+      <ol class="gd-ai-sources">{% for s in ai.sources %}<li><a href="{{ s.url }}" target="_blank" rel="noopener noreferrer">{{ s.title }}</a>{% if s.cited %} <span class="tag teal">cited</span>{% endif %}{% if s.quote %}<div class="small muted">“{{ s.quote }}”</div>{% endif %}</li>{% endfor %}</ol>
+      {% endif %}
+      {% if ai.searches %}<p class="small muted mb-1">Searched: {% for q in ai.searches %}“{{ q }}”{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+      <div class="gd-ai-foot small muted">
+        <span>{{ ai.model_name }} · asked by {{ ai.requested_by|display_name }} · {{ ai.finished_at|date:'j M Y H:i' }}</span>
+        {% if can_ai %}<span class="ms-auto">Helpful?
+          <button type="button" class="icon-btn{% if ai.helpful == True %} on{% endif %}" data-gd-post="{% url 'lab_ai_rate' ai.pk %}" data-body='{"helpful":"1"}' aria-label="Helpful"><i class="bi bi-hand-thumbs-up"></i></button>
+          <button type="button" class="icon-btn{% if ai.helpful == False %} on{% endif %}" data-gd-post="{% url 'lab_ai_rate' ai.pk %}" data-body='{"helpful":"0"}' aria-label="Not helpful"><i class="bi bi-hand-thumbs-down"></i></button></span>{% endif %}
+      </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <p class="form-text mt-3 mb-0"><i class="bi bi-shield-check"></i> Decision support only. Hospital protocols, WHO references, local practice, online summaries and AI suggestions can be incomplete or out of date; they do not replace clinical judgement, local guidelines or senior review. No patient details are sent to medical websites.</p>
+</div>

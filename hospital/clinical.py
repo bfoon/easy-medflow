@@ -11,7 +11,6 @@ receive. `ai_review()` calls that service only when it is configured; until then
 import re
 from datetime import timedelta
 
-from django.conf import settings
 from django.utils import timezone
 
 DISCLAIMER = ('Decision support only. These checks are rule-based and incomplete; they do not replace clinical '
@@ -234,22 +233,13 @@ def deidentified_context(encounter):
 
 
 def ai_enabled():
-    return bool(getattr(settings, 'CLINICAL_AI_ENABLED', False) and getattr(settings, 'CLINICAL_AI_ENDPOINT', ''))
+    """AI is on when CLINICAL_AI_ENABLED is set and a provider is configured (an Anthropic API key or an endpoint)."""
+    from .medical_ai import enabled
+    return enabled()
 
 
 def ai_review(encounter):
     """Send the de-identified context to the configured AI service. Returns None while AI is not configured.
-    Any answer is an unverified suggestion for a licensed clinician to review."""
-    if not ai_enabled():
-        return None
-    import json
-    import urllib.request
-    body = json.dumps({'task': 'clinical_review', 'context': deidentified_context(encounter),
-                       'instructions': 'Suggest missing work-up, flag possible misdiagnosis and safety issues. Advisory only.'}).encode()
-    req = urllib.request.Request(settings.CLINICAL_AI_ENDPOINT, data=body, method='POST',
-                                 headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {getattr(settings, "CLINICAL_AI_TOKEN", "")}'})
-    try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return json.loads(r.read().decode())
-    except Exception as exc:     # the rule-based review still stands if the service is unavailable
-        return {'error': f'AI service unavailable: {exc.__class__.__name__}'}
+    Any answer is an unverified suggestion for a licensed clinician to review. See medical_ai.py."""
+    from .medical_ai import review_encounter
+    return review_encounter(encounter)

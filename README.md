@@ -155,6 +155,51 @@ The **Laboratory** pages share a bar: Work board, **Command centre**, **Specimen
 - Blood-disease tests: sickling screen, haemoglobin electrophoresis (HbA/S/F/A2 and genotype), reticulocytes,
   ferritin, blood film, G6PD and clotting profile.
 
+## Result guidance: hospital and WHO ranges, sources and AI
+
+When results are reported, the lab request page (and *Lab insights* → any result → **WHO range, sources & AI**) shows a
+**Result guidance** panel for doctors, nurses and lab staff. For each abnormal result:
+
+- **Hospital range and WHO reference side by side**, chosen for the patient's group: age, sex, pregnancy and trimester
+  (read from the record, e.g. "Pregnancy 20 weeks", or a positive pregnancy test), infection/inflammation (raised CRP or
+  white cells) and malaria. WHO severity bands are shown (e.g. *moderate anaemia*), and a note appears when the hospital
+  range and WHO disagree. The WHO column also appears in the results table and on the printed report.
+- **Next steps**: your hospital protocol first (Admin → Parameter guidance), then the built-in general guidance.
+- **What clinicians here did next** after the same kind of result: tests ordered and medicines prescribed within 7 days
+  and how those visits ended. Anonymous; groups under 3 patients are hidden. Observational, not evidence.
+- **Trusted medical sources**, fetched in the background when the lab submits an abnormal result and cached:
+  WHO fact sheets, MedlinePlus (US National Library of Medicine) and recent PubMed guidelines and systematic reviews.
+  MedlinePlus and PubMed are read through their official APIs; WHO pages only where robots.txt allows. Only the test
+  name and whether it is high or low are sent, never patient data. *Refresh sources* fetches again.
+- **AI suggestion** (off by default): *Ask AI for next steps* sends the de-identified visit, these results with both
+  ranges, the local-practice counts and the cached sources to Claude (or your own endpoint). The AI may search the web,
+  but only on `MEDICAL_TRUSTED_DOMAINS`, and the answer lists every source and search. Answers are kept for audit with
+  a SHA-256 of what was sent; *What AI would see* shows it exactly. Doctors can rate answers.
+
+**WHO references** (Laboratory → WHO references). WHO publishes reference values for only a few tests; E-MedFlow
+ships haemoglobin anaemia cut-offs (WHO 2024, by age, sex and trimester), ferritin (WHO 2020, with and without
+inflammation), fasting glucose and HbA1c diabetes criteria (WHO 2006/2011) and the WHO severe-malaria criteria. They
+are marked *not yet lab-verified* until the laboratory verifies them. The laboratory can add other guideline values,
+retire values, and a weekly job re-reads the cited WHO pages and puts a reference on *review* when its page changes.
+Values are stored in the catalogue's units; a reference in a different unit is shown but never used to classify.
+The hospital range still decides every flag.
+
+Settings (`.env`):
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `MEDICAL_EVIDENCE_FETCH` | `True` (off in tests) | Fetch summaries from trusted sources in the background |
+| `MEDICAL_TRUSTED_DOMAINS` | who.int, nih.gov, medlineplus.gov, cdc.gov, nice.org.uk, msf.org, cochranelibrary.com, bmj.com, thelancet.com, nejm.org | Only these sites are fetched or searched |
+| `MEDICAL_EVIDENCE_MAX_AGE_DAYS` | `30` | Cached sources older than this are refreshed (weekly job) |
+| `NCBI_EMAIL`, `NCBI_API_KEY` | blank | Contact email NCBI asks for; optional key for a higher PubMed rate |
+| `CLINICAL_AI_ENABLED` | `False` | Turn AI on |
+| `ANTHROPIC_API_KEY`, `CLINICAL_AI_MODEL` | blank, `claude-sonnet-5-5` | Claude API |
+| `CLINICAL_AI_WEB_SEARCH` | `True` | Let the AI search trusted sites (set `False` on an offline intranet) |
+| `CLINICAL_AI_PROVIDER`, `CLINICAL_AI_ENDPOINT`, `CLINICAL_AI_TOKEN` | | `endpoint` sends `{task, context, instructions}` to your service, which returns `{"text", "sources"}` |
+
+The Celery worker runs with `-B` so the weekly jobs (refresh stale sources, re-check WHO pages) run on schedule.
+Without a running worker, *Refresh sources* and *Ask AI* still work; they run in the web process instead.
+
 ## Find patients
 
 **Find patients** (menu, or Ctrl+K from anywhere) searches the whole record with one box: name, patient number,

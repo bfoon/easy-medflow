@@ -73,7 +73,9 @@ def lab_report(request, pk):
     p = lr.encounter.patient
     url = request.build_absolute_uri(f'/labs/requests/{lr.pk}/')
     audit(request, 'lab_report_print', f'lab_request:{lr.pk}')
-    return render(request, 'hospital/lab/report.html', {'lr': lr, 'p': p, 'qr': mark_safe(segno.make(url, error='m').svg_inline(scale=2, border=1)),
+    from .evidence import who_for_request
+    who, _ = who_for_request(lr)
+    return render(request, 'hospital/lab/report.html', {'lr': lr, 'p': p, 'qr': mark_safe(segno.make(url, error='m').svg_inline(scale=2, border=1)), 'who': who,
                                                         'orders': [o for o in lr.orders.all() if o.status in ('resulted', 'verified')]})
 
 

@@ -10,9 +10,9 @@
     {% if lr.clinical_notes %}<dt>Clinical details</dt><dd>{{ lr.clinical_notes }}</dd>{% endif %}</dl>
   {% for o in orders %}<section class="rp-test"><h3>{{ o.test.name }} <span class="small muted">{{ o.test.sample_type }}</span></h3>
     <table class="mini-table"><thead><tr><th>Test</th><th>Result</th><th>Unit</th><th>Reference</th><th>Flag</th></tr></thead><tbody>
-    {% for v in o.values.all %}<tr class="{% if v.is_critical %}row-crit{% elif v.is_abnormal %}row-abn{% endif %}"><td>{{ v.parameter.name }}</td><td><b>{{ v.display }}</b></td><td>{{ v.parameter.unit }}</td><td>{{ v.parameter|range_for_sex:p.sex|default:'' }}</td><td>{% if v.flag and v.flag != 'N' %}<b>{{ v.get_flag_display }}</b>{% endif %}</td></tr>{% endfor %}</tbody></table>
+    {% for v in o.values.all %}<tr class="{% if v.is_critical %}row-crit{% elif v.is_abnormal %}row-abn{% endif %}"><td>{{ v.parameter.name }}</td><td><b>{{ v.display }}</b></td><td>{{ v.parameter.unit }}</td><td>{{ v.parameter|range_for_sex:p.sex|default:'' }}{% for w in who|get_item:v.pk %}{% if w.same_unit %}<div class="small">WHO: {{ w.label }}{% if w.band %} ({{ w.band.label|lower }}){% elif w.outside and w.ref.kind == 'threshold' %} ({{ w.ref.label|lower }}){% endif %}</div>{% endif %}{% endfor %}</td><td>{% if v.flag and v.flag != 'N' %}<b>{{ v.get_flag_display }}</b>{% endif %}</td></tr>{% endfor %}</tbody></table>
     {% if o.result %}<p class="small mb-1">Comment: {{ o.result }}</p>{% endif %}
     <p class="small muted mb-0">{% if o.status == 'verified' %}Verified by {{ o.verified_by|display_name }} · {{ o.verified_at|date:'j M Y H:i' }}{% else %}Preliminary: awaiting verification{% endif %}</p></section>{% empty %}<p class="muted">No results released yet.</p>{% endfor %}
-  <footer class="small muted">Reference intervals are for adults unless stated. Results should be interpreted with the clinical picture. Printed {% now 'j M Y H:i' %}.</footer>
+  <footer class="small muted">Reference intervals are for adults unless stated. WHO values, where shown, are for the patient's group; the hospital range decides the flag. Results should be interpreted with the clinical picture. Printed {% now 'j M Y H:i' %}.</footer>
 </article>
 {% endblock %}

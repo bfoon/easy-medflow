@@ -1,0 +1,58 @@
+/* Lab result guidance: hospital + WHO ranges, protocol, local practice, trusted sources, AI */
+.gd-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.gd-who-for{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.gd-actions{display:flex;gap:6px;flex-wrap:wrap}
+.gd-card{border:1px solid var(--line);border-left:4px solid var(--cat,#5A6F7D);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;background:var(--surface)}
+.gd-card.crit{border-color:var(--red);border-left-color:var(--red);box-shadow:0 0 0 3px var(--red-wash)}
+.gd-card-head{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:flex-start}
+.gd-card-head h3{font-size:1.05rem;margin:0 0 2px}
+.gd-value b{font-family:var(--display);font-size:1.5rem;color:var(--ink)}
+.gd-card-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.gd-ranges{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:12px}
+.gd-range{border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;background:var(--paper);display:flex;flex-direction:column;gap:3px}
+.gd-range .label-sm{text-transform:none}
+.gd-range b{font-size:1.02rem;color:var(--ink)}
+.gd-range .tag{align-self:flex-start}
+.gd-range.who{background:var(--indigo-wash);border-color:#cdd5f5}
+.gd-range.who.out{background:var(--red-wash);border-color:#f2c3c8}
+.gd-range.none{background:#fff;border-style:dashed}
+.gd-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 22px;margin-top:14px}
+.gd-grid .wide{grid-column:1/-1}
+.gd-grid h4{font-size:.92rem;font-weight:650;margin:0 0 6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.gd-grid section+section{border-top:0}
+.gd-bars{list-style:none;margin:0;padding:0;font-size:.86rem}
+.gd-bars li{display:grid;grid-template-columns:minmax(0,1fr) 56px 36px auto;gap:8px;align-items:center;padding:3px 0}
+.gd-bars li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gd-bars li i{display:block;height:7px;border-radius:4px;background:linear-gradient(90deg,var(--teal) var(--w),var(--line) var(--w))}
+.gd-bars li b{text-align:right;font-weight:600}
+.gd-bars li small{color:var(--muted);white-space:nowrap}
+.gd-sources{list-style:none;margin:0 0 6px;padding:0}
+.gd-sources li{padding:8px 0;border-top:1px solid var(--line)}
+.gd-sources li:first-child{border-top:0}
+.gd-sources a{font-weight:600}
+.gd-sources details summary{cursor:pointer;color:var(--muted)}
+.gd-src{display:inline-block;font-size:.72rem;font-weight:700;letter-spacing:.02em;padding:1px 7px;border-radius:999px;background:var(--line);color:var(--ink)}
+.src-who .gd-src{background:#0093D5;color:#fff}
+.src-medlineplus .gd-src{background:var(--indigo-wash);color:var(--indigo)}
+.src-pubmed .gd-src{background:var(--plum-wash);color:var(--plum)}
+.gd-busy{color:var(--teal-2);display:flex;gap:8px;align-items:center}
+.gd-normal{border:1px solid var(--line);border-radius:var(--r);padding:10px 16px;margin-bottom:14px;background:var(--surface)}
+.gd-normal summary{cursor:pointer;font-weight:600}
+.gd-ai{border:1px solid #cdd5f5;border-radius:var(--r);padding:16px 18px;background:linear-gradient(180deg,var(--indigo-wash),#fff 120px)}
+.gd-ai-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.gd-ai-head h3{font-size:1.05rem;margin:0}
+.gd-ai-text h4{font-size:.95rem;font-weight:700;margin:14px 0 4px;color:var(--ink)}
+.gd-ai-text h4:first-child{margin-top:0}
+.gd-ai-text p,.gd-ai-text li{font-size:.92rem}
+.gd-ai-text ol,.gd-ai-text ul{padding-left:20px;margin-bottom:6px}
+.gd-ai-text .sub{display:block;color:var(--muted);font-size:.85rem}
+.gd-ai-sources{font-size:.86rem;padding-left:20px}
+.gd-ai-foot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px solid var(--line);margin-top:10px;padding-top:8px}
+.gd-ai-foot .icon-btn.on{color:var(--teal-2);background:var(--teal-wash)}
+.gd-who-cell{font-size:.82rem;color:var(--indigo)}
+.gd-who-cell .out{color:var(--red);font-weight:600}
+.gd-form label{display:block;font-size:.8rem;color:var(--muted);font-weight:600;margin-bottom:8px}
+.gd-form label .form-control,.gd-form label .form-select{margin-top:3px}
+.btn.busy{opacity:.6;pointer-events:none}
+@media (max-width:760px){.gd-grid{grid-template-columns:1fr}.gd-bars li{grid-template-columns:minmax(0,1fr) 60px 36px}.gd-bars li small{display:none}}
+@media print{.gd-actions,.gd-card-actions,.gd-ai-head .btn{display:none}}

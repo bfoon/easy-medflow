@@ -118,6 +118,7 @@
     const steps = (kb[f] || (isAbn(f) ? (KB._default || {})[f[0]] : null) || []);
     const actions = isAbn(f) && steps.length ? `<div class="label-sm mt-3 mb-1">Suggested next steps</div><ol class="kb-steps">${steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>` : '';
     const repeat = DATA.open_encounter ? `<button class="btn btn-sm btn-primary" data-drawer="${esc(DATA.lab_new_url)}?encounter=${DATA.open_encounter}&test=${p.test_id}" data-title="Repeat ${esc(p.test)}"><i class="bi bi-arrow-repeat"></i>Repeat ${esc(p.test)}</button>` : '';
+    const guide = p.latest.request_id && DATA.guidance_url ? `<a class="btn btn-sm btn-ghost" href="${esc(DATA.guidance_url.replace('/0/', `/${p.latest.request_id}/`))}#guidance-panel"><i class="bi bi-signpost-split"></i>WHO range, sources &amp; AI</a>` : '';
     const ack = isAbn(f) && !p.latest.ack ? `<button class="btn btn-sm btn-ink" data-ack="${p.latest.value_id}"><i class="bi bi-eye"></i>Mark reviewed</button>` : (p.latest.ack ? `<span class="acked"><i class="bi bi-check2-circle"></i> Reviewed by ${esc(p.latest.ack_by)}</span>` : '');
     window.mfModal(`${p.name} · ${p.test}`, `
       <div class="kb-top ${flagClass(f)}"><div><span class="kb-val">${esc(p.latest.display)}</span> <span class="muted">${esc(p.unit)}</span></div><span class="flag ${flagClass(f)}">${FLAG_TEXT[f] || ''}</span><span class="small muted">Reference ${esc(p.range || '—')} · ${esc(p.latest.date)}</span></div>
@@ -127,7 +128,7 @@
       ${actions}
       <div class="label-sm mt-3 mb-1">History</div>
       <table class="mini-table"><thead><tr><th>Date</th><th>Result</th><th>Flag</th></tr></thead><tbody>${p.history.slice().reverse().map(h => `<tr><td class="small">${esc(h.date)}</td><td><b>${esc(h.display)}</b> ${esc(p.unit)}${h.preliminary ? ' <span class="tag amber">Preliminary</span>' : ''}</td><td><span class="flag ${flagClass(h.flag)}">${FLAG_TEXT[h.flag] || ''}</span></td></tr>`).join('')}</tbody></table>
-      <div class="d-flex gap-2 flex-wrap mt-3">${repeat}${ack}</div>
+      <div class="d-flex gap-2 flex-wrap mt-3">${repeat}${guide}${ack}</div>
       <p class="form-text mt-3 mb-0">Suggested steps are general guidance, not a protocol. Follow local guidelines and your clinical judgement.</p>`);
     drawLines(document.getElementById('modal-body'));
   }

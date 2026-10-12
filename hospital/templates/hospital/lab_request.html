@@ -1,4 +1,5 @@
-{% extends 'hospital/base.html' %}{% load medflow %}
+{% extends 'hospital/base.html' %}{% load medflow evidence_tags %}
+{% block head %}<link href="{% asset 'hospital/css/guidance.css' %}" rel="stylesheet">{% endblock %}
 {% block title %}{{ lr.number }}{% endblock %}
 {% block heading %}Lab request {{ lr.number }}{% endblock %}
 {% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %} · requested {{ lr.created_at|date:'j M Y H:i' }}{% if lr.requested_by %} by {{ lr.requested_by|display_name }}{% endif %}
@@ -8,6 +9,7 @@
   <a class="btn btn-ghost" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-person-arms-up"></i>Body map &amp; trends</a>
   {% if can_lab %}<a class="btn btn-ghost" href="{% url 'lab_label' lr.pk %}" target="_blank"><i class="bi bi-upc"></i>Label</a>{% endif %}
   <a class="btn btn-ghost" href="{% url 'lab_report' lr.pk %}"><i class="bi bi-file-earmark-medical"></i>Report</a>
+  {% if show_guidance %}<a class="btn btn-ghost" href="#guidance-panel"><i class="bi bi-signpost-split"></i>Guidance</a>{% endif %}
   {% if can_lab %}
     {% if lr.stage == 'ordered' %}<form method="post" action="{% url 'lab_request_action' lr.pk 'collect' %}" class="d-flex gap-1">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><input class="form-control" name="specimen_id" placeholder="Specimen ID" style="width:150px" aria-label="Specimen ID"><button class="btn btn-ink">Collected</button></form>
     {% elif lr.stage == 'collected' %}<form method="post" action="{% url 'lab_request_action' lr.pk 'process' %}">{% csrf_token %}<button class="btn btn-ink"><i class="bi bi-play-fill"></i>Process &amp; enter results</button></form>
@@ -25,14 +27,21 @@
         <span class="tag {{ o.status|tone }} ms-auto">{{ o.get_status_display }}</span>
         {% if can_lab and o.status != 'verified' and o.status != 'cancelled' %}<form method="post" action="{% url 'lab_order_cancel' o.pk %}" data-confirm="Cancel only {{ o.test.name }}?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="icon-btn" title="Cancel this test" aria-label="Cancel {{ o.test.name }}"><i class="bi bi-x-lg"></i></button></form>{% endif %}</div>
       {% if o.values.all %}
-      <div class="scroll-x"><table class="mini-table"><thead><tr><th>Parameter</th><th>Result</th><th>Reference</th><th>Flag</th></tr></thead><tbody>
-        {% for v in o.values.all %}<tr class="{% if v.is_critical %}row-crit{% elif v.is_abnormal %}row-abn{% endif %}"><td>{{ v.parameter.name }}</td><td><b>{{ v.display }}</b> <span class="muted">{{ v.parameter.unit }}</span></td><td class="small muted">{{ v.parameter|range_for_sex:sex|default:'—' }}</td><td>{% include 'hospital/_flag.html' with flag=v.flag %}{% if v.acknowledged_at %} <span class="small muted" title="Reviewed by {{ v.acknowledged_by|display_name }}"><i class="bi bi-eye"></i></span>{% endif %}</td></tr>{% endfor %}
+      <div class="scroll-x"><table class="mini-table"><thead><tr><th>Parameter</th><th>Result</th><th>Hospital range</th>{% if any_who %}<th>WHO</th>{% endif %}<th>Flag</th></tr></thead><tbody>
+        {% for v in o.values.all %}<tr class="{% if v.is_critical %}row-crit{% elif v.is_abnormal %}row-abn{% endif %}"><td>{{ v.parameter.name }}</td><td><b>{{ v.display }}</b> <span class="muted">{{ v.parameter.unit }}</span></td><td class="small muted">{{ v.parameter|range_for_sex:sex|default:'—' }}</td>
+          {% if any_who %}<td class="gd-who-cell">{% for w in who|get_item:v.pk %}<div title="{{ w.ref.label }} · {{ w.population }} · {{ w.ref.citation_title }}"><span class="{% if w.outside %}out{% endif %}">{{ w.label }}</span>{% if w.band %} · {{ w.band.label }}{% elif w.outside and w.ref.kind == 'threshold' %} · {{ w.ref.label }}{% endif %}</div>{% empty %}<span class="muted">—</span>{% endfor %}</td>{% endif %}<td>{% include 'hospital/_flag.html' with flag=v.flag %}{% if v.acknowledged_at %} <span class="small muted" title="Reviewed by {{ v.acknowledged_by|display_name }}"><i class="bi bi-eye"></i></span>{% endif %}</td></tr>{% endfor %}
       </tbody></table></div>
       {% if o.result %}<p class="small muted mt-2 mb-0"><i class="bi bi-chat-left-text"></i> {{ o.result }}</p>{% endif %}
       {% else %}<p class="muted small mb-0">{% if o.status == 'cancelled' %}Cancelled.{% else %}No results yet.{% endif %}</p>{% endif %}
       <div class="small muted mt-2">{% if o.performed_by %}Performed by {{ o.performed_by|display_name }}{% endif %}{% if o.verified_at %} · verified by {{ o.verified_by|display_name }} {{ o.verified_at|date:'j M H:i' }}{% endif %}</div>
     </section>
     {% endfor %}
+    {% if show_guidance %}
+    <section class="panel" id="guidance-panel">
+      <div class="panel-head"><h2><i class="bi bi-signpost-split me-1" style="color:var(--teal)"></i>Result guidance</h2><span class="hint">hospital &amp; WHO ranges · protocol · local practice · trusted sources · AI</span></div>
+      <div id="guidance" data-src="{% url 'lab_guidance' lr.pk %}" data-csrf="{{ csrf_token }}"><div class="empty"><span class="spinner-border spinner-border-sm"></span> Loading guidance…</div></div>
+    </section>
+    {% endif %}
   </div>
   <aside class="panel align-self-start">
     <div class="panel-head"><h2>Progress</h2></div>
@@ -44,7 +53,7 @@
 </div>
 {{ lr.stage|json_script:"stage" }}
 {% endblock %}
-{% block scripts %}<script>
+{% block scripts %}{% if show_guidance %}<script src="{% asset 'hospital/js/knowledge.js' %}"></script><script src="{% asset 'hospital/js/guidance.js' %}"></script>{% endif %}<script>
 (() => { const order = ['ordered','collected','processing','resulted','verified'], cur = order.indexOf(JSON.parse(document.getElementById('stage').textContent));
   document.querySelectorAll('.steps li').forEach(li => { const i = order.indexOf(li.dataset.st); li.className = i < cur ? 'done' : i === cur ? 'current' : ''; }); })();
 </script>{% endblock %}
