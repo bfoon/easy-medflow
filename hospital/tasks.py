@@ -32,3 +32,9 @@ def check_reference_sources_task():
 def ai_suggestion_task(pk):
     from .medical_ai import run_suggestion
     run_suggestion(pk)
+
+
+@shared_task(ignore_result=True, soft_time_limit=300)
+def report_assist_task(pk):
+    from .reports import run_assist
+    run_assist(pk)

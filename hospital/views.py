@@ -1030,11 +1030,13 @@ def lab_request_detail(request, pk):
     lr = get_object_or_404(lab_requests_qs(), pk=pk)
     audit(request, 'view_chart', f'lab_request:{lr.pk}')
     from .evidence import who_for_request
+    from .report_views import reports_for
     who, _ = who_for_request(lr)      # WHO references beside the hospital range, for the patient's group
     reported = any(o.status in ('resulted', 'verified') for o in lr.orders.all())
     return render(request, 'hospital/lab_request.html', {'lr': lr, 'p': lr.encounter.patient, 'who': who, 'any_who': any(who.values()),
                                                          'can_lab': role_of(request.user) in ROLES['lab'], 'sex': lr.encounter.patient.sex,
-                                                         'show_guidance': reported and role_of(request.user) in ('doctor', 'nurse', 'lab', 'admin')})
+                                                         'show_guidance': reported and role_of(request.user) in ('doctor', 'nurse', 'lab', 'admin'),
+                                                         'doctor_report': reports_for(lr) if role_of(request.user) in ROLES['clinical'] else None})
 
 
 def rx_qs():

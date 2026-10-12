@@ -119,9 +119,10 @@
   {% endif %}
 
   {% if g.rows %}
-  <section class="gd-ai">
+  <section class="gd-ai" id="gd-ai" data-ai-state="{% if not ai_on %}off{% elif not ai %}none{% elif ai.busy %}busy{% elif ai.status == 'failed' %}failed{% elif ai.status == 'done' %}done{% else %}none{% endif %}"{% if ai %} data-ai-id="{{ ai.pk }}"{% endif %}>
     <div class="gd-ai-head"><h3><i class="bi bi-stars"></i> AI suggestion</h3>
-      {% if ai_on and can_ai %}<button type="button" class="btn btn-sm btn-primary ms-auto" data-gd-post="{% url 'lab_ai_request' lr.pk %}" {% if ai and ai.busy %}disabled{% endif %}><i class="bi bi-stars"></i>{% if ai %}Ask again{% else %}Ask AI for next steps{% endif %}</button>{% endif %}
+      {% if ai_on %}<button type="button" class="rd-call ms-auto" data-robodoc-call title="Call Dr. Flow, the AI assistant" aria-label="Call Dr. Flow"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="7" width="22" height="17" rx="6" fill="#0F2C3F"/><circle cx="12.5" cy="15" r="2.4" fill="#3FE0B0"/><circle cx="19.5" cy="15" r="2.4" fill="#3FE0B0"/><path d="M11 20.5h3l1-1.6 1.6 3 1-1.4H21" fill="none" stroke="#3FE0B0" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 7V3.6" stroke="#0F2C3F" stroke-width="1.6"/><circle cx="16" cy="3" r="1.8" fill="#C8323F"/></svg></button>{% endif %}
+      {% if ai_on and can_ai %}<button type="button" class="btn btn-sm btn-primary" data-ai-ask data-gd-post="{% url 'lab_ai_request' lr.pk %}" {% if ai and ai.busy %}disabled{% endif %}><i class="bi bi-stars"></i>{% if ai %}Ask again{% else %}Ask AI for next steps{% endif %}</button>{% endif %}
     </div>
     {% if not ai_on %}
       <p class="small muted mb-0">AI is not connected on this server. An administrator can set <code>CLINICAL_AI_ENABLED=True</code> with <code>ANTHROPIC_API_KEY</code> (or <code>CLINICAL_AI_ENDPOINT</code>). Only de-identified data is sent; <a href="{% url 'lab_ai_context' lr.pk %}">see exactly what</a>.</p>
@@ -132,7 +133,23 @@
     {% elif ai.status == 'failed' %}
       <div class="alert-mf danger mb-0"><i class="bi bi-x-octagon"></i><div>The AI could not answer: {{ ai.error }}. The rest of this page is unaffected.</div></div>
     {% else %}
-      <div class="gd-ai-text">{{ ai.text|simple_md }}</div>
+      {% if report %}
+      <div class="gd-report-strip">
+        <i class="bi bi-file-earmark-medical"></i>
+        <div><b>{{ report.number }}</b> · {% if report.status == 'draft' %}draft doctor's report{% if report.source_suggestion_id == ai.pk %} from this summary{% else %} from an earlier summary{% endif %}{% else %}signed by {{ report.signed_by|display_name }} {{ report.signed_at|date:'j M H:i' }}{% endif %}</div>
+        <a class="btn btn-sm btn-ink ms-auto" href="{% url 'report_detail' report.pk %}">{% if report.status == 'draft' %}Continue editing{% else %}Open report{% endif %}</a>
+        {% if report.status != 'draft' %}<a class="btn btn-sm btn-ghost" href="{% url 'report_pdf' report.pk %}"><i class="bi bi-filetype-pdf"></i>PDF</a>{% endif %}
+      </div>
+      {% endif %}
+      {% if can_ai %}<form method="post" action="{% url 'report_adopt' ai.pk %}" class="gd-adopt-form" id="gd-adopt-form">{% csrf_token %}</form>{% endif %}
+      <div class="gd-ai-text{% if can_ai %} adoptable{% endif %}" {% if can_ai %}data-adopt="gd-adopt-form" tabindex="0" role="button" aria-label="Adopt this AI summary as the doctor's report" title="Click to adopt as the doctor's report"{% endif %}>
+        {% if can_ai %}<span class="gd-adopt-hint" aria-hidden="true"><i class="bi bi-pencil-square"></i>{% if report and report.status == 'draft' and report.source_suggestion_id == ai.pk %}Open my draft report{% else %}Adopt as doctor's report{% endif %}</span>{% endif %}
+        {{ ai.text|simple_md }}
+      </div>
+      {% if can_ai %}<div class="gd-adopt-bar">
+        <button type="submit" form="gd-adopt-form" class="btn btn-sm btn-primary"><i class="bi bi-file-earmark-medical"></i>{% if report and report.status == 'draft' and report.source_suggestion_id == ai.pk %}Open my draft report{% else %}Adopt as doctor's report{% endif %}</button>
+        <span class="small muted">You edit it, add images and files, then sign. Download as one PDF or a ZIP with everything.</span>
+      </div>{% endif %}
       {% if ai.sources %}
       <div class="label-sm mt-3 mb-1">Sources the AI used</div>
       <ol class="gd-ai-sources">{% for s in ai.sources %}<li><a href="{{ s.url }}" target="_blank" rel="noopener noreferrer">{{ s.title }}</a>{% if s.cited %} <span class="tag teal">cited</span>{% endif %}{% if s.quote %}<div class="small muted">“{{ s.quote }}”</div>{% endif %}</li>{% endfor %}</ol>

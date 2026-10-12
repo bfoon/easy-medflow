@@ -1,0 +1,173 @@
+{% extends 'hospital/base.html' %}{% load medflow evidence_tags %}
+{% block head %}<link href="{% asset 'hospital/css/guidance.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/doctor-report.css' %}" rel="stylesheet">{% endblock %}
+{% block title %}{{ r.number }}{% endblock %}
+{% block heading %}{{ r.title }}{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %}
+  · {{ r.number }} <span class="tag {% if r.status == 'final' %}teal{% elif r.status == 'superseded' %}red{% else %}amber{% endif %}">{{ r.get_status_display }}</span>
+  {% if r.amends %} · amends <a href="{% url 'report_detail' r.amends.pk %}">{{ r.amends.number }}</a>{% endif %}</p>{% endblock %}
+{% block actions %}
+  {% if lr %}<a class="btn btn-ghost" href="{% url 'lab_request_detail' lr.pk %}#guidance-panel"><i class="bi bi-arrow-left"></i>{{ lr.number }}</a>{% endif %}
+  <a class="btn btn-ghost" href="{% url 'report_pdf' r.pk %}?inline=1" target="_blank" rel="noopener"><i class="bi bi-eye"></i>Preview PDF</a>
+  <a class="btn btn-ink" href="{% url 'report_pdf' r.pk %}" data-dl><i class="bi bi-filetype-pdf"></i>One PDF</a>
+  <a class="btn btn-primary" href="{% url 'report_zip' r.pk %}" data-dl><i class="bi bi-file-earmark-zip"></i>ZIP with all files</a>
+{% endblock %}
+{% block content %}
+{% if newer %}
+<div class="alert-mf warn mb-3"><i class="bi bi-stars"></i><div class="flex-grow-1">A newer AI summary for {{ lr.number }} is available ({{ newer.finished_at|date:'j M H:i' }}). Your draft keeps your edits unless you replace it.
+  <form method="post" action="{% url 'report_replace' r.pk newer.pk %}" class="d-inline" data-confirm="Replace this draft with the newer AI summary? Your edits will be lost.">{% csrf_token %}<button class="btn btn-sm btn-ghost ms-2">Replace draft with newer summary</button></form></div></div>
+{% endif %}
+{% if r.amend_reason and r.editable %}<div class="alert-mf info mb-3"><i class="bi bi-pencil"></i><div>Amending {{ r.amends.number }}: {{ r.amend_reason }}. The signed original stays on record and is marked superseded when you sign this.</div></div>{% endif %}
+{% if r.status == 'superseded' %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon"></i><div>Superseded by {% for a in amendments %}{% if a.status == 'final' %}<a href="{% url 'report_detail' a.pk %}">{{ a.number }}</a>{% endif %}{% endfor %}. Do not use this version for care.</div></div>{% endif %}
+
+<div class="grid g-main dr">
+  <div class="stack">
+    {% if r.editable %}
+    <section class="panel dr-editor" id="dr-editor"{% if history|length == 1 %} data-fresh{% endif %} data-save="{% url 'report_save' r.pk %}" data-csrf="{{ csrf_token }}">
+      <div class="dr-titlerow">
+        <input class="form-control dr-title" name="title" value="{{ r.title }}" maxlength="160" aria-label="Report title">
+        <div class="dr-save small muted" aria-live="polite"><span data-save-state>Saved</span></div>
+      </div>
+      <div class="dr-toolbar" role="toolbar" aria-label="Formatting">
+        <button type="button" class="icon-btn" data-md="h" title="Section heading" aria-label="Section heading"><i class="bi bi-type-h2"></i></button>
+        <button type="button" class="icon-btn" data-md="b" title="Bold" aria-label="Bold"><i class="bi bi-type-bold"></i></button>
+        <button type="button" class="icon-btn" data-md="ul" title="Bulleted list" aria-label="Bulleted list"><i class="bi bi-list-ul"></i></button>
+        <button type="button" class="icon-btn" data-md="ol" title="Numbered steps" aria-label="Numbered steps"><i class="bi bi-list-ol"></i></button>
+        <span class="dr-sep"></span>
+        <div class="dropdown">
+          <button type="button" class="btn btn-sm btn-ghost dropdown-toggle" data-dr-menu aria-expanded="false"><i class="bi bi-plus-square"></i>Insert</button>
+          <div class="dr-menu" hidden>
+            <button type="button" data-insert="abnormal"><i class="bi bi-activity"></i>Abnormal results line</button>
+            <button type="button" data-insert="critical"><i class="bi bi-exclamation-octagon"></i>Critical values</button>
+            <button type="button" data-insert="exam"><i class="bi bi-clipboard2-pulse"></i>Examination template</button>
+            <button type="button" data-insert="followup"><i class="bi bi-calendar-check"></i>Follow-up line</button>
+            <button type="button" data-insert="safety"><i class="bi bi-life-preserver"></i>Safety-netting line</button>
+          </div>
+        </div>
+        <span class="dr-tabs ms-auto" role="tablist">
+          <button type="button" class="on" data-view="split" role="tab" aria-selected="true">Side by side</button>
+          <button type="button" data-view="edit" role="tab" aria-selected="false">Write</button>
+          <button type="button" data-view="paper" role="tab" aria-selected="false">Paper</button>
+        </span>
+      </div>
+      <div class="dr-split" data-mode="split">
+        <textarea class="dr-text" name="body" spellcheck="true" aria-label="Report text">{{ r.body }}</textarea>
+        <article class="dr-paper" aria-label="Preview">
+          <header><b>{{ r.title }}</b><span>{{ p.full_name }} · {{ p.mrn }}</span></header>
+          <div class="dr-paper-body gd-ai-text">{{ r.body|simple_md }}</div>
+        </article>
+      </div>
+      <div class="dr-meter" title="How much of the text is yours">
+        <div class="dr-meter-bar"><i style="--doc:{{ edited_pct }}%"></i></div>
+        <span class="small"><b data-edited>{{ edited_pct }}%</b> changed by you · the rest is the AI draft{% if from_ai %} from {{ from_ai.finished_at|date:'j M H:i' }}{% endif %}</span>
+        {% if r.ai_draft %}<button type="button" class="btn btn-sm btn-ghost ms-auto" data-reset title="Go back to the AI text as adopted"><i class="bi bi-arrow-counterclockwise"></i>AI version</button>{% endif %}
+      </div>
+    </section>
+
+    <section class="panel dr-assist" id="dr-assist" data-csrf="{{ csrf_token }}">
+      <div class="panel-head"><h2><i class="bi bi-stars me-1" style="color:var(--indigo)"></i>AI helpers</h2><span class="hint">they read your draft as it is now, with names and numbers removed</span></div>
+      {% if ai_on %}
+      <div class="dr-assist-btns">
+        {% for k, label in kinds %}
+        <button type="button" class="dr-assist-btn" data-assist="{% url 'report_assist' r.pk k %}" data-kind="{{ k }}">
+          <i class="bi {% if k == 'safety' %}bi-shield-check{% elif k == 'patient' %}bi-chat-heart{% elif k == 'tighten' %}bi-scissors{% else %}bi-upc-scan{% endif %}"></i>
+          <b>{{ label }}</b>
+          <small>{% if k == 'safety' %}Missed critical values, contradictions, allergy clashes, doses to check{% elif k == 'patient' %}A plain-language note you can add for the patient{% elif k == 'tighten' %}Same facts, fewer words, for the next clinician{% else %}Coding suggestions for HMIS and billing{% endif %}</small>
+        </button>
+        {% endfor %}
+      </div>
+      {% else %}<p class="small muted mb-0">AI is not connected on this server, so the helpers are off. Everything else here works.</p>{% endif %}
+      <div class="dr-assist-out" data-assist-out>
+        {% for a in assists %}{% if a.status == 'done' %}
+        <article class="dr-assist-card" data-kind="{{ a.kind }}"><header><b>{{ a.get_kind_display }}</b><span class="small muted">{{ a.finished_at|date:'j M H:i' }}</span></header>
+          <div class="gd-ai-text">{{ a.text|simple_md }}</div><textarea hidden>{{ a.text }}</textarea>
+          <footer></footer></article>
+        {% endif %}{% endfor %}
+      </div>
+    </section>
+    {% else %}
+    <section class="panel">
+      <article class="dr-paper final">
+        <header><b>{{ r.title }}</b><span>{{ p.full_name }} · {{ p.mrn }}{% if r.follow_up %} · follow-up {{ r.follow_up|date:'j M Y' }}{% endif %}</span></header>
+        <div class="dr-paper-body gd-ai-text">{{ r.body|simple_md }}</div>
+        <footer class="dr-signed"><i class="bi bi-patch-check-fill"></i><div><b>Signed by {{ r.signed_by|display_name }}</b> · {{ r.signed_at|date:'j M Y H:i' }}<br>
+          <span class="small muted">SHA-256 {{ r.content_hash|slice:':24' }}… · {{ edited_pct }}% changed from the AI draft · <a href="{{ verify_url }}" target="_blank" rel="noopener">verification page</a></span></div></footer>
+      </article>
+    </section>
+    {% endif %}
+  </div>
+
+  <aside class="stack align-self-start">
+    {% if r.editable %}
+    <section class="panel">
+      <div class="panel-head"><h2>Follow-up</h2></div>
+      <input type="date" class="form-control" name="follow_up" value="{{ r.follow_up|date:'Y-m-d' }}" min="{{ today|date:'Y-m-d' }}" data-follow aria-label="Follow-up date">
+      <div class="dr-chips mt-2"><button type="button" data-days="7">1 week</button><button type="button" data-days="14">2 weeks</button><button type="button" data-days="30">1 month</button><button type="button" data-days="90">3 months</button><button type="button" data-days="">None</button></div>
+    </section>
+    {% endif %}
+
+    <section class="panel" id="files">
+      <div class="panel-head"><h2>In the download</h2><span class="hint">PDF and ZIP</span></div>
+      <label class="dr-check"><input type="checkbox" data-inc="labs" {% if inc.labs %}checked{% endif %} {% if not r.editable %}disabled{% endif %}>
+        <span><b>Lab results table</b><small>{{ rows|length }} result{{ rows|length|pluralize }}{% if critical %} · <span class="text-danger">{{ critical|length }} critical</span>{% endif %}{% if abnormal %} · {{ abnormal|length }} abnormal{% endif %}</small></span></label>
+      {% if from_ai %}<label class="dr-check"><input type="checkbox" data-inc="ai_sources" {% if inc.ai_sources %}checked{% endif %} {% if not r.editable %}disabled{% endif %}>
+        <span><b>AI sources and disclosure</b><small>{{ from_ai.sources|length }} source{{ from_ai.sources|length|pluralize }} the AI cited</small></span></label>{% endif %}
+
+      <div class="label-sm mt-3 mb-1">Imaging from this visit</div>
+      {% if images %}<div class="dr-thumbs">
+        {% for im in images %}<label class="dr-thumb" title="{{ im.order.number }} · {{ im.order.get_modality_display }} {{ im.order.region }}{% if im.caption %} · {{ im.caption }}{% endif %}">
+          <input type="checkbox" data-img="{{ im.pk }}" {% if im.pk in inc.images %}checked{% endif %} {% if not r.editable %}disabled{% endif %}>
+          <img src="{% url 'imaging_file' im.pk %}" alt="{{ im.order.get_modality_display }} {{ im.order.region }}" loading="lazy">
+          <span>{{ im.order.get_modality_display }}{% if im.derived_from_id %} · edit{% endif %}</span></label>{% endfor %}
+      </div>{% else %}<p class="small muted mb-0">No imaging for this visit.</p>{% endif %}
+
+      <div class="label-sm mt-3 mb-1">Your files</div>
+      <ul class="dr-files">
+        {% for a in attachments %}<li>
+          <label class="dr-check compact"><input type="checkbox" data-att="{{ a.pk }}" {% if a.pk in inc.attachments %}checked{% endif %} {% if not r.editable %}disabled{% endif %}>
+          <span><a href="{% url 'report_attachment_file' a.pk %}" target="_blank" rel="noopener"><i class="bi {% if a.is_image %}bi-file-earmark-image{% else %}bi-file-earmark-pdf{% endif %}"></i> {{ a.name }}</a><small>{{ a.size|filesizeformat }}</small></span></label>
+          {% if r.editable %}<form method="post" action="{% url 'report_attachment_delete' a.pk %}" data-confirm="Remove {{ a.name }}?">{% csrf_token %}<button class="icon-btn" aria-label="Remove {{ a.name }}"><i class="bi bi-trash3"></i></button></form>{% endif %}
+        </li>{% empty %}<li class="small muted">None yet.</li>{% endfor %}
+      </ul>
+      {% if r.editable %}
+      <form method="post" enctype="multipart/form-data" action="{% url 'report_attach' r.pk %}" class="dr-drop" data-drop>{% csrf_token %}
+        <input type="file" name="files" id="dr-files" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf">
+        <label for="dr-files"><i class="bi bi-cloud-arrow-up"></i><span><b>Drop files or choose</b><small>Photos of ECG strips, scanned letters, outside results · JPG, PNG, WebP or PDF, 15 MB each</small></span></label>
+        <noscript><button class="btn btn-sm btn-ink mt-2">Upload</button></noscript>
+      </form>{% endif %}
+    </section>
+
+    {% if r.editable %}
+    <section class="panel dr-sign">
+      <div class="panel-head"><h2>Sign</h2></div>
+      {% if can_sign %}
+      <form method="post" action="{% url 'report_sign' r.pk %}" data-sign>{% csrf_token %}
+        <label class="dr-check"><input type="checkbox" name="reviewed" value="1" required><span>I have read the whole report, checked the AI's suggestions against the patient, and take responsibility for it.</span></label>
+        <button class="btn btn-primary w-100 mt-2"><i class="bi bi-pen"></i>Sign {{ r.number }}</button>
+      </form>
+      <p class="form-text mb-0 mt-2">Signing locks the report and seals its text, results and files with a SHA-256 hash. Later changes are made as an amendment.</p>
+      {% else %}<p class="small muted mb-0">A doctor signs reports. You can keep editing the draft.</p>{% endif %}
+      <form method="post" action="{% url 'report_discard' r.pk %}" data-confirm="Discard this draft and its files?" class="mt-2">{% csrf_token %}<button class="btn btn-sm btn-ghost text-danger"><i class="bi bi-trash3"></i>Discard draft</button></form>
+    </section>
+    {% elif r.status == 'final' %}
+    <section class="panel">
+      <div class="panel-head"><h2>Amend</h2></div>
+      <form method="post" action="{% url 'report_amend' r.pk %}">{% csrf_token %}
+        <input class="form-control" name="reason" required maxlength="300" placeholder="Reason, e.g. repeat Hb result added">
+        <button class="btn btn-sm btn-ink mt-2"><i class="bi bi-pencil"></i>Start amendment</button></form>
+      <p class="form-text mb-0 mt-2">The signed original stays on record.</p>
+    </section>
+    {% endif %}
+
+    {% if history %}
+    <section class="panel">
+      <div class="panel-head"><h2>History</h2></div>
+      <ol class="dr-history">{% for h in history %}<li><b>{{ h.action }}</b><span>{{ h.by }} · {{ h.when|date:'j M H:i'|default:h.at }}</span></li>{% endfor %}</ol>
+    </section>
+    {% endif %}
+  </aside>
+</div>
+{{ rows|json_script:"dr-rows" }}
+{{ r.ai_draft|json_script:"dr-ai-draft" }}
+{{ r.include|json_script:"dr-include" }}
+{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/doctor-report.js' %}"></script>{% endblock %}

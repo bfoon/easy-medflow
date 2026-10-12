@@ -1,0 +1,19 @@
+{% extends 'hospital/esign/public_base.html' %}
+{% block title %}Verify a doctor's report{% endblock %}
+{% block content %}
+<main class="container py-4" style="max-width:640px">
+  <h1 class="h4 mb-3" style="font-family:var(--display)">Doctor's report verification</h1>
+  {% if not r %}
+    <div class="alert-mf danger"><i class="bi bi-x-octagon"></i><div><b>Not found.</b> This code does not match any report issued by this hospital.</div></div>
+  {% elif r.status == 'draft' %}
+    <div class="alert-mf warn"><i class="bi bi-exclamation-triangle"></i><div><b>{{ r.number }} is an unsigned draft.</b> It is not a valid medical report.</div></div>
+  {% elif ok %}
+    <div class="alert-mf info"><i class="bi bi-patch-check-fill"></i><div><b>Genuine.</b> {{ r.number }} was signed{% if r.signed_by %} by {{ r.signed_by.get_full_name|default:r.signed_by.get_username }}{% endif %} on {{ r.signed_at|date:'j M Y H:i' }}, and its content has not changed since.</div></div>
+    {% if r.status == 'superseded' %}<div class="alert-mf danger mt-2"><i class="bi bi-exclamation-octagon"></i><div><b>Superseded.</b> A later amendment{% if current %} ({{ current.number }}){% endif %} replaces this report. Ask the hospital for the current version.</div></div>{% endif %}
+  {% else %}
+    <div class="alert-mf danger"><i class="bi bi-x-octagon"></i><div><b>Content mismatch.</b> {{ r.number }} exists, but its stored content no longer matches the signature. Contact the hospital.</div></div>
+  {% endif %}
+  {% if r and r.content_hash %}<p class="small muted mt-3 mb-0">Content hash (SHA-256): <code style="word-break:break-all">{{ r.content_hash }}</code></p>{% endif %}
+  <p class="small muted mt-2">No patient details are shown on this page.</p>
+</main>
+{% endblock %}

@@ -1,0 +1,95 @@
+/* Doctor's report editor: write on the left, the printed page on the right (same letterhead as the PDF). */
+.dr-titlerow{display:flex;gap:12px;align-items:center;margin-bottom:10px}
+.dr-title{font-family:var(--display);font-size:1.15rem;font-weight:650;border-color:transparent;padding-left:6px;background:transparent}
+.dr-title:hover{border-color:var(--line)}
+.dr-title:focus{border-color:var(--teal);background:#fff}
+.dr-save{white-space:nowrap}
+.dr-save .err{color:var(--red)}
+.dr-toolbar{display:flex;flex-wrap:wrap;gap:4px;align-items:center;border:1px solid var(--line);border-radius:var(--r-sm) var(--r-sm) 0 0;background:var(--paper);padding:5px 6px}
+.dr-sep{width:1px;height:20px;background:var(--line-2);margin:0 4px}
+.dr-toolbar .dropdown{position:relative}
+.dr-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:20;background:#fff;border:1px solid var(--line-2);border-radius:12px;box-shadow:0 14px 30px -16px rgba(15,44,63,.45);
+  padding:6px;min-width:230px;display:flex;flex-direction:column}
+.dr-menu button{border:0;background:none;text-align:left;padding:7px 10px;border-radius:8px;font-size:.88rem;display:flex;gap:8px;align-items:center;color:var(--text)}
+.dr-menu button:hover,.dr-menu button:focus-visible{background:var(--teal-wash);outline:none}
+.dr-tabs{display:inline-flex;border:1px solid var(--line-2);border-radius:999px;overflow:hidden;background:#fff}
+.dr-tabs button{border:0;background:none;font-size:.8rem;font-weight:600;padding:4px 11px;color:var(--muted)}
+.dr-tabs button.on{background:var(--ink);color:#fff}
+.dr-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);border:1px solid var(--line);border-top:0;border-radius:0 0 var(--r-sm) var(--r-sm);min-height:520px;background:var(--paper)}
+.dr-split[data-mode=edit]{grid-template-columns:1fr}.dr-split[data-mode=edit] .dr-paper{display:none}
+.dr-split[data-mode=paper]{grid-template-columns:1fr}.dr-split[data-mode=paper] .dr-text{display:none}
+.dr-text{border:0;resize:vertical;padding:16px 18px;font:400 .93rem/1.65 var(--body);color:var(--text);background:#fff;min-height:520px;border-right:1px solid var(--line);outline:none;tab-size:2}
+.dr-text:focus{box-shadow:inset 0 0 0 2px var(--teal-wash)}
+.dr-split[data-mode=edit] .dr-text{border-right:0}
+
+/* the page: the same ink bar and trace-green rule as the PDF header */
+.dr-paper{margin:14px;background:#fff;border-radius:4px;box-shadow:0 1px 0 var(--line),0 12px 28px -18px rgba(15,44,63,.5);overflow:auto;max-height:76vh}
+.dr-paper>header{background:var(--ink);color:#fff;padding:9px 16px;display:flex;flex-wrap:wrap;gap:4px 12px;justify-content:space-between;border-bottom:3px solid var(--trace);font-size:.82rem}
+.dr-paper>header b{font-family:var(--display);font-size:.95rem}
+.dr-paper>header span{color:#9FC0D0}
+.dr-paper-body{padding:16px 20px 22px}
+.dr-paper-body h4{border-bottom:1px solid var(--line);padding-bottom:3px}
+.dr-paper.final{margin:0;max-height:none}
+.dr-signed{display:flex;gap:10px;align-items:flex-start;border-top:2px solid var(--ink);margin:0 20px;padding:12px 0 18px}
+.dr-signed>i{color:var(--teal);font-size:1.4rem}
+
+/* how much is yours: ink for the doctor, indigo wash for the AI */
+.dr-meter{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-top:10px}
+.dr-meter-bar{width:140px;height:8px;border-radius:999px;background:var(--indigo-wash);overflow:hidden}
+.dr-meter-bar i{display:block;height:100%;width:var(--doc);background:var(--ink);border-radius:999px;transition:width .4s var(--ease)}
+
+/* AI helpers */
+.dr-assist-btns{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
+.dr-assist-btn{text-align:left;border:1px solid #cdd5f5;background:linear-gradient(180deg,#fff,var(--indigo-wash));border-radius:12px;padding:10px 12px;display:grid;
+  grid-template-columns:auto 1fr;gap:2px 8px;align-items:start;color:var(--text);transition:border-color .2s,transform .2s}
+.dr-assist-btn i{grid-row:span 2;font-size:1.2rem;color:var(--indigo);margin-top:1px}
+.dr-assist-btn b{font-size:.9rem}
+.dr-assist-btn small{color:var(--muted);font-size:.78rem;line-height:1.3}
+.dr-assist-btn:hover{border-color:var(--indigo);transform:translateY(-1px)}
+.dr-assist-btn:focus-visible{outline:2px solid var(--indigo);outline-offset:2px}
+.dr-assist-btn.busy{opacity:.55;pointer-events:none}
+.dr-assist-out{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.dr-assist-out:empty{display:none}
+.dr-assist-card{border:1px solid var(--line);border-left:4px solid var(--indigo);border-radius:var(--r-sm);padding:10px 14px;background:#fff}
+.dr-assist-card[data-kind=safety]{border-left-color:var(--amber)}
+.dr-assist-card[data-kind=patient]{border-left-color:var(--plum)}
+.dr-assist-card>header{display:flex;justify-content:space-between;gap:8px;margin-bottom:4px}
+.dr-assist-card>footer{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.dr-assist-card.pending .gd-ai-text{color:var(--muted)}
+.dr-assist-card.failed{border-left-color:var(--red)}
+
+/* aside */
+.dr-check{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:.9rem;cursor:pointer}
+.dr-check input{margin-top:4px;accent-color:var(--teal);width:16px;height:16px;flex:none}
+.dr-check>span{display:flex;flex-direction:column;min-width:0}
+.dr-check>span>small{color:var(--muted);font-size:.8rem}
+.dr-check.compact{padding:3px 0;flex:1;min-width:0}
+.dr-check.compact a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.dr-thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
+.dr-thumb{position:relative;border:2px solid var(--line);border-radius:10px;overflow:hidden;cursor:pointer;background:var(--ink);aspect-ratio:1}
+.dr-thumb img{width:100%;height:100%;object-fit:cover;opacity:.55;transition:opacity .2s}
+.dr-thumb span{position:absolute;left:0;right:0;bottom:0;font-size:.7rem;color:#fff;background:linear-gradient(transparent,rgba(15,44,63,.85));padding:10px 6px 4px}
+.dr-thumb input{position:absolute;top:6px;left:6px;accent-color:var(--teal);width:16px;height:16px;z-index:1}
+.dr-thumb:has(input:checked){border-color:var(--teal)}
+.dr-thumb:has(input:checked) img{opacity:1}
+.dr-thumb:has(input:focus-visible){outline:2px solid var(--teal);outline-offset:2px}
+.dr-files{list-style:none;margin:0;padding:0}
+.dr-files li{display:flex;gap:6px;align-items:center;border-top:1px solid var(--line)}
+.dr-files li:first-child{border-top:0}
+.dr-drop{margin-top:8px}
+.dr-drop input{position:absolute;width:1px;height:1px;opacity:0}
+.dr-drop label{display:flex;gap:10px;align-items:center;border:1.5px dashed var(--line-2);border-radius:12px;padding:12px;cursor:pointer;font-size:.88rem;transition:border-color .2s,background .2s}
+.dr-drop label i{font-size:1.5rem;color:var(--teal)}
+.dr-drop label>span{display:flex;flex-direction:column}
+.dr-drop label small{color:var(--muted);font-size:.78rem}
+.dr-drop.over label,.dr-drop label:hover,.dr-drop input:focus-visible+label{border-color:var(--teal);background:var(--teal-wash)}
+.dr-drop.busy label{opacity:.6;pointer-events:none}
+.dr-chips{display:flex;flex-wrap:wrap;gap:6px}
+.dr-chips button{border:1px solid var(--line-2);background:#fff;border-radius:999px;font-size:.78rem;padding:2px 10px;color:var(--ink)}
+.dr-chips button:hover{border-color:var(--teal)}
+.dr-history{list-style:none;margin:0;padding:0;font-size:.84rem}
+.dr-history li{display:flex;flex-direction:column;padding:5px 0 5px 14px;border-left:2px solid var(--line);position:relative}
+.dr-history li::before{content:'';position:absolute;left:-5px;top:10px;width:8px;height:8px;border-radius:50%;background:var(--teal)}
+.dr-history span{color:var(--muted);font-size:.78rem}
+@media (max-width:900px){.dr-split{grid-template-columns:1fr}.dr-split[data-mode=split] .dr-paper{display:none}.dr-text{border-right:0}}
+@media (prefers-reduced-motion:reduce){.dr-assist-btn,.dr-meter-bar i{transition:none}}

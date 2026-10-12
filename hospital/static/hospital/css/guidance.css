@@ -49,10 +49,20 @@
 .gd-ai-sources{font-size:.86rem;padding-left:20px}
 .gd-ai-foot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px solid var(--line);margin-top:10px;padding-top:8px}
 .gd-ai-foot .icon-btn.on{color:var(--teal-2);background:var(--teal-wash)}
+.gd-ai-text.adoptable{position:relative;cursor:pointer;border:1px dashed transparent;border-radius:12px;padding:10px 12px;margin:0 -12px;transition:border-color .2s,background .2s}
+.gd-ai-text.adoptable:hover,.gd-ai-text.adoptable:focus-visible{border-color:var(--teal);background:rgba(221,240,234,.45);outline:none}
+.gd-ai-text.adoptable.busy{opacity:.6;pointer-events:none}
+.gd-adopt-hint{position:absolute;top:8px;right:10px;display:inline-flex;gap:6px;align-items:center;font-size:.78rem;font-weight:600;color:#fff;background:var(--teal);
+  border-radius:999px;padding:3px 10px;opacity:0;transform:translateY(-3px);transition:opacity .2s,transform .2s;pointer-events:none}
+.gd-ai-text.adoptable:hover .gd-adopt-hint,.gd-ai-text.adoptable:focus-visible .gd-adopt-hint{opacity:1;transform:none}
+.gd-adopt-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0 4px}
+.gd-report-strip{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:var(--r-sm);
+  background:#fff;padding:8px 12px;margin-bottom:12px;font-size:.88rem}
+.gd-report-strip>i{color:var(--teal);font-size:1.1rem}
 .gd-who-cell{font-size:.82rem;color:var(--indigo)}
 .gd-who-cell .out{color:var(--red);font-weight:600}
 .gd-form label{display:block;font-size:.8rem;color:var(--muted);font-weight:600;margin-bottom:8px}
 .gd-form label .form-control,.gd-form label .form-select{margin-top:3px}
 .btn.busy{opacity:.6;pointer-events:none}
 @media (max-width:760px){.gd-grid{grid-template-columns:1fr}.gd-bars li{grid-template-columns:minmax(0,1fr) 60px 36px}.gd-bars li small{display:none}}
-@media print{.gd-actions,.gd-card-actions,.gd-ai-head .btn{display:none}}
+@media print{.gd-actions,.gd-card-actions,.gd-ai-head .btn,.gd-adopt-bar,.gd-adopt-hint{display:none}}

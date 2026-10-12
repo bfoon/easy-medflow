@@ -46,8 +46,9 @@ def lab_guidance(request, pk):
     latest = AISuggestion.objects.filter(lab_request=lr).select_related('requested_by').first()
     if request.GET.get('first') == '1':
         audit(request, 'view_chart', f'lab_guidance:{lr.pk}')
+    from .report_views import reports_for
     return render(request, 'hospital/lab/_guidance.html', {
-        'lr': lr, 'p': lr.encounter.patient, 'g': g, 'ai_on': ai_on(), 'ai': latest, 'ai_model': model_name() if provider() == 'anthropic' else '',
+        'lr': lr, 'p': lr.encounter.patient, 'g': g, 'ai_on': ai_on(), 'ai': latest, 'report': reports_for(lr), 'ai_model': model_name() if provider() == 'anthropic' else '',
         'ai_web': provider() == 'anthropic' and getattr(settings, 'CLINICAL_AI_WEB_SEARCH', True),
         'can_ai': role_of(request.user) in ROLES['clinical'], 'pending': g['pending'] or bool(latest and latest.busy),
         'open_encounter': lr.encounter if lr.encounter.status == 'open' else None})

@@ -38,8 +38,25 @@
     if (root && root.dataset.pending === '1' && tries++ < 75) timer = setTimeout(load, 4000);
   }
 
+  // Clicking the AI summary adopts it as the doctor's report (not when following a link or selecting text to copy).
+  function adopt(box) {
+    const form = document.getElementById(box.dataset.adopt);
+    if (!form) return;
+    box.classList.add('busy');
+    form.requestSubmit();
+  }
+  host.addEventListener('keydown', e => {
+    const box = e.target.closest('[data-adopt]');
+    if (box && e.target === box && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); adopt(box); }
+  });
+
   host.addEventListener('click', async e => {
     if (e.target.closest('[data-gd-reload]')) { tries = 0; load(); return; }
+    const box = e.target.closest('[data-adopt]');
+    if (box) {
+      if (!e.target.closest('a') && !String(getSelection?.() || '').trim()) adopt(box);
+      return;
+    }
     const b = e.target.closest('[data-gd-post]');
     if (!b) return;
     e.preventDefault();

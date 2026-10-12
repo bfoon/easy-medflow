@@ -1010,3 +1010,4 @@ from .models_care import BedsideState, BedsideObservation, InjuryAssessment  # n
 from .models_studio import (FormVersion, FormDraft, WorkflowTask, WorkflowEvent, SignatureProfile, Envelope,  # noqa: E402,F401
                             EnvelopeRecipient, EnvelopeField, EnvelopeEvent)
 from .models_evidence import ReferenceRange, ParameterGuidance, EvidenceItem, EvidenceFetch, AISuggestion  # noqa: E402,F401
+from .models_reports import DoctorReport, ReportAttachment, ReportAssist  # noqa: E402,F401

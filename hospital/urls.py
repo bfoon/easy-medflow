@@ -6,6 +6,7 @@ from . import care_views as care
 from . import studio_views as sv
 from . import esign_views as ev
 from . import evidence_views as gv
+from . import report_views as rv
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -90,6 +91,21 @@ urlpatterns = [
     path('labs/requests/<int:pk>/ai/', gv.lab_ai_request, name='lab_ai_request'),
     path('labs/requests/<int:pk>/ai-context/', gv.lab_ai_context, name='lab_ai_context'),
     path('labs/ai/<int:pk>/rate/', gv.lab_ai_rate, name='lab_ai_rate'),
+    path('labs/ai/<int:pk>/adopt/', rv.report_adopt, name='report_adopt'),
+    path('reports/<int:pk>/', rv.report_detail, name='report_detail'),
+    path('reports/<int:pk>/save/', rv.report_save, name='report_save'),
+    path('reports/<int:pk>/sign/', rv.report_sign, name='report_sign'),
+    path('reports/<int:pk>/amend/', rv.report_amend, name='report_amend'),
+    path('reports/<int:pk>/replace/<int:sid>/', rv.report_replace, name='report_replace'),
+    path('reports/<int:pk>/discard/', rv.report_discard, name='report_discard'),
+    path('reports/<int:pk>/files/', rv.report_attach, name='report_attach'),
+    path('reports/files/<int:pk>/', rv.report_attachment_file, name='report_attachment_file'),
+    path('reports/files/<int:pk>/delete/', rv.report_attachment_delete, name='report_attachment_delete'),
+    path('reports/<int:pk>/pdf/', rv.report_pdf, name='report_pdf'),
+    path('reports/<int:pk>/zip/', rv.report_zip, name='report_zip'),
+    path('reports/<int:pk>/assist/<str:kind>/', rv.report_assist, name='report_assist'),
+    path('reports/assist/<int:pk>/', rv.report_assist_status, name='report_assist_status'),
+    path('reports/verify/<str:token>/', rv.report_verify, name='report_verify'),
     path('labs/requests/<int:pk>/report/', lv.lab_report, name='lab_report'),
     path('labs/new/', v.lab_new, name='lab_new'),
     path('labs/mine/', v.lab_mine, name='lab_mine'),

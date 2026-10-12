@@ -1,5 +1,5 @@
 {% extends 'hospital/base.html' %}{% load medflow evidence_tags %}
-{% block head %}<link href="{% asset 'hospital/css/guidance.css' %}" rel="stylesheet">{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/guidance.css' %}" rel="stylesheet">{% if show_guidance %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet">{% endif %}{% endblock %}
 {% block title %}{{ lr.number }}{% endblock %}
 {% block heading %}Lab request {{ lr.number }}{% endblock %}
 {% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %} · requested {{ lr.created_at|date:'j M Y H:i' }}{% if lr.requested_by %} by {{ lr.requested_by|display_name }}{% endif %}
@@ -8,7 +8,8 @@
   <a class="btn btn-ghost" href="{% url 'patient_chart' p.pk %}#labs"><i class="bi bi-arrow-left"></i>Patient</a>
   <a class="btn btn-ghost" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-person-arms-up"></i>Body map &amp; trends</a>
   {% if can_lab %}<a class="btn btn-ghost" href="{% url 'lab_label' lr.pk %}" target="_blank"><i class="bi bi-upc"></i>Label</a>{% endif %}
-  <a class="btn btn-ghost" href="{% url 'lab_report' lr.pk %}"><i class="bi bi-file-earmark-medical"></i>Report</a>
+  <a class="btn btn-ghost" href="{% url 'lab_report' lr.pk %}"><i class="bi bi-file-earmark-medical"></i>Lab report</a>
+  {% if doctor_report %}<a class="btn btn-ghost" href="{% url 'report_detail' doctor_report.pk %}"><i class="bi bi-file-earmark-person"></i>{{ doctor_report.number }}{% if doctor_report.status == 'draft' %} draft{% endif %}</a>{% endif %}
   {% if show_guidance %}<a class="btn btn-ghost" href="#guidance-panel"><i class="bi bi-signpost-split"></i>Guidance</a>{% endif %}
   {% if can_lab %}
     {% if lr.stage == 'ordered' %}<form method="post" action="{% url 'lab_request_action' lr.pk 'collect' %}" class="d-flex gap-1">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><input class="form-control" name="specimen_id" placeholder="Specimen ID" style="width:150px" aria-label="Specimen ID"><button class="btn btn-ink">Collected</button></form>
@@ -53,7 +54,7 @@
 </div>
 {{ lr.stage|json_script:"stage" }}
 {% endblock %}
-{% block scripts %}{% if show_guidance %}<script src="{% asset 'hospital/js/knowledge.js' %}"></script><script src="{% asset 'hospital/js/guidance.js' %}"></script>{% endif %}<script>
+{% block scripts %}{% if show_guidance %}<script src="{% asset 'hospital/js/knowledge.js' %}"></script><script src="{% asset 'hospital/js/guidance.js' %}"></script><script src="{% asset 'hospital/js/robodoc.js' %}"></script>{% endif %}<script>
 (() => { const order = ['ordered','collected','processing','resulted','verified'], cur = order.indexOf(JSON.parse(document.getElementById('stage').textContent));
   document.querySelectorAll('.steps li').forEach(li => { const i = order.indexOf(li.dataset.st); li.className = i < cur ? 'done' : i === cur ? 'current' : ''; }); })();
 </script>{% endblock %}
