@@ -1,0 +1,29 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ s.definition.name }} · {{ s.patient.full_name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/studio.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}{{ s.definition.name }}{% endblock %}
+{% block subheading %}<p class="sub"><span class="st-status {{ s.status }}">{{ s.get_status_display }}</span> · <a href="{% url 'patient_chart' s.patient_id %}">{{ s.patient.full_name }}</a> · {{ s.patient.mrn }} · submitted by {{ s.submitted_by|display_name }} on {{ s.created_at|date:'j M Y H:i' }}</p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="{% url 'patient_chart' s.patient_id %}"><i class="bi bi-arrow-left"></i>Patient</a>
+  <a class="btn btn-primary" href="{% url 'esign_new' %}?source=form&submission={{ s.pk }}"><i class="bi bi-pen"></i>Send for signature</a>
+  {% if not signatures %}<form method="post" action="{% url 'submission_sign' s.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="btn btn-ghost" data-confirm="Attest this submission with your account?"><i class="bi bi-patch-check"></i>Attest</button></form>{% endif %}
+{% endblock %}
+{% block content %}
+<div class="grid g-main">
+  <section class="panel">
+    {% for r in rows %}
+      {% if r.f.type == 'heading' %}<h3 class="h6 mt-3 mb-2 pt-2 border-top">{{ r.f.label }}</h3>
+      {% elif r.f.type == 'paragraph' %}<p class="small muted">{{ r.f.text }}</p>
+      {% else %}<div class="d-flex gap-3 py-2 border-top"><div class="text-muted small fw-semibold" style="min-width:200px">{{ r.f.label }}</div>
+        <div class="flex-fill">{% if r.f.type == 'signature' and r.v %}<img src="{{ r.v }}" alt="Signature" style="max-height:70px">
+        {% elif r.f.type == 'table' and r.v %}<table class="mini-table"><thead><tr>{% for c in r.f.columns %}<th>{{ c.label }}</th>{% endfor %}</tr></thead><tbody>{% for row in r.v %}<tr>{% for c in r.f.columns %}<td>{{ row|get_item:c.key|default_if_none:'' }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
+        {% else %}{{ r.text|linebreaksbr }}{% endif %}</div></div>{% endif %}
+    {% empty %}{% for k, v in s.values.items %}<div class="py-1"><b>{{ k }}</b>: {{ v }}</div>{% endfor %}{% endfor %}
+  </section>
+  <aside class="stack align-self-start">
+    {% for r in runs %}<section class="panel"><div class="panel-head"><h2>Flow</h2></div><a class="st-task" href="{% url 'run_detail' r.pk %}"><span class="ic"><i class="bi bi-diagram-3"></i></span><div><b>{{ r.definition.name }}</b><div class="small muted">{{ r.get_status_display }}</div></div></a></section>{% endfor %}
+    {% if envelopes %}<section class="panel"><div class="panel-head"><h2>E-sign</h2></div>{% for e in envelopes %}<a class="st-task" href="{% url 'esign_detail' e.uid %}"><span class="ic k-sign"><i class="bi bi-pen"></i></span><div><b>{{ e.subject }}</b><div class="small muted">{{ e.get_status_display }}</div></div></a>{% endfor %}</section>{% endif %}
+    {% for g in signatures %}<section class="panel"><div class="panel-head"><h2>Attestation</h2></div><p class="small mb-1">{{ g.signer|display_name }} · {{ g.signed_at|date:'j M Y H:i' }}</p><p class="es-chain mb-0">SHA-256 {{ g.document_hash }}</p></section>{% endfor %}
+  </aside>
+</div>
+{% endblock %}

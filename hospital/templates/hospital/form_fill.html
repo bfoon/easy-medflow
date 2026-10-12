@@ -1,0 +1,32 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ definition.name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/studio.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}{{ definition.name }}{% endblock %}
+{% block subheading %}<p class="sub">For <a href="{% url 'patient_chart' patient.pk %}">{{ patient.full_name }}</a> · {{ patient.mrn }}{% if definition.description %} · {{ definition.description }}{% endif %}</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'patient_chart' patient.pk %}"><i class="bi bi-x-lg"></i>Close</a>{% endblock %}
+{% block content %}{% csrf_token %}
+<div class="grid g-main">
+  <section class="panel"><div id="fill-host"></div><noscript><p>This form needs JavaScript.</p></noscript></section>
+  <aside class="stack align-self-start">
+    <section class="panel"><div class="panel-head"><h2>After submitting</h2></div>
+      <label class="small fw-semibold text-muted d-block mb-2">Send it through a flow
+        <select id="fill-workflow" class="form-select mt-1"><option value="">No flow: just save it</option>{% for w in workflows %}<option value="{{ w.pk }}" {% if w.form_id == definition.pk %}selected{% endif %}>{{ w.name }}</option>{% endfor %}</select></label>
+      {% if boot.encounters %}<label class="small fw-semibold text-muted d-block">Attach to visit<select id="fill-encounter" class="form-select mt-1">{% for e in boot.encounters %}<option value="{{ e.id }}">{{ e.label }}</option>{% endfor %}</select></label>{% endif %}
+      <p class="small muted mt-2 mb-0">Answers save as a draft while you type, so you can come back later.</p></section>
+  </aside>
+</div>
+{{ boot|json_script:'fill-boot' }}
+{% endblock %}
+{% block scripts %}
+<script src="{% asset 'hospital/js/formkit.js' %}"></script>
+<script src="{% asset 'hospital/js/injury-figure.js' %}"></script>
+<script src="{% asset 'hospital/js/bedside.js' %}"></script>
+<script src="{% asset 'hospital/js/form-runtime.js' %}"></script>
+<script>
+(() => {
+  const boot = JSON.parse(document.getElementById('fill-boot').textContent);
+  MFFormRuntime.mount(document.getElementById('fill-host'), boot, {post: values => MFFormRuntime.postJSON(boot.submit_url, {values,
+    workflow: document.getElementById('fill-workflow').value || null, encounter: (document.getElementById('fill-encounter') || {}).value || null})});
+})();
+</script>
+{% endblock %}

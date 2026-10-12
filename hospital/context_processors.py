@@ -8,6 +8,8 @@ def medflow(request):
         return {'embed': embed}
     from .models import Invoice, ImagingOrder, QueueTicket, LabOrder, LabRequest, Prescription, Referral, WorkflowRun
     from .views import role_of
+    from . import flows
+    from .models import Envelope
     return {
         'embed': embed,
         'nav_role': role_of(request.user) or 'unassigned',
@@ -16,7 +18,8 @@ def medflow(request):
             'labs': LabRequest.objects.filter(orders__status__in=['ordered', 'collected', 'processing', 'resulted']).distinct().count(),
             'pharmacy': Prescription.objects.filter(state__in=['draft', 'signed']).count(),
             'referrals': Referral.objects.filter(direction='in', status='sent').count(),   # new referrals waiting in our inbox
-            'studio': WorkflowRun.objects.filter(status='open').count(),
+            'studio': flows.tasks_for(request.user).count(),                                 # steps waiting for this person
+            'esign': Envelope.objects.filter(status='sent', recipients__user=request.user, recipients__status__in=['sent', 'viewed']).distinct().count(),
             'imaging': ImagingOrder.objects.filter(status__in=['requested', 'acquired']).count(),
             'bills': Invoice.objects.filter(status='draft').count(),
         },

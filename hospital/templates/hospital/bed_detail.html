@@ -1,5 +1,6 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}Bed {{ b.code }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/care.css' %}" rel="stylesheet">{% endblock %}
 {% block heading %}Bed {{ b.code }}{% endblock %}
 {% block subheading %}<p class="sub">{{ b.ward }} · {{ b.get_kind_display }} · <span class="tag {{ b.state|tone }}">{{ b.get_state_display }}</span></p>{% endblock %}
 {% block actions %}
@@ -9,7 +10,7 @@
     <details class="complete-pop"><summary class="btn btn-ghost"><i class="bi bi-tools"></i>Out of service</summary><form method="post" action="{% url 'bed_maintenance' b.pk %}" class="pop-card">{% csrf_token %}<input class="form-control mb-2" name="reason" placeholder="Reason, e.g. broken rail"><button class="btn btn-ink w-100">Take out of service</button></form></details>
   {% elif b.state == 'cleaning' or b.state == 'maintenance' %}<form method="post" action="{% url 'bed_ready' b.pk %}">{% csrf_token %}<button class="btn btn-primary"><i class="bi bi-stars"></i>Mark ready</button></form>{% endif %}
 {% endblock %}
-{% block content %}
+{% block content %}{% csrf_token %}
 <div class="ward-mini mb-3" aria-label="Beds in {{ b.ward }}">{% for n in neighbours %}<a href="{% url 'bed_detail' n.pk %}" class="wm {{ n.state }} {% if n.pk == b.pk %}here{% endif %}" title="{{ n.code }} · {{ n.get_state_display }}">{{ n.code|slice:'-2:' }}</a>{% endfor %}</div>
 <div class="grid g-main">
   <div class="stack">
@@ -31,7 +32,37 @@
         {% if e.status == 'open' %}<button class="btn btn-sm btn-ghost" data-drawer="{% url 'prescription_new' %}?encounter={{ e.pk }}" data-title="New prescription"><i class="bi bi-capsule"></i>Prescribe</button>
         <button class="btn btn-sm btn-ghost" data-drawer="{% url 'lab_new' %}?encounter={{ e.pk }}" data-title="New lab request"><i class="bi bi-droplet-half"></i>Lab tests</button>{% endif %}
         <a class="btn btn-sm btn-ghost" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-person-arms-up"></i>Body map</a>
+        {% if can_assess %}<a class="btn btn-sm btn-ghost" href="{% url 'injury_assessment' e.pk %}"><i class="bi bi-bandaid"></i>Injuries &amp; burns</a>{% endif %}
       </div>
+      {% if bedside.injury %}<a class="inj-strip" href="{{ bedside.injury.url }}"><i class="bi bi-bandaid-fill"></i>{{ bedside.injury.summary }}</a>{% endif %}
+    </section>
+    <section class="panel bedside" aria-labelledby="bs-h">
+      <div class="panel-head"><h2 id="bs-h"><i class="bi bi-heart-pulse me-1" style="color:var(--teal)"></i>At the bedside</h2>
+        <span class="hint">Everything moves with the values below: drip rate, heart rate, breathing, oxygen flow, urine output.</span></div>
+      <div class="bs-layout">
+        <div><div id="bs-host" class="bs-host"></div><div id="bs-derived" class="bs-derived" aria-live="polite"></div></div>
+        <div class="bs-side">
+          <div id="bs-controls" class="bs-controls"></div>
+          {% if bedside.can_edit %}<div class="d-flex gap-2 mt-2"><button type="button" class="btn btn-primary btn-sm" id="bs-save" hidden><i class="bi bi-check2"></i>Save equipment</button><button type="button" class="btn btn-ghost btn-sm" id="bs-reset" hidden>Undo changes</button></div>
+          {% else %}<button id="bs-save" hidden></button><button id="bs-reset" hidden></button><p class="small muted mt-2">Only nurses and doctors can change the equipment.</p>{% endif %}
+        </div>
+      </div>
+      <div class="bs-obs-wrap">
+        <div id="bs-news-card" class="bs-news-card"></div>
+        {% if bedside.can_edit %}<form id="bs-obs" class="bs-obs" autocomplete="off">
+          <label>Heart rate<input name="heart_rate" type="number" min="20" max="250" class="form-control form-control-sm"><small>/min</small></label>
+          <label>Blood pressure<span class="d-flex gap-1 align-items-center"><input name="systolic" type="number" min="40" max="280" class="form-control form-control-sm" aria-label="Systolic">/<input name="diastolic" type="number" min="20" max="180" class="form-control form-control-sm" aria-label="Diastolic"></span><small>mmHg</small></label>
+          <label>Breathing<input name="resp_rate" type="number" min="3" max="70" class="form-control form-control-sm"><small>/min</small></label>
+          <label>SpO₂<input name="spo2" type="number" min="50" max="100" class="form-control form-control-sm"><small>%</small></label>
+          <label>Temperature<input name="temperature_c" type="number" step="0.1" min="30" max="43" class="form-control form-control-sm"><small>°C</small></label>
+          <label>Alertness<select name="consciousness" class="form-select form-select-sm"><option value="A">Alert</option><option value="C">New confusion</option><option value="V">Responds to voice</option><option value="P">Responds to pain</option><option value="U">Unresponsive</option></select></label>
+          <label class="chk"><input type="checkbox" name="on_oxygen"> On oxygen</label>
+          <div class="bs-obs-go"><span id="bs-obs-preview" class="small"></span><button type="submit" class="btn btn-sm btn-ink"><i class="bi bi-plus-lg"></i>Record observations</button></div>
+        </form>{% endif %}
+      </div>
+      <div class="scroll-y mt-2"><table class="mini-table"><thead><tr><th>Time</th><th>HR</th><th>BP</th><th>RR</th><th>SpO₂</th><th>Temp</th><th>ACVPU</th><th>NEWS2</th></tr></thead><tbody id="bs-obs-history"></tbody></table></div>
+      <div id="bs-toast" class="bs-toast" role="status" aria-live="polite"></div>
+      {{ bedside|json_script:'bedside-boot' }}
     </section>
     <section class="panel mar">
       <div class="panel-head"><h2><i class="bi bi-clipboard2-check me-1" style="color:var(--teal)"></i>Medication chart · today</h2>
@@ -83,3 +114,4 @@
   </aside>
 </div>
 {% endblock %}
+{% block scripts %}{% if bedside %}<script src="{% asset 'hospital/js/bedside.js' %}"></script><script src="{% asset 'hospital/js/bedside-panel.js' %}"></script>{% endif %}{% endblock %}

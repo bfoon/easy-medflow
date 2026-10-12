@@ -754,6 +754,7 @@ class FormDefinition(Tracked):
     schema=models.JSONField(default=dict,help_text='{"fields":[{"key":"reason","label":"Reason","type":"textarea","required":true}]}')
     published=models.BooleanField(default=False)
     version=models.PositiveIntegerField(default=1)
+    description=models.CharField(max_length=300,blank=True)
     def __str__(self):return self.name
 
 class FormSubmission(Tracked):
@@ -768,21 +769,29 @@ class FormSubmission(Tracked):
 
 class WorkflowDefinition(Tracked):
     name=models.CharField(max_length=200)
-    steps=models.JSONField(default=list,help_text='Ordered list of {"name":"Nurse review","role":"nurse"}')
+    steps=models.JSONField(default=list,blank=True,help_text='Legacy: ordered list of {"name":"Nurse review","role":"nurse"}; used when there is no graph')
+    graph=models.JSONField(default=dict,blank=True,help_text='Flow graph {"nodes":[…],"edges":[…]}, see hospital/flows.py')
+    form=models.ForeignKey(FormDefinition,null=True,blank=True,on_delete=models.SET_NULL,related_name='workflows',help_text='Form whose answers the flow can check')
+    description=models.CharField(max_length=300,blank=True)
     active=models.BooleanField(default=True)
     def __str__(self):return self.name
 
 class WorkflowRun(Tracked):
     definition=models.ForeignKey(WorkflowDefinition,on_delete=models.PROTECT)
     submission=models.ForeignKey(FormSubmission,on_delete=models.PROTECT)
-    step_index=models.PositiveIntegerField(default=0)
-    status=models.CharField(max_length=20,choices=[('open','Open'),('approved','Approved'),('rejected','Rejected')],default='open')
+    step_index=models.PositiveIntegerField(default=0,help_text='Number of approval steps completed')
+    status=models.CharField(max_length=20,choices=[('open','In progress'),('returned','Returned for changes'),('approved','Approved'),('rejected','Rejected'),('cancelled','Cancelled')],default='open')
+    graph=models.JSONField(default=dict,blank=True,help_text='The flow as it was when this run started')
+    state=models.JSONField(default=dict,blank=True,help_text='Engine state: active steps, join arrivals')
+    round=models.PositiveSmallIntegerField(default=1)
+    started_by=models.ForeignKey(settings.AUTH_USER_MODEL,null=True,blank=True,on_delete=models.SET_NULL,related_name='+')
+    completed_at=models.DateTimeField(null=True,blank=True)
     def __str__(self):return f'{self.definition} / {self.submission_id}'
 
 class WorkflowAction(Tracked):
     run=models.ForeignKey(WorkflowRun,on_delete=models.PROTECT,related_name='actions')
     step_index=models.PositiveIntegerField()
-    action=models.CharField(max_length=20,choices=[('approve','Approve'),('reject','Reject')])
+    action=models.CharField(max_length=20,choices=[('approve','Approve'),('reject','Reject'),('return','Return for changes'),('review','Acknowledge'),('fill','Fill in')])
     actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
     comment=models.TextField(blank=True)
 
@@ -989,3 +998,8 @@ class CriticalCall(Tracked):
     read_back=models.BooleanField(default=False,help_text='The receiver read the result back correctly')
     note=models.CharField(max_length=200,blank=True)
     class Meta: ordering=['called_at','-created_at']
+
+
+from .models_care import BedsideState, BedsideObservation, InjuryAssessment  # noqa: E402,F401
+from .models_studio import (FormVersion, FormDraft, WorkflowTask, WorkflowEvent, SignatureProfile, Envelope,  # noqa: E402,F401
+                            EnvelopeRecipient, EnvelopeField, EnvelopeEvent)

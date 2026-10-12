@@ -1,0 +1,58 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}New envelope{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/studio.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}New envelope{% endblock %}
+{% block subheading %}<p class="sub">1. Document · 2. Who signs and in what order · 3. Place the fields · 4. Send.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'esign' %}"><i class="bi bi-arrow-left"></i>E-sign</a>{% endblock %}
+{% block content %}
+<form method="post" enctype="multipart/form-data" id="ec-form" class="stack">{% csrf_token %}
+  <section class="panel"><div class="panel-head"><h2>Document</h2></div>
+    <div class="ec-src" role="radiogroup">
+      <label data-src="upload"><input type="radio" name="source" value="upload"><i class="bi bi-file-earmark-pdf"></i><b>Upload a PDF</b><span>Any document, up to 15 MB and 60 pages</span></label>
+      <label data-src="form"><input type="radio" name="source" value="form"><i class="bi bi-ui-checks"></i><b>A completed form</b><span>Turned into a PDF with signature boxes</span></label>
+      <label data-src="letter"><input type="radio" name="source" value="letter"><i class="bi bi-file-earmark-text"></i><b>Write it here</b><span>Letters and consents with patient details filled in</span></label></div>
+    <div class="mt-3" data-pane="upload"><input type="file" name="document" accept="application/pdf" class="form-control"></div>
+    <div class="mt-3" data-pane="form" hidden><select name="submission" class="form-select"><option value="">Choose a submission…</option>{% for s in submissions %}<option value="{{ s.pk }}" {% if boot.submission == s.pk|stringformat:'s' %}selected{% endif %}>{{ s.definition.name }} · {{ s.patient.full_name }} · {{ s.created_at|date:'j M' }}</option>{% endfor %}</select></div>
+    <div class="mt-3 d-grid gap-2" data-pane="letter" hidden><input name="title" class="form-control" placeholder="Title, e.g. Consent to blood transfusion" maxlength="160">
+      <textarea name="body" class="form-control" rows="8" placeholder="Write the document. Leave a blank line between paragraphs."></textarea>
+      <div class="small muted">Fill in automatically: {% for m in boot.merge %}<button type="button" class="linkish me-2" data-merge="{{ m }}">{{ m }}</button>{% endfor %}</div></div>
+    <div class="row g-2 mt-2"><div class="col-md-6"><label class="small fw-semibold text-muted">Patient (optional)<select name="patient" class="form-select"><option value="">None</option>{% for p in patients %}<option value="{{ p.pk }}" {% if boot.patient == p.pk|stringformat:'s' %}selected{% endif %}>{{ p.full_name }} · {{ p.mrn }}</option>{% endfor %}</select></label></div>
+      <div class="col-md-6"><label class="small fw-semibold text-muted">Subject<input name="subject" class="form-control" maxlength="200" placeholder="What people will see"></label></div></div>
+  </section>
+  <section class="panel"><div class="panel-head"><h2>Recipients</h2><span class="hint">Same order number = they receive it at the same time. Copies get the sealed PDF at the end.</span></div>
+    <div class="ec-recips" id="ec-recips"></div>
+    <div class="d-flex gap-2 mt-2 flex-wrap"><button type="button" class="btn btn-sm btn-ghost" data-add="signer"><i class="bi bi-person-plus"></i>Staff or outside signer</button><button type="button" class="btn btn-sm btn-ghost" data-add="in_person"><i class="bi bi-tablet"></i>Patient signs in person</button><button type="button" class="btn btn-sm btn-ghost" data-add="witness"><i class="bi bi-eye"></i>Witness</button><button type="button" class="btn btn-sm btn-ghost" data-add="cc"><i class="bi bi-envelope"></i>Copy</button></div>
+    <input type="hidden" name="recipients" id="ec-json"></section>
+  <section class="panel"><div class="panel-head"><h2>Options</h2></div><div class="row g-2 align-items-end">
+    <div class="col-md-6"><label class="small fw-semibold text-muted w-100">Message to recipients<textarea name="message" class="form-control" rows="2" maxlength="2000"></textarea></label></div>
+    <div class="col-md-2"><label class="small fw-semibold text-muted">Expires after (days)<input type="number" name="expires_days" value="14" min="1" max="90" class="form-control"></label></div>
+    <div class="col-md-4"><label class="fd-chk"><input type="checkbox" name="require_full_read">Signers must page through every page first</label></div></div></section>
+  <div class="d-flex"><button class="btn btn-primary ms-auto"><i class="bi bi-arrow-right"></i>Next: place fields</button></div>
+</form>
+{{ boot|json_script:'compose-boot' }}
+{% endblock %}
+{% block scripts %}<script>
+(() => {
+  const boot = JSON.parse(document.getElementById('compose-boot').textContent), esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  const form = document.getElementById('ec-form'), list = document.getElementById('ec-recips');
+  let recips = [{role: 'signer', user: boot.me, order: 1}];
+  const setSrc = s => { form.querySelectorAll('[data-src]').forEach(l => { l.classList.toggle('on', l.dataset.src === s); l.querySelector('input').checked = l.dataset.src === s; }); form.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== s); };
+  form.querySelectorAll('[data-src]').forEach(l => l.onclick = () => setSrc(l.dataset.src));
+  setSrc(boot.source || 'upload');
+  const draw = () => {
+    list.innerHTML = recips.map((r, i) => `<div class="ec-r" data-i="${i}"><span class="ord">#<input type="number" min="1" max="20" class="form-control form-control-sm" data-k="order" value="${r.order}" aria-label="Order"></span>
+      ${r.role === 'in_person' ? `<input class="form-control form-control-sm" data-k="name" value="${esc(r.name)}" placeholder="Name (blank = the patient)"><input class="form-control form-control-sm" data-k="relation" value="${esc(r.relation || 'Patient')}" placeholder="e.g. Patient, Mother (guardian)">`
+        : `<select class="form-select form-select-sm" data-k="user"><option value="">Someone outside the hospital…</option>${boot.staff.map(s => `<option value="${s.id}" ${+r.user === s.id ? 'selected' : ''}>${esc(s.name)} · ${s.role}</option>`).join('')}</select>
+           ${r.user ? `<input class="form-control form-control-sm" data-k="relation" value="${esc(r.relation)}" placeholder="Role in this document (optional)">` : `<span class="d-grid gap-1"><input class="form-control form-control-sm" data-k="name" value="${esc(r.name)}" placeholder="Full name"><input class="form-control form-control-sm" data-k="email" type="email" value="${esc(r.email)}" placeholder="Email"></span>`}`}
+      <select class="form-select form-select-sm" data-k="role">${Object.entries(boot.roles).map(([k, l]) => `<option value="${k}" ${r.role === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+      ${!r.user && r.role !== 'in_person' ? `<input class="form-control form-control-sm" data-k="access_code" value="${esc(r.access_code)}" placeholder="Access code (optional)">` : '<span></span>'}
+      <button type="button" class="btn btn-sm btn-ghost" data-del aria-label="Remove"><i class="bi bi-x-lg"></i></button></div>`).join('');
+  };
+  list.addEventListener('input', e => { const i = +e.target.closest('[data-i]').dataset.i, k = e.target.dataset.k; recips[i][k] = k === 'order' ? +e.target.value : e.target.value; if (e.target.tagName === 'SELECT') draw(); });
+  list.addEventListener('click', e => { if (e.target.closest('[data-del]')) { recips.splice(+e.target.closest('[data-i]').dataset.i, 1); draw(); } });
+  document.querySelectorAll('[data-add]').forEach(b => b.onclick = () => { const max = Math.max(0, ...recips.map(r => r.order)); recips.push({role: b.dataset.add, order: b.dataset.add === 'cc' ? max + 1 : b.dataset.add === 'witness' ? Math.max(1, max) : max + 1, relation: b.dataset.add === 'in_person' ? 'Patient' : ''}); draw(); });
+  document.querySelectorAll('[data-merge]').forEach(b => b.onclick = () => { const t = form.querySelector('[name=body]'), s = t.selectionStart; t.value = t.value.slice(0, s) + b.dataset.merge + t.value.slice(t.selectionEnd); t.focus(); });
+  form.onsubmit = () => { document.getElementById('ec-json').value = JSON.stringify(recips.map(r => ({...r, user: r.user ? +r.user : null}))); };
+  draw();
+})();
+</script>{% endblock %}

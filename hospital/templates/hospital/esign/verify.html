@@ -1,0 +1,13 @@
+{% extends 'hospital/esign/public_base.html' %}
+{% block title %}Verify a signed document{% endblock %}
+{% block content %}<main class="sg-wrap" style="max-width:640px;padding-top:24px">
+<h1 class="h3">Verify a signed document</h1><p class="muted">Check that a PDF signed through E-MedFlow has not been changed. The file is checked here and not stored.</p>
+<form method="post" enctype="multipart/form-data" class="panel d-grid gap-2">{% csrf_token %}
+  <label class="small fw-semibold">Signed PDF<input type="file" name="document" accept="application/pdf" class="form-control mt-1"></label>
+  <div class="small muted">or</div><label class="small fw-semibold">Envelope ID (on the bottom of every page)<input name="envelope" class="form-control mt-1" placeholder="e.g. 3F9A12BC"></label>
+  <button class="btn btn-primary">Check</button></form>
+{% if result %}<div class="mt-3">{% if result.found and result.ok %}<div class="es-verify ok"><i class="bi bi-patch-check-fill"></i><div><b>This document is authentic</b><div class="small">Envelope {{ result.id }} · {{ result.status }} {{ result.completed_at|date:'j M Y H:i' }} · {{ result.signers }} signer{{ result.signers|pluralize }} · {{ result.pages }} page{{ result.pages|pluralize }} plus certificate</div></div></div>
+{% elif result.found %}<div class="es-verify bad"><i class="bi bi-exclamation-octagon-fill"></i><div><b>The record has been changed</b><ul class="small mb-0">{% for p in result.problems %}<li>{{ p }}</li>{% endfor %}</ul></div></div>
+{% else %}<div class="es-verify bad"><i class="bi bi-x-octagon-fill"></i><div><b>No match</b><div class="small">This file is not a sealed E-MedFlow document, or it was changed after signing.</div></div></div>{% endif %}
+{% if result.digest %}<p class="es-chain mt-2">SHA-256 of your file: {{ result.digest }}</p>{% endif %}</div>{% endif %}
+</main>{% endblock %}

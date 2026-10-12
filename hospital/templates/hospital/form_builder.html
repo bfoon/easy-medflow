@@ -1,117 +1,39 @@
-{% extends 'hospital/base.html' %}
-{% block title %}{{ title }}{% endblock %}
-{% block heading %}{{ title }}{% endblock %}
-{% block subheading %}<p class="sub">Add fields on the left and see the form exactly as staff will fill it on the right.</p>{% endblock %}
-{% block content %}
-<form method="post" novalidate id="builder-form">
-  {% csrf_token %}{{ form.schema }}
-  {% for e in form.non_field_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ e }}</div></div>{% endfor %}
-  {% for e in form.schema.errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ e }}</div></div>{% endfor %}
-  <div class="builder">
-    <section class="panel">
-      <div class="form-grid">
-        {% with field=form.name %}{% include 'hospital/_field.html' %}{% endwith %}
-        {% with field=form.slug %}{% include 'hospital/_field.html' %}{% endwith %}
-      </div>
-      {% with field=form.published %}{% include 'hospital/_field.html' %}{% endwith %}
-      <div class="label-sm mb-2">Add a field</div>
-      <div class="type-picker" id="types">
-        <button type="button" data-type="text"><i class="bi bi-input-cursor-text"></i> Short text</button>
-        <button type="button" data-type="textarea"><i class="bi bi-text-paragraph"></i> Long text</button>
-        <button type="button" data-type="number"><i class="bi bi-123"></i> Number</button>
-        <button type="button" data-type="date"><i class="bi bi-calendar3"></i> Date</button>
-        <button type="button" data-type="select"><i class="bi bi-menu-button-wide"></i> Choice</button>
-        <button type="button" data-type="checkbox"><i class="bi bi-check2-square"></i> Checkbox</button>
-      </div>
-      <div id="fields"></div>
-      <div class="empty" id="no-fields"><i class="bi bi-ui-checks"></i>No fields yet. Choose a field type above.</div>
-      <div class="form-actions"><button class="btn btn-primary"><i class="bi bi-check2"></i>Save form</button><a href="{% url 'studio' %}" class="btn btn-ghost">Cancel</a><span class="ms-auto small muted" id="field-count"></span></div>
-    </section>
-    <aside class="preview-sheet" aria-label="Live preview">
-      <div class="label-sm mb-2"><i class="bi bi-eye me-1"></i>Live preview</div>
-      <h3 id="pv-title">Untitled form</h3>
-      <div class="ph">Patient name · MRN appear here when the form is filled</div>
-      <div id="preview"></div>
-    </aside>
-  </div>
-</form>
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{% if obj %}Edit {{ obj.name }}{% else %}Design a form{% endif %}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/studio.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}{% if obj %}{{ obj.name }}{% else %}Design a form{% endif %}{% endblock %}
+{% block subheading %}<p class="sub">{% if obj %}Version {{ obj.version }}{% if versions %} · {{ versions|length }} published version{{ versions|length|pluralize }}{% endif %} · changing a used form makes a new version; earlier answers keep their own copy.{% else %}Pick fields on the left, set rules and calculations on the right, and preview it as staff will see it.{% endif %}</p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="{% url 'studio' %}"><i class="bi bi-arrow-left"></i>Forms</a>
+  <select id="fd-template" class="form-select" style="width:auto" aria-label="Start from a template"><option value="">Templates…</option>{% for k, v in boot.templates.items %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+  <button type="button" class="btn btn-ghost" id="fd-undo" title="Undo (Ctrl+Z)" aria-label="Undo"><i class="bi bi-arrow-counterclockwise"></i></button>
+  <button type="button" class="btn btn-ghost" id="fd-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><i class="bi bi-arrow-clockwise"></i></button>
+  <button type="button" class="btn btn-ghost" id="fd-preview-btn" aria-pressed="false"><i class="bi bi-play-circle"></i>Preview</button>
+  <span id="fd-dirty" class="small muted" hidden>Unsaved</span>
+  <button type="button" class="btn btn-primary" id="fd-save"><i class="bi bi-check2"></i>Save</button>
+{% endblock %}
+{% block content %}{% csrf_token %}
+<div class="fd-top">
+  <label>Form name<input id="fd-name" class="form-control" maxlength="200" placeholder="e.g. Consent for surgery"></label>
+  <label>Short name<input id="fd-slug" class="form-control" maxlength="50" placeholder="consent-surgery"></label>
+  <label>Description<input id="fd-desc" class="form-control" maxlength="300" placeholder="What this form is for"></label>
+  <label class="fd-chk mb-2"><input type="checkbox" id="fd-pub">Published (staff can fill it in)</label>
+</div>
+<div class="fd-shell">
+  <nav class="fd-palette" id="fd-palette" aria-label="Field types"></nav>
+  <div><div class="fd-pages" id="fd-pages"></div><div class="fd-canvas" id="fd-canvas" aria-label="Fields on this page"></div></div>
+  <div class="fd-insp-col"><div id="fd-problems" class="fd-problems"></div><div class="fd-insp" id="fd-insp"></div></div>
+</div>
+<div class="fd-preview" id="fd-preview" hidden><div class="fd-preview-card" role="dialog" aria-label="Preview">
+  <div class="d-flex align-items-center mb-2"><h2 class="mb-0">Preview</h2><span class="small muted ms-2">Try the rules and calculations. Nothing is saved.</span><button type="button" class="btn btn-ghost btn-sm ms-auto" id="fd-preview-close">Close</button></div>
+  <div id="fd-preview-body"></div><pre id="fd-preview-out" hidden></pre></div></div>
+<div id="fd-toast" class="fd-toast" role="status"></div>
+{{ boot|json_script:'designer-boot' }}
 {% endblock %}
 {% block scripts %}
-<script>
-(() => {
-  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const hidden = document.getElementById('id_schema'), list = document.getElementById('fields'), pv = document.getElementById('preview');
-  const nameIn = document.getElementById('id_name'), slugIn = document.getElementById('id_slug');
-  const LABELS = {text:'Short text', textarea:'Long text', number:'Number', date:'Date', select:'Choice', checkbox:'Checkbox'};
-  let fields = [];
-  try { const s = JSON.parse(hidden.value || '{}'); fields = Array.isArray(s.fields) ? s.fields : []; } catch (_) {}
-  const keyify = s => (s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/^(\d)/, 'f_$1') || 'field';
-  const uniqueKey = (base, skip) => { let k = base, n = 2; while (fields.some((f, i) => i !== skip && f.key === k)) k = `${base}_${n++}`; return k; };
-  let slugTouched = !!slugIn.value;
-  slugIn.addEventListener('input', () => { slugTouched = true; });
-  nameIn.addEventListener('input', () => {
-    if (!slugTouched) slugIn.value = nameIn.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    document.getElementById('pv-title').textContent = nameIn.value || 'Untitled form';
-  });
-  document.getElementById('pv-title').textContent = nameIn.value || 'Untitled form';
-
-  function sync() {
-    hidden.value = JSON.stringify({fields});
-    document.getElementById('no-fields').hidden = fields.length > 0;
-    document.getElementById('field-count').textContent = fields.length ? `${fields.length} field${fields.length > 1 ? 's' : ''}` : '';
-    pv.innerHTML = fields.map(f => {
-      const req = f.required ? ' <span class="text-danger">*</span>' : '';
-      if (f.type === 'checkbox') return `<div class="field check"><input type="checkbox" class="form-check-input" disabled><label class="form-label">${esc(f.label)}</label></div>`;
-      let ctl;
-      if (f.type === 'textarea') ctl = `<textarea class="form-control" rows="3" disabled></textarea>`;
-      else if (f.type === 'select') ctl = `<select class="form-select" disabled>${(f.options || []).map(o => `<option>${esc(o)}</option>`).join('') || '<option>Add options…</option>'}</select>`;
-      else ctl = `<input class="form-control" type="${f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}" disabled>`;
-      return `<div class="field"><label class="form-label">${esc(f.label || 'Untitled field')}${req}</label>${ctl}</div>`;
-    }).join('') || '<div class="empty">Your form will appear here.</div>';
-  }
-  function render() {
-    list.innerHTML = fields.map((f, i) => `
-      <div class="fld" draggable="true" data-i="${i}">
-        <div class="fld-head"><i class="bi bi-grip-vertical grip" title="Drag to reorder"></i><span class="tag teal">${LABELS[f.type]}</span><span class="small muted">key: ${esc(f.key)}</span>
-          <span class="x"><button type="button" data-act="up" title="Move up" aria-label="Move up"><i class="bi bi-arrow-up"></i></button><button type="button" data-act="down" title="Move down" aria-label="Move down"><i class="bi bi-arrow-down"></i></button><button type="button" data-act="del" title="Remove" aria-label="Remove field"><i class="bi bi-trash3"></i></button></span></div>
-        <div class="row-2">
-          <input class="form-control" data-prop="label" value="${esc(f.label)}" placeholder="Question or label" aria-label="Field label">
-          <label class="small d-flex align-items-center gap-2"><input type="checkbox" class="form-check-input m-0" data-prop="required" ${f.required ? 'checked' : ''} ${f.type === 'checkbox' ? 'disabled' : ''}> Required</label>
-        </div>
-        ${f.type === 'select' ? `<input class="form-control mt-2" data-prop="options" value="${esc((f.options || []).join(', '))}" placeholder="Options, separated by commas" aria-label="Options">` : ''}
-      </div>`).join('');
-    sync();
-  }
-  document.getElementById('types').addEventListener('click', e => {
-    const b = e.target.closest('[data-type]'); if (!b) return;
-    const label = LABELS[b.dataset.type] + ' ' + (fields.length + 1);
-    fields.push({key: uniqueKey(keyify(label)), label, type: b.dataset.type, required: false, ...(b.dataset.type === 'select' ? {options: ['Yes', 'No']} : {})});
-    render(); list.lastElementChild?.querySelector('[data-prop="label"]').select();
-  });
-  list.addEventListener('input', e => {
-    const el = e.target, i = +el.closest('.fld').dataset.i, f = fields[i], prop = el.dataset.prop;
-    if (prop === 'label') { f.label = el.value; f.key = uniqueKey(keyify(el.value), i); el.closest('.fld').querySelector('.muted').textContent = 'key: ' + f.key; }
-    if (prop === 'required') f.required = el.checked;
-    if (prop === 'options') f.options = el.value.split(',').map(s => s.trim()).filter(Boolean);
-    sync();
-  });
-  list.addEventListener('click', e => {
-    const b = e.target.closest('[data-act]'); if (!b) return;
-    const i = +b.closest('.fld').dataset.i;
-    if (b.dataset.act === 'del') fields.splice(i, 1);
-    if (b.dataset.act === 'up' && i > 0) [fields[i - 1], fields[i]] = [fields[i], fields[i - 1]];
-    if (b.dataset.act === 'down' && i < fields.length - 1) [fields[i + 1], fields[i]] = [fields[i], fields[i + 1]];
-    render();
-  });
-  let dragFrom = null;
-  list.addEventListener('dragstart', e => { const f = e.target.closest('.fld'); if (f) { dragFrom = +f.dataset.i; e.dataTransfer.effectAllowed = 'move'; } });
-  list.addEventListener('dragover', e => { const f = e.target.closest('.fld'); if (f) { e.preventDefault(); list.querySelectorAll('.drag-over').forEach(x => x.classList.remove('drag-over')); f.classList.add('drag-over'); } });
-  list.addEventListener('drop', e => {
-    const f = e.target.closest('.fld'); if (!f || dragFrom === null) return; e.preventDefault();
-    const to = +f.dataset.i, [m] = fields.splice(dragFrom, 1); fields.splice(to, 0, m); dragFrom = null; render();
-  });
-  document.getElementById('builder-form').addEventListener('submit', sync);
-  render();
-})();
-</script>
+<script src="{% asset 'hospital/js/formkit.js' %}"></script>
+<script src="{% asset 'hospital/js/injury-figure.js' %}"></script>
+<script src="{% asset 'hospital/js/bedside.js' %}"></script>
+<script src="{% asset 'hospital/js/form-runtime.js' %}"></script>
+<script src="{% asset 'hospital/js/form-designer.js' %}"></script>
 {% endblock %}

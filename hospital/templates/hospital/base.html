@@ -49,6 +49,7 @@
       </div>
       <div class="nav-group"><span>Organisation</span>
         <a class="nav-link {% nav_active '/studio/' %}" href="{% url 'studio' %}"><i class="bi bi-ui-checks-grid"></i>Forms &amp; approvals{% if nav_counts.studio %}<span class="badge-count">{{ nav_counts.studio }}</span>{% endif %}</a>
+        <a class="nav-link {% nav_active '/esign/' %}" href="{% url 'esign' %}"><i class="bi bi-pen"></i>E-sign{% if nav_counts.esign %}<span class="badge-count">{{ nav_counts.esign }}</span>{% endif %}</a>
         <a class="nav-link {% nav_active '/finance/' %}" href="{% url 'finance' %}"><i class="bi bi-cash-stack"></i>Finance{% if nav_counts.bills %}<span class="badge-count">{{ nav_counts.bills }}</span>{% endif %}</a>
         <a class="nav-link {% nav_active '/attendance/' %}" href="{% url 'attendance' %}"><i class="bi bi-clock-history"></i>Attendance</a>
         {% if request.user.is_staff %}<a class="nav-link" href="{% url 'admin:index' %}"><i class="bi bi-sliders"></i>Configuration</a>{% endif %}

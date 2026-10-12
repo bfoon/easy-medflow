@@ -1,0 +1,16 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}E-sign{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/studio.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}E-sign{% endblock %}
+{% block subheading %}<p class="sub">Send consent forms, letters and completed forms for signature: staff, outside people by link, or patients in person on this device.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'esign_verify' %}"><i class="bi bi-patch-check"></i>Verify a document</a><a class="btn btn-primary" href="{% url 'esign_new' %}"><i class="bi bi-send"></i>New envelope</a>{% endblock %}
+{% block content %}
+<nav class="es-tabs">
+  <a href="?tab=action" class="{% if tab == 'action' %}on{% endif %}">Needs you<small>{{ counts.action }}</small></a><a href="?tab=sent" class="{% if tab == 'sent' %}on{% endif %}">Sent<small>{{ counts.sent }}</small></a>
+  <a href="?tab=drafts" class="{% if tab == 'drafts' %}on{% endif %}">Drafts<small>{{ counts.drafts }}</small></a><a href="?tab=completed" class="{% if tab == 'completed' %}on{% endif %}">Completed<small>{{ counts.completed }}</small></a></nav>
+<div class="es-list">{% for e in envelopes %}
+  <a class="es-row" href="{% if e.status == 'draft' %}{% url 'esign_prepare' e.uid %}{% else %}{% url 'esign_detail' e.uid %}{% endif %}"><div><b>{{ e.subject }}</b>
+    <div class="small muted">{% if e.patient %}{{ e.patient.full_name }} · {% endif %}from {{ e.created_by|display_name }} · {{ e.created_at|ago }} · <code>{{ e.short_id }}</code></div></div>
+    <div class="d-flex gap-3 align-items-center"><span class="es-dots" title="Recipients">{% for r in e.recipients.all %}<i class="{{ r.status }}" title="{{ r.name }}: {{ r.get_status_display }}"></i>{% endfor %}</span><span class="st-status {{ e.status }}">{{ e.get_status_display }}</span></div></a>
+{% empty %}<div class="panel text-center muted py-5">{% if tab == 'action' %}Nothing is waiting for you.{% else %}Nothing here yet.{% endif %} <a href="{% url 'esign_new' %}">Send a document for signature</a>.</div>{% endfor %}</div>
+{% endblock %}

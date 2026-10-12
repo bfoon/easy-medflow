@@ -204,25 +204,6 @@ def sign_document(kind,instance,user,meaning):
     AuditEvent.objects.create(actor=user,action='esign',target=f'{kind}:{instance.pk}',details={'signature_id':s.pk,'sha256':digest})
     return s
 
-@transaction.atomic
-def advance_workflow(run,user,action,comment=''):
-    r=WorkflowRun.objects.select_for_update().select_related('definition','submission').get(pk=run.pk)
-    if r.status!='open':raise ValidationError('Workflow already closed')
-    steps=r.definition.steps
-    if not isinstance(steps,list) or r.step_index>=len(steps):raise ValidationError('Invalid workflow')
-    step=steps[r.step_index]
-    profile=getattr(user,'hospital_staff',None)
-    if not user.is_superuser and (not profile or not profile.active or profile.role!=step.get('role')):raise ValidationError('Not authorized for this step')
-    if action not in ('approve','reject'):raise ValidationError('Invalid action')
-    WorkflowAction.objects.create(run=r,step_index=r.step_index,action=action,actor=user,comment=comment)
-    if action=='reject':r.status='rejected';r.submission.status='rejected'
-    else:
-        r.step_index+=1
-        if r.step_index>=len(steps):r.status='approved';r.submission.status='approved'
-    r.save(update_fields=['step_index','status'])
-    r.submission.save(update_fields=['status'])
-    return r
-
 
 # ------------------------------------------------------------------ billing
 import math

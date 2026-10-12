@@ -1,0 +1,50 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Injuries & burns · {{ p.full_name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/care.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}Injuries &amp; burns{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }}{% if p.age is not None %} · {{ p.age }} yrs{% endif %} · visit {{ e.created_at|date:'j M Y' }}{% if adm %} · in bed <a href="{% url 'bed_detail' adm.bed_id %}">{{ adm.bed.code }}</a>{% endif %}</p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="{% url 'encounter_detail' e.pk %}"><i class="bi bi-arrow-left"></i>Visit</a>
+  {% if adm %}<a class="btn btn-ghost" href="{% url 'bed_detail' adm.bed_id %}"><i class="bi bi-hospital"></i>Bed {{ adm.bed.code }}</a>{% endif %}
+  <span id="inj-dirty" class="small muted" hidden>Unsaved changes</span>
+  <button class="btn btn-primary" id="inj-save" disabled><i class="bi bi-check2"></i>Save assessment</button>
+{% endblock %}
+{% block content %}{% csrf_token %}
+<div class="inj-layout">
+  <section class="panel inj-stage">
+    <div class="panel-head"><h2>Body map</h2><span class="hint">Click a part of the body to add a burn or injury there.</span></div>
+    <div id="inj-figure" class="inj-figure-host"></div>
+    <div class="inj-legend" aria-label="Legend">
+      <span><i style="background:#F4A9A1"></i>Superficial</span><span><i style="background:#E0574B"></i>Superficial partial</span>
+      <span><i style="background:#B7303D"></i>Deep partial</span><span><i style="background:#4E3A2E"></i>Full thickness</span>
+      <span><i class="numb"></i>Below spinal injury</span>
+    </div>
+  </section>
+  <div class="stack">
+    <section class="panel">
+      <label class="inj-weight">Weight <input type="number" id="inj-weight" min="1" max="400" step="0.1" class="form-control form-control-sm" inputmode="decimal"> kg</label>
+      <div id="inj-summary" class="inj-summary" aria-live="polite"></div>
+    </section>
+    <section class="panel">
+      <div class="inj-tabs" role="tablist">
+        <button type="button" role="tab" data-tab="burns"><i class="bi bi-fire"></i>Burns</button>
+        <button type="button" role="tab" data-tab="spine"><i class="bi bi-diagram-2"></i>Spine</button>
+        <button type="button" role="tab" data-tab="head"><i class="bi bi-person-exclamation"></i>Head</button>
+        <button type="button" role="tab" data-tab="wounds"><i class="bi bi-bandaid"></i>Fractures &amp; wounds</button>
+        <button type="button" role="tab" data-tab="notes"><i class="bi bi-journal-text"></i>Notes</button>
+      </div>
+      <div id="inj-panel" class="inj-panel" role="tabpanel"></div>
+    </section>
+    <section class="panel"><div class="panel-head"><h2>Earlier versions</h2><span class="hint">Each save keeps a copy.</span></div>
+      <ul class="plain ruled inj-history" id="inj-history">{% for h in history %}<li><b>{{ h.created_at|date:'j M H:i' }}</b><span>{{ h.assessed_by|display_name }} · TBSA {{ h.computed.tbsa|default:0 }}%{% if h.data.spine %} · {{ h.data.spine.level }} ASIA {{ h.data.spine.asia }}{% endif %}{% if h.computed.head %} · GCS {{ h.computed.head.gcs }}{% endif %}</span></li>{% empty %}<li class="muted small">Not saved yet.</li>{% endfor %}</ul>
+    </section>
+    <p class="small muted">Burn area uses the Lund–Browder chart for the patient's age; fluids use the Parkland formula. These are starting estimates for documentation and teaching: follow local protocols and senior advice.</p>
+  </div>
+</div>
+<div id="inj-toast" class="inj-toast" role="status" aria-live="polite"></div>
+{{ boot|json_script:'injury-boot' }}
+{% endblock %}
+{% block scripts %}
+<script src="{% asset 'hospital/js/injury-figure.js' %}"></script>
+<script src="{% asset 'hospital/js/injury-editor.js' %}"></script>
+{% endblock %}

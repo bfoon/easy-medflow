@@ -204,6 +204,8 @@ def run_all():
     res['blood disease cases'] = blood_cases(doctor, rad)
     res['lab QC runs'] = lab_management(doctor)
     res['patients placed on map'] = link_patient_locations()
+    from .demo_care import run as care_demo
+    res['bedside, injury and form demos'] = care_demo(doctor, nurse)
     return res
 
 

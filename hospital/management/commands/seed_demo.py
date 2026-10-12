@@ -15,7 +15,7 @@ from django.utils import timezone
 from hospital.models import (Invoice, InvoiceLine, Payment, Bed, Admission, FormDefinition, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingImage, ImagingOrder, LabRequest, PrescriptionItem, LabResultValue, Admission, Allergy, Attendance, AuditEvent, Bed, Condition, Department, Encounter,
                              FormDefinition, FormSubmission, LabOrder, LabTest, Medication, Patient, Prescription,
                              QueueTicket, Referral, StaffProfile, StockBatch, WorkflowDefinition, WorkflowRun)
-from hospital.services import advance_workflow, group_orphan_lab_orders, sign_document
+from hospital.services import group_orphan_lab_orders, sign_document
 
 FIRST_F = ['Awa', 'Fatou', 'Isatou', 'Mariama', 'Binta', 'Haddy', 'Ndey', 'Kaddy', 'Aminata', 'Jainaba', 'Sainabou', 'Oumie']
 FIRST_M = ['Lamin', 'Ebrima', 'Modou', 'Ousman', 'Alieu', 'Momodou', 'Bakary', 'Sulayman', 'Omar', 'Musa', 'Kebba', 'Yusupha']
@@ -237,9 +237,10 @@ class Command(BaseCommand):
             vals = {'procedure': 'Wound debridement', 'risks_explained': True, 'date': str(date.today())} if defn == consent else {'chief_complaint': 'Fever', 'pain_score': '4', 'category': 'Standard', 'pregnant': False}
             s = FormSubmission.objects.create(definition=defn, patient=p, values=vals, schema_snapshot=defn.schema, submitted_by=nurse)
             if defn == consent:
-                run = WorkflowRun.objects.create(definition=wf, submission=s)
+                from hospital import flows
+                run = flows.start_run(wf, s, nurse)
                 if n == 3:
-                    advance_workflow(run, nurse, 'approve', 'Checked with patient')
+                    flows.decide(run.tasks.get(status='pending'), nurse, 'approve', 'Checked with patient')
             elif n == 0:
                 sign_document('form', s, doctor, 'Reviewed and signed')
             audit(nurse, 'submit_form', f'form_submission:{s.pk}', now - timedelta(minutes=30 + n * 7))

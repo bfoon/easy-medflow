@@ -1,0 +1,38 @@
+{% extends 'hospital/esign/public_base.html' %}{% load medflow %}
+{% block title %}{{ env.subject }}{% endblock %}
+{% block content %}
+<main class="sg-wrap">
+  <div class="sg-head"><div><h1>{{ env.subject }}</h1><div class="sub">From {{ env.created_by.get_full_name|default:env.created_by.username }}{% if env.message %} · “{{ env.message|truncatechars:160 }}”{% endif %}</div></div>
+    {% if boot.detail_url %}<a class="btn btn-ghost btn-sm ms-auto" href="{{ boot.detail_url }}">Envelope details</a>{% endif %}</div>
+  {% if rec.role == 'in_person' %}<div class="sg-kiosk"><i class="bi bi-tablet"></i><div><b>Please hand this device to {{ rec.name }}</b><div>{{ rec.relation|default:'Signer' }} · the staff member stays nearby to help and confirms who is signing.</div></div></div>{% endif %}
+  {% if rec.status in 'signed approved copied declined' or env.status != 'sent' %}
+    <div class="sg-done"><div class="sg-done-icon {% if rec.status == 'declined' or env.status in 'declined voided expired' %}bad{% endif %}"><i class="bi {% if env.status == 'completed' %}bi-check-circle{% elif rec.status == 'declined' or env.status in 'declined voided expired' %}bi-x-circle{% else %}bi-hourglass-split{% endif %}"></i></div>
+      <h2>{% if env.status == 'completed' %}Everyone has signed{% elif env.status == 'voided' %}The sender cancelled this envelope{% elif env.status == 'expired' %}This envelope expired{% elif rec.status == 'declined' or env.status == 'declined' %}This envelope was declined{% elif rec.status == 'waiting' %}It is not your turn yet{% else %}You have finished your part{% endif %}</h2>
+      {% if env.status == 'completed' %}<a class="btn btn-primary" href="{{ boot.signed_url }}"><i class="bi bi-download"></i>Download the signed copy</a>{% endif %}</div>
+  {% elif rec.status == 'waiting' %}<div class="sg-done"><div class="sg-done-icon"><i class="bi bi-hourglass-split"></i></div><h2>It is not your turn yet</h2><p>You will be told when the people before you have signed.</p></div>
+  {% else %}
+    <div id="sg-done" class="sg-done" hidden></div>
+    <div class="es-pages loading" id="sg-pages" data-worker="{% asset 'hospital/vendor/pdfjs/pdf.worker.min.js' %}"></div>
+    <section class="sg-finishbox" id="sg-finishbox">
+      {% if rec.role == 'in_person' %}<label class="small fw-semibold">How the signer's identity was confirmed (staff)<input class="form-control mt-1" id="sg-identity" value="Name and date of birth{% if boot.patient_dob %} ({{ boot.patient_dob }}){% endif %} confirmed in person" maxlength="200"></label>{% endif %}
+      <label class="fd-chk"><input type="checkbox" id="sg-consent">{% if rec.role == 'approver' %}I approve this document.{% else %}I agree to sign electronically. My electronic signature has the same meaning as signing by hand.{% endif %}</label>
+    </section>
+    <div class="sg-bar" id="sg-bar"><div class="sg-bar-in">
+      {% if rec.role != 'approver' %}<span class="sg-ring" id="sg-ring" aria-hidden="true"></span><b id="sg-count"></b><span id="sg-read" hidden></span>
+      <button type="button" class="btn btn-ghost ms-auto" id="sg-next"></button>{% else %}<span class="ms-auto"></span>{% endif %}
+      <button type="button" class="btn btn-ghost" id="sg-decline">Decline</button>
+      <button type="button" class="btn btn-primary" id="sg-finish">{% if rec.role == 'approver' %}Approve{% else %}Finish{% endif %}</button></div></div>
+    <div class="sg-modal" id="sg-adopt" hidden><div class="sg-modal-card" role="dialog" aria-modal="true" aria-labelledby="sg-adopt-h"><h2 id="sg-adopt-h" class="h5 mb-0">Adopt your signature</h2>
+      <div class="sg-tabs" role="tablist"><button type="button" data-mode="draw" role="tab">Draw</button><button type="button" data-mode="type" role="tab">Type</button><button type="button" data-mode="upload" role="tab">Upload</button></div>
+      <div data-pane="draw"><canvas id="sg-pad" aria-label="Draw your signature here"></canvas><button type="button" class="btn btn-sm btn-ghost mt-1" id="sg-clear"><i class="bi bi-eraser"></i>Clear</button></div>
+      <div data-pane="type" hidden><input class="form-control mb-2" id="sg-typed" maxlength="60" aria-label="Your name"><div class="sg-fonts"><button type="button" class="sg-font" data-font="Caveat" style="font-family:Caveat" aria-pressed="true"></button><button type="button" class="sg-font" data-font="Dancing Script" style="font-family:'Dancing Script'" aria-pressed="false"></button></div></div>
+      <div data-pane="upload" hidden><input type="file" class="form-control" id="sg-file" accept="image/png,image/jpeg"><div id="sg-uprev" class="mt-2"></div></div>
+      <div class="d-flex gap-2 justify-content-end"><button type="button" class="btn btn-ghost" id="sg-adopt-cancel">Cancel</button><button type="button" class="btn btn-primary" id="sg-adopt-ok">Adopt and sign</button></div></div></div>
+    <div class="sg-modal" id="sg-declinebox" hidden><div class="sg-modal-card" role="dialog" aria-modal="true"><h2 class="h5 mb-0">Decline to sign</h2><p class="mb-0">The sender will be told, and the envelope stops for everyone.</p>
+      <textarea class="form-control" id="sg-reason" rows="3" placeholder="Why are you declining?" maxlength="400"></textarea>
+      <div class="d-flex gap-2 justify-content-end"><button type="button" class="btn btn-ghost" id="sg-decline-cancel">Keep the document</button><button type="button" class="btn btn-ink" id="sg-decline-ok">Decline</button></div></div></div>
+    {{ boot|json_script:'sign-boot' }}
+  {% endif %}
+</main>
+{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/vendor/pdfjs/pdf.min.js' %}"></script><script src="{% asset 'hospital/js/esign.js' %}"></script>{% endblock %}

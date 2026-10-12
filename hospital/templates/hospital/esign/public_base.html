@@ -1,0 +1,7 @@
+{% load medflow %}<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>{% block title %}E-sign{% endblock %} · E-MedFlow</title>
+<link href="{% asset 'hospital/vendor/fonts/fonts.css' %}" rel="stylesheet"><link href="{% asset 'hospital/vendor/bootstrap.min.css' %}" rel="stylesheet">
+<link href="{% asset 'hospital/vendor/bootstrap-icons/bootstrap-icons.min.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/medflow.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/studio.css' %}" rel="stylesheet">
+<style>.es-brand{background:var(--ink);color:#fff;padding:10px 16px;display:flex;align-items:center;gap:10px}.es-brand b{font-family:var(--display)}.es-brand span{color:#9FC0D0;font-size:.85rem}</style>
+</head><body><header class="es-brand"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#18405A"/><path d="M4 17h6l2-5 4 10 3-8 2 3h7" fill="none" stroke="#3FE0B0" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><b>E-MedFlow</b><span>Secure e-sign</span></header>
+{% csrf_token %}{% block content %}{% endblock %}<div id="es-toast" class="fd-toast" role="status"></div>{% block scripts %}{% endblock %}</body></html>

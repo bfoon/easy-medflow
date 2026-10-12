@@ -38,6 +38,7 @@
         <li><a class="dropdown-item" href="{% url 'network_specialists' %}?encounter={{ open_encounter.pk }}">Find a specialist</a></li>
         <li><button class="dropdown-item" data-drawer="{% url 'referral_new' %}?encounter={{ open_encounter.pk }}" data-title="Referral">Refer</button></li>
         <li><button class="dropdown-item" data-drawer="{% url 'admission_new' %}?encounter={{ open_encounter.pk }}" data-title="Admit patient">Admit</button></li>
+        <li><a class="dropdown-item" href="{% url 'injury_assessment' open_encounter.pk %}">Injuries &amp; burns</a></li>
         {% endif %}
       </ul>
     </div>

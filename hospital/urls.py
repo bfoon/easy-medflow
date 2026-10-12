@@ -2,6 +2,9 @@ from django.urls import path
 from . import views as v
 from . import lab_views as lv
 from . import pharmacy_views as pv
+from . import care_views as care
+from . import studio_views as sv
+from . import esign_views as ev
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -67,6 +70,9 @@ urlpatterns = [
     path('network/inbox/', v.network_inbox, name='network_inbox'),
     path('beds/<int:pk>/', v.bed_detail, name='bed_detail'),
     path('beds/<int:pk>/maintenance/', v.bed_maintenance, name='bed_maintenance'),
+    path('beds/admissions/<int:pk>/bedside/', care.bedside_save, name='bedside_save'),
+    path('beds/admissions/<int:pk>/observations/', care.observation_save, name='observation_save'),
+    path('encounters/<int:pk>/injuries/', care.injury_assessment, name='injury_assessment'),
     path('referrals/<int:pk>/<str:state>/', v.referral_transition, name='referral_transition'),
 
     path('labs/', v.labs, name='labs'),
@@ -155,11 +161,31 @@ urlpatterns = [
     path('finance/payments/<int:pk>/receipt/', v.payment_receipt, name='payment_receipt'),
     path('attendance/', v.attendance, name='attendance'),
 
-    path('studio/', v.studio, name='studio'),
-    path('studio/forms/new/', v.form_definition_new, name='form_definition_new'),
-    path('studio/workflows/new/', v.workflow_definition_new, name='workflow_definition_new'),
+    path('studio/', sv.studio, name='studio'),
+    path('studio/forms/new/', sv.form_designer, name='form_definition_new'),
+    path('studio/forms/<int:pk>/edit/', sv.form_designer, name='form_edit'),
+    path('studio/workflows/new/', sv.workflow_designer, name='workflow_definition_new'),
+    path('studio/workflows/<int:pk>/edit/', sv.workflow_designer, name='workflow_edit'),
     path('studio/fill/', v.fill_form_pick, name='fill_form_pick'),
-    path('studio/forms/<int:pk>/fill/<int:patient_id>/', v.fill_form, name='fill_form'),
+    path('studio/forms/<int:pk>/fill/<int:patient_id>/', sv.fill_form, name='fill_form'),
+    path('studio/forms/<int:pk>/draft/<int:patient_id>/', sv.form_draft, name='form_draft'),
+    path('studio/submissions/<int:pk>/', sv.submission_detail, name='submission_detail'),
     path('studio/submissions/<int:pk>/sign/', v.submission_sign, name='submission_sign'),
-    path('studio/runs/<int:pk>/<str:action>/', v.workflow_act, name='workflow_act'),
+    path('studio/tasks/', sv.tasks, name='tasks'),
+    path('studio/tasks/<int:pk>/act/', sv.task_act, name='task_act'),
+    path('studio/tasks/<int:pk>/reassign/', sv.task_reassign, name='task_reassign'),
+    path('studio/runs/<int:pk>/', sv.run_detail, name='run_detail'),
+    path('studio/runs/<int:pk>/resubmit/', sv.run_resubmit, name='run_resubmit'),
+    path('studio/runs/<int:pk>/cancel/', sv.run_cancel, name='run_cancel'),
+    path('studio/runs/<int:pk>/<str:action>/', sv.workflow_act, name='workflow_act'),
+    path('esign/', ev.home, name='esign'),
+    path('esign/new/', ev.compose, name='esign_new'),
+    path('esign/verify/', ev.verify, name='esign_verify'),
+    path('esign/sign/<str:token>/', ev.sign_page, name='esign_sign'),
+    path('esign/sign/<str:token>/document/', ev.sign_file, name='esign_sign_file'),
+    path('esign/sign/<str:token>/act/', ev.sign_act, name='esign_sign_act'),
+    path('esign/<uuid:uid>/', ev.detail, name='esign_detail'),
+    path('esign/<uuid:uid>/prepare/', ev.prepare, name='esign_prepare'),
+    path('esign/<uuid:uid>/file/<str:which>/', ev.file, name='esign_file'),
+    path('esign/<uuid:uid>/<str:action>/', ev.act, name='esign_act'),
 ]

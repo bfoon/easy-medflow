@@ -1,0 +1,10 @@
+{% extends 'hospital/esign/public_base.html' %}
+{% block content %}<main class="sg-done"><div class="sg-done-icon"><i class="bi bi-shield-lock"></i></div><h1 class="h3">Enter your access code</h1>
+<p>{{ env.created_by.get_full_name|default:env.created_by.username }} sent you “{{ env.subject }}”. They gave you an access code separately, by phone or message.</p>
+<form id="code-form" class="d-flex gap-2"><input class="form-control" id="code" autocomplete="one-time-code" inputmode="numeric" aria-label="Access code" required><button class="btn btn-primary">Open</button></form>
+<p id="code-err" class="text-danger small" role="alert"></p></main>{% endblock %}
+{% block scripts %}<script>
+document.getElementById('code-form').onsubmit = async e => { e.preventDefault();
+  const r = await fetch('{% url "esign_sign_act" rec.token %}', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value}, body: JSON.stringify({action: 'code', code: document.getElementById('code').value})});
+  const d = await r.json(); if (d.ok) location.href = d.url; else document.getElementById('code-err').textContent = d.error; };
+</script>{% endblock %}

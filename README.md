@@ -90,8 +90,11 @@ pharmacy, finance, management, admin). Superusers may access everything; other a
 - **Laboratory** — collect → process → result → verify pipeline. **Pharmacy** — draft → signed → dispensed lanes,
   stock meters, live allergy/stock check while prescribing. **Beds** — ward floor map with discharge → cleaning → ready.
 - **Referrals** — progress tracker with enforced transitions. **Attendance** — clock in/out with shift ring.
-- **Forms & approvals** — visual form builder with live preview and drag-to-reorder; workflow builder showing the
-  approval chain; signature ledger.
+- **Forms & approvals** — form designer (24 field types, pages, rules, formulas, live preview, undo/redo), flow designer
+  with a simulator, a task inbox with deadlines, and an animated map of where each request is.
+- **E-sign** — DocuSign-style envelopes: place fields on any PDF, signing order, links for outside signers with access
+  codes, patients signing in person with a witness, a sealed PDF with a certificate page, and a public verify page.
+- **Bedside and injuries** — an animated bed scene and an injury & burns body map, both drawn from the values entered.
 - **Search** — press `Ctrl K` (or `/`) anywhere to find a patient by name, MRN or phone, or jump to a page.
 
 Animations honour the operating system “reduce motion” setting.
@@ -304,6 +307,49 @@ patient's email on their record), or the link copied. The message contains the q
 the patient can open on their phone without signing in: it shows only the number, department, people ahead and an
 estimated wait, never their name or medical details, and it expires after 24 hours.
 
+## At the bedside (bed page)
+
+Below the patient's details is an animated picture of the patient in bed with everything attached to them. Each part
+moves according to the values entered beside it, and the server checks and limits every value before saving:
+
+- **IV**: drops fall in the drip chamber at exactly *rate × drop factor ÷ 60* per minute (125 mL/h with a 20 drops/mL set
+  = 41.7 drops/min); the bag level is what is left and goes down in real time; time until empty is shown. On a pump the
+  pump shows the rate. Blood and plasma show in their own colours.
+- **Monitor**: the ECG and pulse-oximeter waves run at the recorded heart rate, the breathing trace and the chest at the
+  breathing rate. Values that score 2 or 3 in NEWS2 turn amber or red and the monitor frame flashes. An optional beep
+  sounds with each heartbeat on that screen only.
+- **Oxygen**: the flowmeter float sits at the set flow, the humidifier bubbles faster with more flow, and the cannula or
+  mask (with a reservoir bag that empties as the patient breathes in) is drawn on the face. Flow is limited to what each
+  device allows, and the oxygen percentage is estimated.
+- **Urinary catheter, NG tube, BP cuff, neck collar, leg traction, chest drain** (bubbling when there is an air leak),
+  **head of bed angle** and **side rails**. Urine output below 0.5 mL/kg/h, a nearly empty bag, a full urine bag or a
+  bubbling drain are flagged.
+- The patient's colour changes with low oxygen, fever or cold; the wristband is red when allergies are recorded;
+  dressings, a splint or a head bandage appear from the injury assessment.
+
+Below the picture, **Record observations** saves heart rate, blood pressure, breathing, SpO₂, temperature and
+alertness, scores NEWS2 and shows the expected response. Click any equipment on the picture to open its settings.
+Nurses and doctors can change the equipment; others see it read-only.
+
+## Injuries & burns
+
+From a visit (or *More → Injuries & burns* on the patient page): a front and back body map. Click the body to add a
+burn or an injury at that spot. The figure is drawn from what is entered:
+
+- **Burns** in four depths (redness, blisters, deep partial, full thickness with charring), covering the entered share
+  of each area, with a band for burns that go all the way round. The burned area uses the **Lund–Browder** chart for the
+  patient's age (simple redness is not counted). With the weight entered it shows **Parkland** fluids: the 24-hour total,
+  the first 8 hours and next 16 hours with rates, and, given the time of the burn and fluids already given, the rate
+  needed now. *Set the IV to … mL/h* applies that rate to the bedside IV.
+- **Spinal injury** by level (C1 to sacrum) and ASIA grade: a close-up of the spine with nerve signals that stop at the
+  injury, or partly get through for incomplete injuries, and the parts of the body below the level shaded. Alerts follow
+  the level (breathing, neurogenic shock when the latest blood pressure and pulse are both low, autonomic dysreflexia).
+- **Head injury** by GCS and pupils; **fractures (open or closed), dislocations, cuts, grazes, bruises, penetrating
+  wounds, crush injuries, amputations and sprains**, with bleeding that drips faster when it is active.
+
+Each save keeps a new version. The numbers are standard starting estimates for documentation and teaching; they do not
+replace local protocols or senior review.
+
 ## Medication chart (bed page)
 
 For each inpatient, the bed page shows today's doses for every active medicine: given (who and when), due now,
@@ -356,20 +402,77 @@ X-rays, MRI and ultrasound, results, medicines, admissions and referrals.
 - **Limited medication safety**: lists all documented active allergies; simple case-insensitive text match against a drug's listed name/generic name; blocks matches without override reason. It does NOT understand drug classes, equivalent names, true cross-reactivity, dosing, interactions, disease contraindications, pregnancy or kidney function. Every prescription requires clinician review. Not safe as sole alerting tool.
 - Ward/bed availability, active admissions, discharge into 'cleaning' state.
 - Referrals linked to clinical encounter, urgency, destination, contact and transfer status.
-- Schema-configured clinical forms, versioned snapshots of submissions; sequenced role-based approval workflows.
+- Clinical forms with conditions and formulas, published versions, drafts and per-step fields; graph approval flows.
+- E-sign envelopes with a SHA-256 hash-chained audit trail and sealed PDFs. This is an audited electronic signature
+  workflow, **not** a qualified/PKI digital signature: identity rests on staff logins, private links with optional
+  access codes, and the staff host's identity check for in-person signing. Check local law for which documents may be
+  signed this way.
 - Electronic attestations: user-bound, time-stamped record with SHA-256 content digest and HMAC based on application secret, plus audit record. This is **not** an independently verifiable cryptographic digital signature or legally validated qualified e-sign service; changing the server secret breaks independent reproducibility and the signature record itself should be in append-only storage. No identity re-verification, PDF signing or PKI is included.
 - Audit events on major access/actions.
 
-## Forms Studio example
+## Forms & approvals
 
-Form `schema` JSON:
-```json
-{"fields":[{"key":"chief_complaint","label":"Chief complaint","type":"textarea","required":true},{"key":"consent","label":"Consent received","type":"checkbox"},{"key":"risk","label":"Risk classification","type":"select","options":["low","moderate","high"]}]}
-```
-Workflow `steps` JSON:
-```json
-[{"name":"Nurse check","role":"nurse"},{"name":"Physician approval","role":"doctor"}]
-```
+**Form designer** (*Forms & approvals → New form*, admins and managers). Pick from 24 field types: text, numbers,
+dates, choices, yes/no, 0–10 score, slider, table with repeating rows, signature, body map, vital signs with NEWS2,
+Glasgow Coma Scale, patient details, headings and text, and **calculated** fields. Split long forms into pages. On the
+right, each field has:
+
+- *Logic*: show it only when, or make it required when, other answers match (is, contains, more than, between, one of,
+  in the past, within N days …, combined with all/any; can compare two fields or a value inside vital signs).
+- *Formula* for calculated fields, e.g. `round(bmi(weight, height), 1)` or
+  `if(score >= 45, "High", "Low")`, with the result shown as you type. Functions: sum, avg, min, max, round, floor,
+  ceil, abs, sqrt, if, coalesce, count, len, today, days_between, age, bmi, concat, upper, lower and `col(table, "column")`.
+- *Fill in automatically* from the patient record (name, number, age, allergies …), optionally locked.
+- *Filled in at*: a flow step id, so pharmacy, theatre or a second nurse completes their part later.
+
+*Preview* runs the real form. Problems (duplicate keys, formulas that refer to missing fields, calculations that depend
+on each other in a loop) are listed and block saving. Ctrl+Z / Ctrl+Shift+Z undo and redo, Ctrl+D duplicates, Ctrl+S
+saves. Templates: procedure consent, burns assessment, falls risk (Morse), nursing admission. Changing a form that has
+been used makes a new version; earlier answers keep the copy they were made with.
+
+**Filling in** shows a page stepper and progress, checks answers as you go, saves a draft every few seconds (come back
+later to the same form for the same patient), and the server repeats every check and recalculates every formula.
+
+**Flow designer.** Drag steps onto the canvas and drag from a step's coloured exit to the next step:
+
+| Step | What happens |
+|---|---|
+| Fill in | Someone completes the fields assigned to the step |
+| Approval | First approval wins, everyone must approve, or *at least N* must approve; can send back for changes |
+| Review | Read and acknowledge |
+| Signature | The form is turned into a PDF and sent for e-signature (initiator, clinician, a role, the patient in person; as signer, witness or approver; in order) |
+| Condition / Route | Yes/No, or several paths with their own rules and *Otherwise* |
+| In parallel / Wait for all | Start branches together; continue when all have arrived |
+| Notify | Bell and email, without waiting |
+| Set a value | Write a calculated value into the answers |
+| End | Completed, or rejected |
+
+People can be a role, named staff, the person who started it, or the patient's clinician. Steps can have a deadline;
+overdue steps alert the people again and, if set, another role. **Simulate** walks the flow with sample answers and
+decisions and animates the path, using the same rule engine as the server. Flows cannot loop; use *send back for
+changes* instead. Older flows saved as a list of `{"name", "role"}` steps still work as a chain of approvals.
+
+**Tasks** lists everything waiting for you or your role, with deadlines. Each run has a page with an animated map of
+where it is, who has acted, the history, and buttons for your step (approve, reject, send back, fill in, sign). The
+person who started a flow can resubmit after changes, cancel it, or pass a step to someone else.
+
+## E-sign
+
+*E-sign → New envelope*: upload a PDF, choose a completed form (rendered as a PDF with signature boxes), or write a
+letter here with patient details filled in (`{patient.name}`, `{patient.dob}` …). Add recipients with an order number
+(same number = at the same time): staff, outside people by email (with an optional access code shared separately), a
+patient or guardian **signing in person** on the device with a staff host, witnesses, approvers and copies. Then place
+the fields (signature, initials, date, name, text, tick box, choose one) on the pages and send.
+
+Signers get a guided screen: *Next* takes them field by field, they adopt a signature by drawing, typing (two
+handwriting styles) or uploading, and can decline with a reason. You can require that every page is viewed first. For
+in-person signing the host records how identity was confirmed. Every event is stored with the SHA-256 of the one
+before; when everyone has signed, the signatures are stamped into the PDF and a certificate page is added. The
+envelope page shows routing, signing links to share, reminders, cancel, and an integrity check. Anyone can check a
+sealed PDF at `/esign/verify/` (no patient details are shown). Staff signatures are remembered for next time.
+
+Run `python manage.py shell -c "from hospital import flows, esign; flows.sweep(); esign.sweep()"` from a scheduler to
+send deadline alerts, reminders and expiries; they also run whenever the studio or e-sign page is opened.
 
 ## Before live deployment — REQUIRED engineering and governance
 
@@ -387,7 +490,7 @@ For HTTPS deployments set `SECURE_SSL_REDIRECT=True`, correct `DJANGO_ALLOWED_HO
 ## Development utilities
 
 ```bash
-USE_SQLITE=True python manage.py test hospital   # 61 workflow tests
+USE_SQLITE=True python manage.py test hospital   # 137 tests (Python/JavaScript parity tests need node)
 docker compose -f compose.prod.yml logs -f web
 docker compose -f compose.prod.yml exec web python manage.py check --deploy
 ```

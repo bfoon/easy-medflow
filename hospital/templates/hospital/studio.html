@@ -1,60 +1,55 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}Forms & approvals{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/studio.css' %}" rel="stylesheet">{% endblock %}
 {% block heading %}Forms &amp; approvals{% endblock %}
-{% block subheading %}<p class="sub">Design clinical forms, route them through role-based approval, and sign them electronically.</p>{% endblock %}
+{% block subheading %}<p class="sub">Clinical forms, approval flows and e-signatures in one place.</p>{% endblock %}
 {% block actions %}
-  <a class="btn btn-ghost" href="{% url 'workflow_definition_new' %}"><i class="bi bi-diagram-3"></i>New workflow</a>
-  <a class="btn btn-primary" href="{% url 'form_definition_new' %}"><i class="bi bi-ui-checks"></i>New form</a>
+  <a class="btn btn-ghost" href="{% url 'esign' %}"><i class="bi bi-pen"></i>E-sign{% if envelopes_waiting %} <span class="badge-count">{{ envelopes_waiting }}</span>{% endif %}</a>
+  {% if is_designer %}<a class="btn btn-ghost" href="{% url 'workflow_definition_new' %}"><i class="bi bi-diagram-3"></i>New flow</a>
+  <a class="btn btn-primary" href="{% url 'form_definition_new' %}"><i class="bi bi-ui-checks"></i>New form</a>{% endif %}
 {% endblock %}
 {% block content %}
 <div class="grid g-main">
   <div class="stack">
     <section class="panel">
-      <div class="panel-head"><h2>Waiting for approval</h2><span class="hint">{{ runs|length }} open</span></div>
-      {% for r in runs %}
-      <article class="rx-card">
-        <div class="d-flex flex-wrap gap-2 align-items-center"><b>{{ r.submission.definition.name }}</b><span class="muted small">for <a href="{% url 'patient_chart' r.submission.patient_id %}">{{ r.submission.patient.full_name }}</a></span><span class="ms-auto small muted">{{ r.definition.name }}</span></div>
-        <div class="run-steps">{% for s in r.step_list %}<span class="{{ s.state }}">{% if s.state == 'done' %}<i class="bi bi-check2"></i> {% endif %}{{ s.name }} · {{ s.role }}</span>{% endfor %}</div>
-        <form method="post" class="d-flex gap-2 flex-wrap" action="">{% csrf_token %}
-          <input class="form-control form-control-sm flex-fill" style="min-width:180px" name="comment" placeholder="Comment (optional)">
-          <button class="btn btn-sm btn-primary" formaction="{% url 'workflow_act' r.pk 'approve' %}"><i class="bi bi-check2"></i>Approve</button>
-          <button class="btn btn-sm btn-danger-soft" formaction="{% url 'workflow_act' r.pk 'reject' %}" onclick="return confirm('Reject this submission? The workflow will close.')">Reject</button>
-        </form>
-      </article>
-      {% empty %}<div class="empty"><i class="bi bi-inbox"></i>Nothing waiting. Submissions sent for approval appear here.</div>{% endfor %}
+      <div class="panel-head"><h2>Waiting for you</h2><span class="hint">Steps assigned to you or your role</span><a class="more" href="{% url 'tasks' %}">All tasks</a></div>
+      <div class="st-tasks">
+      {% for t in tasks %}<a class="st-task" href="{% url 'run_detail' t.run_id %}"><span class="ic k-{{ t.kind }}"><i class="bi {% if t.kind == 'approval' %}bi-patch-check{% elif t.kind == 'fill' %}bi-input-cursor-text{% elif t.kind == 'signature' %}bi-pen{% else %}bi-eye{% endif %}"></i></span>
+        <div><b>{{ t.label }}</b><div class="small muted">{{ t.run.definition.name }} · {{ t.run.submission.patient.full_name }}</div></div>
+        <span class="due {% if t.overdue %}late{% endif %}">{% if t.due_at %}{% if t.overdue %}Overdue{% else %}Due{% endif %} {{ t.due_at|date:'j M H:i' }}{% else %}{{ t.created_at|ago }}{% endif %}</span></a>
+      {% empty %}<p class="muted small mb-0">Nothing is waiting for you.</p>{% endfor %}</div>
     </section>
-
     <section class="panel">
+      <div class="panel-head"><h2>Fill in a form</h2></div>
+      <form method="get" action="{% url 'fill_form_pick' %}" class="d-flex gap-2 flex-wrap">
+        <select name="form" class="form-select" style="max-width:280px" aria-label="Form" required><option value="">Form…</option>{% for f in forms %}{% if f.published %}<option value="{{ f.pk }}">{{ f.name }}</option>{% endif %}{% endfor %}</select>
+        <select name="patient" class="form-select" style="max-width:280px" aria-label="Patient" required><option value="">Patient…</option>{% for p in patients %}<option value="{{ p.pk }}">{{ p.full_name }} · {{ p.mrn }}</option>{% endfor %}</select>
+        <button class="btn btn-primary"><i class="bi bi-pencil-square"></i>Start</button></form>
+    </section>
+    <section class="panel flush">
+      <div class="panel-head"><h2>Flows in progress</h2></div>
+      <div class="scroll-y"><table class="mini-table"><thead><tr><th>Form</th><th>Patient</th><th>Flow</th><th>Status</th><th>Started</th></tr></thead><tbody>
+      {% for r in runs %}<tr><td><a href="{% url 'run_detail' r.pk %}">{{ r.submission.definition.name }}</a></td><td>{{ r.submission.patient.full_name }}</td><td>{{ r.definition.name }}</td><td><span class="st-status {{ r.status }}">{{ r.get_status_display }}</span></td><td class="small">{{ r.created_at|ago }}</td></tr>
+      {% empty %}<tr><td colspan="5" class="empty">No flows running.</td></tr>{% endfor %}</tbody></table></div>
+    </section>
+    <section class="panel flush">
       <div class="panel-head"><h2>Recent submissions</h2></div>
-      <div class="scroll-x"><table class="mini-table"><thead><tr><th>Form</th><th>Patient</th><th>Status</th><th>Signature</th></tr></thead><tbody>
-      {% for s in submissions %}<tr><td><b>{{ s.definition.name }}</b><div class="small muted">{{ s.created_at|date:'j M H:i' }}</div></td><td><a href="{% url 'patient_chart' s.patient_id %}">{{ s.patient.full_name }}</a></td><td><span class="tag {{ s.status|tone }}">{{ s.get_status_display }}</span></td>
-      <td>{% with sig=s.signature_set.all|first %}{% if sig %}<span class="stamp" title="SHA-256 {{ sig.document_hash }}"><i class="bi bi-patch-check-fill"></i>Signed</span>{% elif s.status != 'rejected' %}<form method="post" action="{% url 'submission_sign' s.pk %}" data-confirm="Sign this submission? Your identity, the time and a SHA-256 hash of its contents are recorded.">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="btn btn-sm btn-ghost"><i class="bi bi-pen"></i>E-sign</button></form>{% endif %}{% endwith %}</td></tr>
-      {% empty %}<tr><td colspan="4" class="empty">No submissions yet.</td></tr>{% endfor %}
-      </tbody></table></div>
+      <div class="scroll-y"><table class="mini-table"><thead><tr><th>Form</th><th>Patient</th><th>By</th><th>Status</th><th></th></tr></thead><tbody>
+      {% for s in submissions %}<tr><td><a href="{% url 'submission_detail' s.pk %}">{{ s.definition.name }}</a></td><td>{{ s.patient.full_name }}</td><td class="small">{{ s.submitted_by|display_name }}</td><td><span class="st-status {{ s.status }}">{{ s.get_status_display }}</span></td>
+        <td>{% if s.signature_set.all %}<span class="tag teal" title="SHA-256 {{ s.signature_set.all.0.document_hash }}"><i class="bi bi-patch-check"></i>Attested</span>{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="5" class="empty">No submissions yet.</td></tr>{% endfor %}</tbody></table></div>
     </section>
   </div>
-
-  <div class="stack">
-    <section class="panel">
-      <div class="panel-head"><h2>Fill a form</h2></div>
-      <form method="get" action="{% url 'fill_form_pick' %}">
-        <div class="field"><label class="form-label" for="pick-form">Form</label><select class="form-select" id="pick-form" name="form" required>{% for f in forms %}{% if f.published %}<option value="{{ f.pk }}">{{ f.name }}</option>{% endif %}{% endfor %}</select></div>
-        <div class="field"><label class="form-label" for="pick-patient">Patient</label><select class="form-select" id="pick-patient" name="patient" required>{% for p in patients %}<option value="{{ p.pk }}">{{ p.last_name }}, {{ p.first_name }} · {{ p.mrn }}</option>{% endfor %}</select></div>
-        <button class="btn btn-ink w-100">Open form</button>
-      </form>
+  <aside class="stack align-self-start">
+    <section class="panel"><div class="panel-head"><h2>Forms</h2>{% if is_designer %}<a class="more" href="{% url 'form_definition_new' %}">New</a>{% endif %}</div>
+      <ul class="plain ruled">{% for f in forms %}<li class="d-flex gap-2 align-items-center"><div class="flex-fill"><b>{{ f.name }}</b><div class="small muted">v{{ f.version }} · {{ f.n }} submission{{ f.n|pluralize }}{% if not f.published %} · draft{% endif %}</div></div>{% if is_designer %}<a class="btn btn-sm btn-ghost" href="{% url 'form_edit' f.pk %}">Edit</a>{% endif %}</li>{% empty %}<li class="muted small">No forms yet.</li>{% endfor %}</ul>
+      {% if is_designer %}<div class="label-sm mt-3 mb-1">Start from a template</div>
+      <div class="st-tpl"><a href="{% url 'form_definition_new' %}?template=consent"><i class="bi bi-file-earmark-check"></i>Procedure consent</a><a href="{% url 'form_definition_new' %}?template=burns"><i class="bi bi-fire"></i>Burns assessment</a>
+        <a href="{% url 'form_definition_new' %}?template=falls"><i class="bi bi-person-walking"></i>Falls risk (Morse)</a><a href="{% url 'form_definition_new' %}?template=admission"><i class="bi bi-hospital"></i>Nursing admission</a></div>{% endif %}
     </section>
-    <section class="panel">
-      <div class="panel-head"><h2>Forms</h2><a class="more" href="{% url 'form_definition_new' %}">New</a></div>
-      <ul class="plain ruled">{% for f in forms %}<li class="d-flex gap-2 align-items-center"><span><b>{{ f.name }}</b><br><span class="small muted">{{ f.schema.fields|length }} fields · v{{ f.version }} · {{ f.n }} submission{{ f.n|pluralize }}</span></span><span class="tag {% if f.published %}teal{% else %}amber{% endif %} ms-auto">{% if f.published %}Published{% else %}Draft{% endif %}</span></li>{% empty %}<li class="muted small">No forms yet.</li>{% endfor %}</ul>
+    <section class="panel"><div class="panel-head"><h2>Flows</h2>{% if is_designer %}<a class="more" href="{% url 'workflow_definition_new' %}">New</a>{% endif %}</div>
+      <ul class="plain ruled">{% for w in workflows %}<li class="d-flex gap-2 align-items-center"><div class="flex-fill"><b>{{ w.name }}</b><div class="small muted">{% if w.form %}{{ w.form.name }} · {% endif %}{{ w.n }} run{{ w.n|pluralize }}{% if not w.active %} · off{% endif %}</div></div>{% if is_designer %}<a class="btn btn-sm btn-ghost" href="{% url 'workflow_edit' w.pk %}">Edit</a>{% endif %}</li>{% empty %}<li class="muted small">No flows yet.</li>{% endfor %}</ul>
     </section>
-    <section class="panel">
-      <div class="panel-head"><h2>Workflows</h2><a class="more" href="{% url 'workflow_definition_new' %}">New</a></div>
-      <ul class="plain ruled">{% for w in workflows %}<li><b>{{ w.name }}</b><div class="run-steps">{% for s in w.steps %}<span>{{ forloop.counter }}. {{ s.name }}</span>{% endfor %}</div></li>{% empty %}<li class="muted small">No workflows yet.</li>{% endfor %}</ul>
-    </section>
-    <section class="panel">
-      <div class="panel-head"><h2>Signature ledger</h2><span class="hint">Latest attestations</span></div>
-      <ul class="plain ruled">{% for s in signatures %}<li><div class="d-flex"><b>{{ s.signer|display_name }}</b><span class="ms-auto small muted">{{ s.signed_at|date:'j M H:i' }}</span></div><div class="small">{{ s.meaning }}</div><div class="hash">{{ s.document_hash|slice:':32' }}…</div></li>{% empty %}<li class="muted small">No signatures yet.</li>{% endfor %}</ul>
-    </section>
-  </div>
+  </aside>
 </div>
 {% endblock %}

@@ -1,0 +1,16 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Place fields · {{ env.subject }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/studio.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}Place the fields{% endblock %}
+{% block subheading %}<p class="sub">{{ env.subject }} · {{ env.pages }} page{{ env.pages|pluralize }}. Choose a person, pick a field, then click where it goes.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'esign' %}"><i class="bi bi-arrow-left"></i>E-sign</a><button type="button" class="btn btn-ghost" id="pp-auto"><i class="bi bi-magic"></i>Add signature lines</button><span id="pp-dirty" class="small muted" hidden>Unsaved</span><button type="button" class="btn btn-ghost" id="pp-save">Save</button><button type="button" class="btn btn-primary" id="pp-send"><i class="bi bi-send"></i>Send</button>{% endblock %}
+{% block content %}{% csrf_token %}
+<div class="es-shell">
+  <aside class="es-side"><h3>Fields for</h3><div id="pp-recips"></div><h3>Add a field</h3><div id="pp-kinds"></div><p id="pp-hint" class="small text-primary" aria-live="polite"></p></aside>
+  <div class="es-pages loading" id="pp-pages" data-worker="{% asset 'hospital/vendor/pdfjs/pdf.worker.min.js' %}"></div>
+  <aside class="es-side"><div id="pp-check" class="pp-check"></div><div class="fd-insp" id="pp-insp"></div><p class="small muted">Arrow keys nudge the selected field (Shift for bigger steps); Delete removes it.</p></aside>
+</div>
+<div id="es-toast" class="fd-toast" role="status"></div>
+{{ boot|json_script:'prepare-boot' }}
+{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/vendor/pdfjs/pdf.min.js' %}"></script><script src="{% asset 'hospital/js/esign.js' %}"></script>{% endblock %}

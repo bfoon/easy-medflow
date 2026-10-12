@@ -1,0 +1,40 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ env.subject }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/studio.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}{{ env.subject }}{% endblock %}
+{% block subheading %}<p class="sub"><span class="st-status {{ env.status }}">{{ env.get_status_display }}</span> · envelope <code>{{ env.short_id }}</code> · from {{ env.created_by|display_name }}{% if env.patient %} · <a href="{% url 'patient_chart' env.patient_id %}">{{ env.patient.full_name }}</a>{% endif %}{% if env.expires_at and env.status == 'sent' %} · expires {{ env.expires_at|date:'j M' }}{% endif %}</p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="{% url 'esign' %}"><i class="bi bi-arrow-left"></i>E-sign</a>
+  {% if env.status == 'completed' %}<a class="btn btn-primary" href="{% url 'esign_file' env.uid 'signed' %}?download=1"><i class="bi bi-download"></i>Signed PDF</a>{% endif %}
+  <a class="btn btn-ghost" href="{% url 'esign_file' env.uid 'original' %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf"></i>Original</a>
+  {% if can_manage and env.status == 'sent' %}<form method="post" action="{% url 'esign_act' env.uid 'remind' %}">{% csrf_token %}<button class="btn btn-ghost"><i class="bi bi-bell"></i>Remind</button></form>{% endif %}
+  {% if can_manage and env.status in 'draft sent' %}<details class="complete-pop"><summary class="btn btn-ghost"><i class="bi bi-x-circle"></i>Cancel</summary><form method="post" action="{% url 'esign_act' env.uid 'void' %}" class="pop-card">{% csrf_token %}<input class="form-control mb-2" name="reason" placeholder="Reason" required><button class="btn btn-ink w-100">Cancel envelope</button></form></details>{% endif %}
+{% endblock %}
+{% block content %}
+{% if my_turn %}<div class="act-card mb-3 d-flex align-items-center gap-3"><i class="bi bi-pen fs-3"></i><div><b>It's your turn to {% if my_turn.role == 'approver' %}approve{% else %}sign{% endif %}.</b></div><a class="btn btn-primary ms-auto" href="{% url 'esign_sign' my_turn.token %}">{% if my_turn.role == 'approver' %}Review and approve{% else %}Review and sign{% endif %}</a></div>{% endif %}
+{% for r in in_person %}<div class="act-card mb-3 d-flex align-items-center gap-3"><i class="bi bi-tablet fs-3"></i><div><b>{{ r.name }} signs in person</b><div class="small">Open the signing screen, then hand the device over. You will confirm who is signing.</div></div><a class="btn btn-primary ms-auto" href="{% url 'esign_sign' r.token %}">Start in-person signing</a></div>{% endfor %}
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel"><div class="panel-head"><h2>Routing</h2></div>
+      <div class="es-route">{% for order, people in groups %}<div class="es-step {% if env.status == 'completed' or current and order < current %}done{% elif order == current %}now{% elif env.status == 'declined' %}bad{% endif %}"><span class="dot">{{ order }}</span>
+        <div class="es-people">{% for r in people %}<div class="es-person" style="--c:{{ r.color }}"><i></i><div><b>{{ r.name }}</b><small>{{ r.get_role_display }}{% if r.relation %} · {{ r.relation }}{% endif %}</small><small>{{ r.get_status_display }}{% if r.acted_at %} {{ r.acted_at|date:'j M H:i' }}{% elif r.viewed_at %} {{ r.viewed_at|date:'j M H:i' }}{% endif %}</small>{% if r.decline_reason %}<small class="text-danger">“{{ r.decline_reason }}”</small>{% endif %}</div></div>{% endfor %}</div></div>{% endfor %}</div></section>
+    {% if links %}<section class="panel"><div class="panel-head"><h2>Signing links</h2><span class="hint">Emailed automatically. You can also send these by WhatsApp or SMS; share any access code separately.</span></div>
+      {% for r in links %}<div class="d-flex gap-2 align-items-center mb-2"><b style="min-width:160px">{{ r.name }}</b><input class="form-control form-control-sm" readonly value="{{ site }}{% url 'esign_sign' r.token %}" onclick="this.select()" aria-label="Signing link for {{ r.name }}">{% if r.access_code_hash %}<span class="tag"><i class="bi bi-shield-lock"></i>Code needed</span>{% endif %}</div>{% endfor %}</section>{% endif %}
+    <section class="panel flush"><div class="panel-head"><h2>Audit trail</h2><span class="hint">Each entry is chained to the one before with SHA-256.</span></div>
+      <div class="scroll-y"><table class="mini-table"><thead><tr><th>When</th><th>What</th><th>Who</th><th>From</th><th>Fingerprint</th></tr></thead><tbody>
+      {% for ev in events %}<tr><td class="small">{{ ev.at|date:'j M H:i:s' }}</td><td>{{ ev.label }}{% if ev.details.reason %}<div class="small muted">{{ ev.details.reason }}</div>{% endif %}{% if ev.details.identity_check %}<div class="small muted">ID: {{ ev.details.identity_check }}</div>{% endif %}</td>
+        <td class="small">{% if ev.recipient %}{{ ev.recipient.name }}{% if ev.actor and ev.actor != ev.recipient.user %} <span class="muted">(host {{ ev.actor|display_name }})</span>{% endif %}{% elif ev.actor %}{{ ev.actor|display_name }}{% else %}System{% endif %}</td>
+        <td class="small">{{ ev.ip_address|default:'' }}</td><td class="es-chain">{{ ev.hash|slice:':12' }}…</td></tr>{% endfor %}</tbody></table></div></section>
+  </div>
+  <aside class="stack align-self-start">
+    <section class="panel"><div class="panel-head"><h2>Integrity</h2></div>
+      <div class="es-verify {% if ok %}ok{% else %}bad{% endif %}"><i class="bi {% if ok %}bi-shield-check{% else %}bi-shield-exclamation{% endif %}"></i><div><b>{% if ok %}Untouched{% else %}Changed after recording{% endif %}</b>{% for p in problems %}<div class="small">{{ p }}</div>{% endfor %}</div></div>
+      <p class="es-chain mt-2 mb-1">Original SHA-256<br>{{ env.document_sha256 }}</p>{% if env.signed_sha256 %}<p class="es-chain mb-1">Sealed SHA-256<br>{{ env.signed_sha256 }}</p>{% endif %}
+      <a class="small" href="{% url 'esign_file' env.uid 'certificate' %}" target="_blank" rel="noopener">Certificate of completion</a></section>
+    <section class="panel"><div class="panel-head"><h2>Details</h2></div><ul class="plain ruled small">
+      <li>{{ env.get_source_display }} · {{ env.document_name }}</li><li>{{ env.pages }} page{{ env.pages|pluralize }}{% if env.require_full_read %} · every page must be read{% endif %}</li>
+      {% if env.submission %}<li><a href="{% url 'submission_detail' env.submission_id %}">The form submission</a></li>{% endif %}{% if env.run %}<li><a href="{% url 'run_detail' env.run_id %}">Part of the flow “{{ env.run.definition.name }}”</a></li>{% endif %}
+      {% if env.void_reason %}<li class="text-danger">Cancelled: {{ env.void_reason }}</li>{% endif %}</ul></section>
+  </aside>
+</div>
+{% endblock %}

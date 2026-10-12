@@ -22,7 +22,7 @@ from .models import (Location, MedicationAdministration, QueueReset, Invoice, In
                      Admission, Attendance, AuditEvent, Bed, Department, Encounter, FormDefinition, FormSubmission,
                      LabOrder, Medication, Patient, Prescription, QueueTicket, Referral, Signature, Ward,
                      WorkflowDefinition, WorkflowRun)
-from .services import (capture_charges, open_invoice_for, record_payment, advance_workflow, anonymised_case, assign_bed, availability, case_from_token, discharge, dispense, prescription_check,
+from .services import (capture_charges, open_invoice_for, record_payment, anonymised_case, assign_bed, availability, case_from_token, discharge, dispense, prescription_check,
                        prescription_warnings, receive_stock, sign_document, similar_cases)
 
 # Staff accounts are provisioned by administrators; there is no public signup.
@@ -976,60 +976,7 @@ def attendance(request):
 
 
 # ---------------------------------------------------------------- forms & workflow studio
-
-FIELD_TYPES = ['text', 'textarea', 'date', 'number', 'checkbox', 'select']
-
-
-@login_required
-def studio(request):
-    authorize(request)
-    runs = list(WorkflowRun.objects.filter(status='open').select_related('definition', 'submission__patient', 'submission__definition')[:50])
-    for r in runs:
-        steps = r.definition.steps if isinstance(r.definition.steps, list) else []
-        r.step_list = [{'name': s.get('name'), 'role': s.get('role'),
-                        'state': 'done' if i < r.step_index else 'current' if i == r.step_index else 'todo'} for i, s in enumerate(steps)]
-    return render(request, 'hospital/studio.html', {
-        'forms': FormDefinition.objects.annotate(n=Count('submissions')).order_by('name'),
-        'workflows': WorkflowDefinition.objects.order_by('name'),
-        'submissions': FormSubmission.objects.select_related('definition', 'patient').prefetch_related('signature_set').order_by('-created_at')[:30],
-        'runs': runs, 'patients': Patient.objects.order_by('last_name')[:300],
-        'signatures': Signature.objects.select_related('signer').order_by('-signed_at')[:8],
-    })
-
-
-@login_required
-def form_definition_new(request):
-    def save(form):
-        obj = form.save(commit=False)
-        fields = obj.schema.get('fields', []) if isinstance(obj.schema, dict) else None
-        if not isinstance(fields, list) or not fields or len(fields) > 60:
-            raise ValidationError('Add between 1 and 60 fields.')
-        keys = set()
-        for f in fields:
-            if not isinstance(f, dict) or f.get('type') not in FIELD_TYPES or not isinstance(f.get('key'), str) or not f['key'].isidentifier() or f['key'] in keys:
-                label = f.get('label', '?') if isinstance(f, dict) else '?'
-                raise ValidationError(f'Field “{label}” has an invalid or duplicate key.')
-            keys.add(f['key'])
-            if f['type'] == 'select' and (not isinstance(f.get('options'), list) or not f['options'] or len(f['options']) > 100 or any(not isinstance(o, str) for o in f['options'])):
-                raise ValidationError(f'Select field “{f.get("label")}” needs at least one option.')
-        obj.save(); return obj
-    return edit_page(request, FormDefinitionForm, 'Design a form', 'studio', 'studio', save,
-                     template='hospital/form_builder.html', extra={'field_types': FIELD_TYPES})
-
-
-@login_required
-def workflow_definition_new(request):
-    def save(form):
-        obj = form.save(commit=False)
-        if not isinstance(obj.steps, list) or not 1 <= len(obj.steps) <= 20:
-            raise ValidationError('Add between 1 and 20 approval steps.')
-        for s in obj.steps:
-            if not isinstance(s, dict) or s.get('role') not in ROLES['all'] or not isinstance(s.get('name'), str) or not s['name'].strip():
-                raise ValidationError('Every step needs a name and a valid staff role.')
-        obj.save(); return obj
-    return edit_page(request, WorkflowDefinitionForm, 'Design an approval workflow', 'studio', 'studio', save,
-                     template='hospital/workflow_builder.html', extra={'roles': sorted(ROLES['all'])})
-
+# The designer, filling in, flows and runs live in studio_views.py; e-sign in esign_views.py.
 
 @login_required
 def fill_form_pick(request):
@@ -1039,44 +986,6 @@ def fill_form_pick(request):
     except (TypeError, ValueError):
         messages.error(request, 'Choose both a form and a patient.')
         return redirect('studio')
-
-
-@login_required
-def fill_form(request, pk, patient_id):
-    authorize(request, 'clinical')
-    definition = get_object_or_404(FormDefinition, pk=pk, published=True)
-    patient = get_object_or_404(Patient, pk=patient_id)
-    dynamic = {}
-    for fld in definition.schema.get('fields', []):
-        key, typ, label, req = fld['key'], fld['type'], fld.get('label', fld['key']), bool(fld.get('required'))
-        if typ == 'checkbox':
-            f = forms.BooleanField(label=label, required=False)
-        elif typ == 'select':
-            f = forms.ChoiceField(label=label, choices=[(x, x) for x in fld.get('options', [])], required=req)
-        elif typ == 'number':
-            f = forms.DecimalField(label=label, required=req)
-        elif typ == 'date':
-            f = forms.DateField(label=label, required=req, widget=forms.DateInput(attrs={'type': 'date'}))
-        else:
-            f = forms.CharField(label=label, required=req, max_length=4000,
-                                widget=forms.Textarea(attrs={'rows': 3}) if typ == 'textarea' else forms.TextInput)
-        f.widget.attrs['class'] = 'form-check-input' if typ == 'checkbox' else 'form-select' if typ == 'select' else 'form-control'
-        dynamic[key] = f
-    DynamicForm = type('DynamicForm', (forms.Form,), dynamic)
-    form = DynamicForm(request.POST or None)
-    if request.method == 'POST' and form.is_valid():
-        with transaction.atomic():
-            s = FormSubmission.objects.create(definition=definition, patient=patient,
-                                              values=json.loads(json.dumps(form.cleaned_data, default=str)),
-                                              schema_snapshot=definition.schema, submitted_by=request.user)
-            workflow_id = request.POST.get('workflow')
-            if workflow_id:
-                WorkflowRun.objects.create(definition=get_object_or_404(WorkflowDefinition, pk=workflow_id, active=True), submission=s)
-            audit(request, 'submit_form', f'form_submission:{s.pk}')
-        messages.success(request, f'{definition.name} submitted.')
-        return redirect('patient_chart', pk=patient.pk)
-    return render(request, 'hospital/form.html', {'form': form, 'title': definition.name, 'subtitle': f'For {patient.full_name} · {patient.mrn}',
-                                                  'workflows': WorkflowDefinition.objects.filter(active=True)})
 
 
 @login_required
@@ -1091,19 +1000,6 @@ def submission_sign(request, pk):
     sig = sign_document('form', sub, request.user, 'Reviewed and signed')
     messages.success(request, f'Signed · SHA-256 {sig.document_hash[:12]}…')
     return redirect(request.POST.get('next') or reverse('patient_chart', args=[sub.patient_id]))
-
-
-@login_required
-@require_POST
-def workflow_act(request, pk, action):
-    authorize(request)
-    try:
-        advance_workflow(get_object_or_404(WorkflowRun, pk=pk), request.user, action, request.POST.get('comment', '')[:1000])
-        audit(request, 'workflow_action', f'workflow_run:{pk}', {'action': action})
-        messages.success(request, 'Step approved.' if action == 'approve' else 'Submission rejected.')
-    except ValidationError as e:
-        messages.error(request, '; '.join(e.messages))
-    return redirect('studio')
 
 
 def error_403(request, exception=None):
@@ -1830,6 +1726,9 @@ def bed_detail(request, pk):
                     'pending_labs': lab_requests_qs().filter(encounter__patient=e.patient, orders__status__in=['ordered', 'collected', 'processing']).distinct()[:5],
                     'stay_pct': min(100, round(current.los_days * 100 / 7))})
         ctx['mar'], ctx['mar_counts'] = medication_chart(e.patient, current.admitted_at)
+        from .care_views import bedside_payload
+        ctx['bedside'] = dict(bedside_payload(current), can_edit=role_of(request.user) in ROLES.get('bedside', {'nurse', 'doctor', 'admin'}))
+        ctx['can_assess'] = role_of(request.user) in ROLES['clinical']
     return render(request, 'hospital/bed_detail.html', ctx)
 
 

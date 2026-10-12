@@ -7,6 +7,7 @@
   <button class="btn btn-ghost" data-drawer="{% url 'lab_new' %}?encounter={{ e.pk }}" data-title="New lab request"><i class="bi bi-droplet-half"></i>Lab tests</button>
   <button class="btn btn-ghost" data-drawer="{% url 'prescription_new' %}?encounter={{ e.pk }}" data-title="New prescription"><i class="bi bi-capsule"></i>Prescribe</button>
   <button class="btn btn-ghost" data-drawer="{% url 'imaging_new' %}?encounter={{ e.pk }}" data-title="Imaging request"><i class="bi bi-radioactive"></i>Imaging</button>
+  <a class="btn btn-ghost" href="{% url 'injury_assessment' e.pk %}"><i class="bi bi-bandaid"></i>Injuries &amp; burns</a>
   <a class="btn btn-ghost" href="{% url 'invoice_for_encounter' e.pk %}"><i class="bi bi-receipt"></i>Bill</a>
   <a class="btn btn-ghost" href="{% url 'network_specialists' %}?encounter={{ e.pk }}"><i class="bi bi-person-badge"></i>Specialist</a>
   <button class="btn btn-ghost" data-drawer="{% url 'referral_new' %}?encounter={{ e.pk }}" data-title="Referral"><i class="bi bi-signpost-split"></i>Refer</button>

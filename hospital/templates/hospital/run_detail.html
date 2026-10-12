@@ -1,0 +1,57 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ run.definition.name }} · {{ sub.patient.full_name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/studio.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}{{ run.definition.name }}{% endblock %}
+{% block subheading %}<p class="sub"><span class="st-status {{ run.status }}">{{ run.get_status_display }}</span> · <a href="{% url 'submission_detail' sub.pk %}">{{ sub.definition.name }}</a> for <a href="{% url 'patient_chart' sub.patient_id %}">{{ sub.patient.full_name }}</a> · started by {{ run.started_by|display_name }} {{ run.created_at|ago }}{% if run.round > 1 %} · round {{ run.round }}{% endif %}</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'studio' %}"><i class="bi bi-arrow-left"></i>Forms</a>
+  {% if can_manage and run.status == 'open' or can_manage and run.status == 'returned' %}<details class="complete-pop"><summary class="btn btn-ghost"><i class="bi bi-x-circle"></i>Cancel flow</summary><form method="post" action="{% url 'run_cancel' run.pk %}" class="pop-card">{% csrf_token %}<input class="form-control mb-2" name="reason" placeholder="Reason" required minlength="3"><button class="btn btn-ink w-100">Cancel this flow</button></form></details>{% endif %}
+{% endblock %}
+{% block content %}{% csrf_token %}
+<div class="grid g-main">
+  <div class="stack">
+    {% for t in my %}{% if t.kind != 'fill' %}
+    <section class="act-card"><h2 class="h5"><i class="bi {% if t.kind == 'approval' %}bi-patch-check{% elif t.kind == 'signature' %}bi-pen{% else %}bi-eye{% endif %} me-1"></i>{{ t.label }}: your turn</h2>
+      {% if t.kind == 'signature' %}<p class="mb-2">This step is signed electronically.</p>{% if t.envelope %}<a class="btn btn-primary" href="{% url 'esign_detail' t.envelope.uid %}"><i class="bi bi-pen"></i>Open the envelope</a>{% endif %}
+      {% else %}<form method="post" action="{% url 'task_act' t.pk %}">{% csrf_token %}
+        <textarea class="form-control" name="comment" rows="2" placeholder="{% if t.kind == 'approval' %}Comment (required to reject or send back){% else %}Comment (optional){% endif %}"></textarea>
+        <div class="d-flex gap-2 flex-wrap">{% if t.kind == 'approval' %}<button class="btn btn-primary" name="action" value="approve"><i class="bi bi-check2"></i>Approve</button>
+          <button class="btn btn-ghost" name="action" value="reject"><i class="bi bi-x-lg"></i>Reject</button>
+          <button class="btn btn-ghost" name="action" value="return"><i class="bi bi-arrow-return-left"></i>Send back for changes</button>
+          {% else %}<button class="btn btn-primary" name="action" value="acknowledge"><i class="bi bi-check2"></i>Mark as reviewed</button>{% endif %}</div></form>
+        {% if t.due_at %}<p class="small {% if t.overdue %}text-danger fw-semibold{% else %}muted{% endif %} mt-2 mb-0">{% if t.overdue %}Overdue since{% else %}Due{% endif %} {{ t.due_at|date:'j M H:i' }}</p>{% endif %}{% endif %}
+    </section>{% endif %}{% endfor %}
+    {% if fill_boot %}<section class="act-card"><h2 class="h5"><i class="bi bi-input-cursor-text me-1"></i>{{ fill_task.label }}: complete your part</h2><div id="fill-step"></div></section>{{ fill_boot|json_script:'fill-step-boot' }}{% endif %}
+    {% if resubmit_boot %}<section class="act-card"><h2 class="h5"><i class="bi bi-arrow-repeat me-1"></i>Changes were requested</h2>
+      {% for e in events %}{% if e.kind == 'returned' %}<p class="mb-2">{{ e.note }}</p>{% endif %}{% endfor %}<div id="resubmit"></div></section>{{ resubmit_boot|json_script:'resubmit-boot' }}{% endif %}
+    <section class="panel"><div class="panel-head"><h2>Where it is now</h2><span class="hint">Green: done · amber: waiting · teal arrows: the path taken</span></div><div id="run-map" class="ro"></div></section>
+    <section class="panel flush"><div class="panel-head"><h2>People on the current round</h2></div>
+      <div class="scroll-y"><table class="mini-table"><thead><tr><th>Step</th><th>Who</th><th>Status</th><th>When</th><th></th></tr></thead><tbody>
+      {% for t in tasks %}<tr><td>{{ t.label }}</td><td>{% if t.user %}{{ t.user|display_name }}{% else %}Any {{ t.role }}{% endif %}{% if t.decided_by %} <span class="small muted">(by {{ t.decided_by|display_name }})</span>{% endif %}</td>
+        <td><span class="st-status {% if t.status == 'pending' %}open{% elif t.status in 'approved done' %}approved{% else %}rejected{% endif %}">{{ t.get_status_display }}</span>{% if t.overdue %} <span class="tag red">Overdue</span>{% endif %}</td>
+        <td class="small">{{ t.decided_at|default:t.created_at|date:'j M H:i' }}{% if t.comment %}<div class="muted">“{{ t.comment|truncatechars:80 }}”</div>{% endif %}</td>
+        <td>{% if t.status == 'pending' and can_manage %}<details class="complete-pop"><summary class="btn btn-sm btn-ghost">Pass on</summary><form method="post" action="{% url 'task_reassign' t.pk %}" class="pop-card">{% csrf_token %}<select name="user" class="form-select mb-2">{% for s in staff %}<option value="{{ s.id }}">{{ s.name }} · {{ s.role }}</option>{% endfor %}</select><button class="btn btn-ink w-100">Pass to this person</button></form></details>{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="5" class="empty">No people steps yet.</td></tr>{% endfor %}</tbody></table></div></section>
+  </div>
+  <aside class="stack align-self-start">
+    <section class="panel"><div class="panel-head"><h2>History</h2></div>
+      <ul class="run-timeline">{% for e in events %}{% if e.kind != 'entered' %}<li class="k-{{ e.kind }}">{{ e.note|default:e.kind }}<time>{{ e.created_at|date:'j M H:i' }}</time></li>{% endif %}{% endfor %}</ul></section>
+    {% if run.envelopes.all %}<section class="panel"><div class="panel-head"><h2>Signatures</h2></div>{% for env in run.envelopes.all %}<a class="st-task" href="{% url 'esign_detail' env.uid %}"><span class="ic k-sign"><i class="bi bi-pen"></i></span><div><b>{{ env.subject }}</b><div class="small muted">{{ env.get_status_display }}</div></div></a>{% endfor %}</section>{% endif %}
+  </aside>
+</div>
+{{ view|json_script:'run-view' }}{{ catalogue|json_script:'run-cat' }}
+{% endblock %}
+{% block scripts %}
+<script src="{% asset 'hospital/js/formkit.js' %}"></script><script src="{% asset 'hospital/js/injury-figure.js' %}"></script><script src="{% asset 'hospital/js/bedside.js' %}"></script>
+<script src="{% asset 'hospital/js/form-runtime.js' %}"></script><script src="{% asset 'hospital/js/flow-designer.js' %}"></script>
+<script>
+(() => {
+  const v = JSON.parse(document.getElementById('run-view').textContent), cat = JSON.parse(document.getElementById('run-cat').textContent);
+  const host = document.getElementById('run-map'); host.classList.add('ro');
+  MFFlow.render(host, v.graph, {catalogue: cat, states: v.state, taken: v.taken, tasks: v.tasks});
+  const fb = document.getElementById('fill-step-boot');
+  if (fb) { const b = JSON.parse(fb.textContent); b.submit_label = 'Save my part'; MFFormRuntime.mount(document.getElementById('fill-step'), b, {post: values => MFFormRuntime.postJSON(b.submit_url, {action: 'submit', values})}); }
+  const rb = document.getElementById('resubmit-boot');
+  if (rb) { const b = JSON.parse(rb.textContent); b.submit_label = 'Resubmit'; MFFormRuntime.mount(document.getElementById('resubmit'), b, {post: values => MFFormRuntime.postJSON(b.submit_url, {values})}); }
+})();
+</script>
+{% endblock %}

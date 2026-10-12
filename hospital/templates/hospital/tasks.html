@@ -1,0 +1,21 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}My tasks{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/studio.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}My tasks{% endblock %}
+{% block subheading %}<p class="sub">Approvals, reviews, forms to complete and documents to sign.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'studio' %}"><i class="bi bi-arrow-left"></i>Forms</a>{% endblock %}
+{% block content %}
+<div class="grid g-2">
+  <section class="panel"><div class="panel-head"><h2>Flow steps</h2></div><div class="st-tasks">
+    {% for t in tasks %}<a class="st-task" href="{% url 'run_detail' t.run_id %}"><span class="ic k-{{ t.kind }}"><i class="bi {% if t.kind == 'approval' %}bi-patch-check{% elif t.kind == 'fill' %}bi-input-cursor-text{% elif t.kind == 'signature' %}bi-pen{% else %}bi-eye{% endif %}"></i></span>
+      <div><b>{{ t.label }}</b><div class="small muted">{{ t.run.definition.name }} · {{ t.run.submission.patient.full_name }}{% if not t.user %} · any {{ t.role }}{% endif %}</div></div>
+      <span class="due {% if t.overdue %}late{% endif %}">{% if t.due_at %}{% if t.overdue %}Overdue{% else %}Due{% endif %}<br>{{ t.due_at|date:'j M H:i' }}{% else %}{{ t.created_at|ago }}{% endif %}</span></a>
+    {% empty %}<p class="muted small mb-0">Nothing waiting.</p>{% endfor %}</div></section>
+  <div class="stack">
+    <section class="panel"><div class="panel-head"><h2>To sign</h2></div><div class="st-tasks">
+      {% for e in waiting %}<a class="st-task" href="{% url 'esign_detail' e.uid %}"><span class="ic k-sign"><i class="bi bi-pen"></i></span><div><b>{{ e.subject }}</b><div class="small muted">from {{ e.created_by|display_name }}</div></div></a>{% empty %}<p class="muted small mb-0">Nothing to sign.</p>{% endfor %}
+      {% for e in hosting %}<a class="st-task" href="{% url 'esign_detail' e.uid %}"><span class="ic"><i class="bi bi-tablet"></i></span><div><b>In person: {{ e.subject }}</b><div class="small muted">Hand the device to {{ e.patient.full_name|default:'the signer' }}</div></div></a>{% endfor %}</div></section>
+    <section class="panel"><div class="panel-head"><h2>Recently done by you</h2></div><ul class="plain ruled">{% for t in done %}<li class="small"><a href="{% url 'run_detail' t.run_id %}">{{ t.label }}</a> · {{ t.run.submission.patient.full_name }} · {{ t.get_status_display|lower }} {{ t.decided_at|ago }}</li>{% empty %}<li class="muted small">Nothing yet.</li>{% endfor %}</ul></section>
+  </div>
+</div>
+{% endblock %}
