@@ -473,3 +473,18 @@ class StudioPageTests(Base):
         c.post(f'/studio/forms/{f.pk}/edit/', {'name': 'Falls', 'slug': 'falls', 'schema': json.dumps({'fields': [{'key': 'x', 'type': 'text', 'label': 'X'}]}), 'published': 'on'})
         f.refresh_from_db(); self.assertEqual(f.version, 2)
         self.assertIn('score', [x['key'] for x in FormSubmission.objects.get(pk=s.pk).schema_snapshot['fields']])
+
+
+class BootstrapRestartTests(TestCase):
+    """Container start runs bootstrap_hospital every time; it must survive medicines that share a name."""
+
+    def test_bootstrap_runs_again_after_tablet_and_syrup_of_same_name(self):
+        from django.core.management import call_command
+        from .models import Medication
+        call_command('bootstrap_hospital', verbosity=0)
+        Medication.objects.create(name='Paracetamol', strength='120 mg/5 mL', form='Syrup')   # what seed_pharmacy adds
+        before = Medication.objects.count()
+        call_command('bootstrap_hospital', verbosity=0)
+        call_command('bootstrap_hospital', verbosity=0)
+        self.assertEqual(Medication.objects.count(), before)
+        self.assertEqual(Medication.objects.filter(name='Paracetamol').count(), 2)

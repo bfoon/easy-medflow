@@ -23,7 +23,11 @@ class Command(BaseCommand):
                 ('Ibuprofen', 'ibuprofen', 'Tablet', '400 mg'), ('Ferrous sulfate', 'ferrous sulfate', 'Tablet', '200 mg'),
                 ('Ceftriaxone', 'ceftriaxone', 'Injection', '1 g'), ('Zinc sulfate', 'zinc', 'Tablet', '20 mg')]
         for name, generic, form, strength in meds:
-            Medication.objects.get_or_create(name=name, defaults={'generic_name': generic, 'form': form, 'strength': strength})
+            # Names are not unique: Paracetamol 500 mg tablets and 120 mg/5 mL syrup are both stocked (seed_pharmacy adds
+            # such pairs), so get_or_create(name=...) crashed on restart. Add a starter medicine only when no medicine of
+            # that name exists; never duplicate or overwrite the hospital's own entries.
+            if not Medication.objects.filter(name=name).exists():
+                Medication.objects.create(name=name, generic_name=generic, form=form, strength=strength)
         self.load_locations()
         self.load_prices()   # after medicines and tests exist, so their prices are filled in
         if kwargs.get('verbosity', 1):

@@ -219,7 +219,8 @@ def patients(request):
     qs = Patient.objects.annotate(allergy_count=Count('allergies', filter=Q(allergies__status='active'), distinct=True),
                                   visit_count=Count('encounters', distinct=True)).order_by('-created_at')
     if q:
-        qs = qs.filter(Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(mrn__icontains=q) | Q(phone__icontains=q))
+        from .phones import is_phone_query, phone_q
+        qs = qs.filter(phone_q(q) if is_phone_query(q) else Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(mrn__icontains=q))
     admitted = set(Admission.objects.filter(discharged_at__isnull=True).values_list('encounter__patient_id', flat=True))
     return render(request, 'hospital/patients.html', {'rows': qs[:120], 'q': q, 'admitted': admitted, 'total': Patient.objects.count()})
 
@@ -493,11 +494,14 @@ def lab_requests_qs():
 def labs(request):
     """The lab board: one card per patient request, holding all of its tests."""
     authorize(request)
-    reqs = [r for r in lab_requests_qs().order_by('created_at')[:300]]
     lanes = [('ordered', 'Awaiting collection'), ('collected', 'Specimen collected'), ('processing', 'Processing'), ('resulted', 'Awaiting verification')]
+    # Every request that still has a test to do, however old: the board used to load the 300 OLDEST requests and pick
+    # the open ones from those, so once a hospital passed 300 requests new orders never appeared.
+    reqs = list(lab_requests_qs().filter(orders__status__in=[k for k, _ in lanes]).distinct().order_by('created_at'))
     rank = {'stat': 0, 'urgent': 1, 'routine': 2}
     board = [{'key': k, 'label': lbl, 'requests': sorted([r for r in reqs if r.stage == k], key=lambda r: (rank[r.priority], r.created_at))} for k, lbl in lanes]
-    done = sorted([r for r in reqs if r.stage == 'verified'], key=lambda r: r.updated_at, reverse=True)[:20]
+    recent = lab_requests_qs().filter(orders__status='verified').exclude(orders__status__in=[k for k, _ in lanes]).distinct().order_by('-updated_at')[:40]
+    done = [r for r in recent if r.stage == 'verified'][:20]
     return render(request, 'hospital/labs.html', {'board': board, 'done': done})
 
 
@@ -1166,11 +1170,13 @@ ALLOWED_IMAGE_EXT = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image
 @login_required
 def imaging_list(request):
     authorize(request)
-    orders = list(ImagingOrder.objects.select_related('encounter__patient', 'requested_by').prefetch_related('images').exclude(status='cancelled').order_by('created_at')[:300])
+    base = ImagingOrder.objects.select_related('encounter__patient', 'requested_by').prefetch_related('images')
     rank = {'stat': 0, 'urgent': 1, 'routine': 2}
     lanes = [('requested', 'Waiting for imaging'), ('acquired', 'Images taken · awaiting report')]
+    # all open requests, however old (the board used to load the 300 oldest, hiding new requests); latest reports only
+    orders = list(base.filter(status__in=[k for k, _ in lanes]))
     board = [{'key': k, 'label': l, 'orders': sorted([o for o in orders if o.status == k], key=lambda o: (rank[o.priority], o.created_at))} for k, l in lanes]
-    reported = sorted([o for o in orders if o.status == 'reported'], key=lambda o: o.reported_at or o.created_at, reverse=True)[:30]
+    reported = list(base.filter(status='reported').order_by('-reported_at', '-created_at')[:30])
     return render(request, 'hospital/imaging.html', {'board': board, 'reported': reported})
 
 
@@ -2078,11 +2084,11 @@ def find_patients(q):
     exact = Patient.objects.filter(mrn__iexact=q).first()
     if exact:
         return [exact], exact
-    digits = re.sub(r'\D', '', q)
+    from .phones import is_phone_query, phone_q
     qs = Patient.objects.all()
     cond = Q(mrn__icontains=q) | Q(first_name__icontains=q) | Q(last_name__icontains=q)
-    if len(digits) >= 6:
-        cond |= Q(phone__icontains=digits[-7:])
+    if is_phone_query(q):
+        cond = phone_q(q)
     return list(qs.filter(cond).order_by('last_name')[:15]), None
 
 

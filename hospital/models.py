@@ -53,17 +53,23 @@ class Patient(Tracked):
     dob=models.DateField()
     sex=models.CharField(max_length=20,choices=[('F','Female'),('M','Male'),('X','Other / unspecified')])
     phone=models.CharField(max_length=40,blank=True)
+    phone_digits=models.CharField(max_length=40,blank=True,db_index=True,editable=False,help_text='Digits of the phone, for search')
     email=models.EmailField(blank=True,help_text='Optional, for sending queue tickets and receipts')
     address=models.TextField(blank=True,verbose_name='Street / compound')
     location=models.ForeignKey('Location',null=True,blank=True,on_delete=models.SET_NULL,related_name='patients',verbose_name='Town or area')
     network_sharing=models.BooleanField(default=True,verbose_name='Share record across the E-MedFlow network',
                                         help_text='Other facilities on the platform may look up this record with the patient number and date of birth')
     emergency_contact=models.CharField(max_length=200,blank=True)
+    contact_digits=models.CharField(max_length=200,blank=True,editable=False,help_text='Phone numbers in the emergency contact, digits only, for search')
     blood_group=models.CharField(max_length=5,blank=True)
     medical_alerts=models.TextField(blank=True,help_text='Human-reviewed high-priority alerts; do not replace structured allergy data')
     deceased_at=models.DateTimeField(null=True,blank=True)
     def save(self,*a,**kw):
         if not self.mrn: self.mrn=f'MF-{uuid.uuid4().hex[:10].upper()}'
+        from .phones import digits, contact_digits
+        self.phone_digits=digits(self.phone); self.contact_digits=contact_digits(self.emergency_contact)   # for phone search
+        if kw.get('update_fields') is not None:
+            kw['update_fields']=list(set(kw['update_fields'])|{'phone_digits','contact_digits'})
         super().save(*a,**kw)
     @property
     def full_name(self):return f'{self.first_name} {self.last_name}'

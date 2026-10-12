@@ -1,6 +1,6 @@
 """Find patients fast: free text across the whole record, plus filters by disease category and situation.
 
-Every word typed must match something about the patient (name, number, phone, diagnosis, condition, allergy,
+Every word typed must match something about the patient (name, number, phone in any format, diagnosis, condition, allergy,
 medicine, test, scan or town), so "malaria brikama" or "femur fracture" narrow the list rather than widen it.
 """
 import re
@@ -11,6 +11,7 @@ from django.db.models import Max, Q
 from django.utils import timezone
 
 from .categories import INFO, classify
+from .phones import LOCAL_LEN, MIN_DIGITS, PHONE_QUERY, digits as phone_digits, is_phone_query, phone_q
 
 AGE_BANDS = [('child', 'Under 18', 0, 17), ('adult', '18–64', 18, 64), ('older', '65 and over', 65, 200)]
 STATUS = [('inpatient', 'Admitted now'), ('queue', 'In the queue'), ('open', 'Open visit'), ('critical', 'Unreviewed abnormal results'),
@@ -39,12 +40,16 @@ def _token_matches(tok):
             pid, val = row if isinstance(row, tuple) else (row, None)   # (patient id, what matched) or just the id
             if pid not in hits:
                 hits[pid] = f'{label}: {val}' if val else label
-    digits = re.sub(r'\D', '', tok)
+    digits = phone_digits(tok)
     add(Patient.objects.filter(mrn__iexact=tok).values_list('pk', flat=True), 'Patient number')
     add(Patient.objects.filter(Q(first_name__icontains=tok) | Q(last_name__icontains=tok)).values_list('pk', flat=True), 'Name')
     add(Patient.objects.filter(mrn__icontains=tok).values_list('pk', flat=True), 'Patient number')
-    if len(digits) >= 5:
-        add(Patient.objects.filter(phone__icontains=digits[-7:]).values_list('pk', flat=True), 'Phone')
+    if len(digits) >= MIN_DIGITS and PHONE_QUERY.match(tok):
+        # compare digits with digits, so "+220 341 5919", "3415919" and "341-5919" all find the same patient
+        for pid, ph, contact, pd in Patient.objects.filter(phone_q(tok)).values_list('pk', 'phone', 'emergency_contact', 'phone_digits')[:400]:
+            if pid not in hits:
+                own = digits in pd or (len(digits) > LOCAL_LEN and pd.endswith(digits[-LOCAL_LEN:]))
+                hits[pid] = f'Phone: {ph}' if own else f'Emergency contact: {contact[:60]}'
     if len(tok) >= 3:
         add(Encounter.objects.filter(Q(diagnosis__icontains=tok) | Q(reason__icontains=tok)).order_by('-created_at').values_list('patient_id', 'diagnosis'), 'Diagnosis')
         add(Condition.objects.filter(name__icontains=tok).values_list('patient_id', 'name'), 'Condition')
@@ -64,7 +69,8 @@ def search_patients(user, q='', cats=(), dept='', status=(), age='', sex='', tow
     from .models import Admission, Department, Encounter, LabResultValue, Patient, QueueTicket
     qs = Patient.objects.all()
     reasons = {}
-    tokens = [t for t in re.split(r'\s+', (q or '').strip()) if t][:6]
+    # a phone number typed with spaces ("+220 341 5919") is one thing to look for, not three words
+    tokens = [q.strip()] if is_phone_query(q) else [t for t in re.split(r'\s+', (q or '').strip()) if t][:6]
     if tokens:
         ids = None
         for tok in tokens:
@@ -122,7 +128,7 @@ def search_patients(user, q='', cats=(), dept='', status=(), age='', sex='', tow
         qs = qs.order_by('-last_seen', 'last_name')
     rows = list(qs[:limit * 3 if tokens and sort == 'relevance' else limit])
     if tokens and sort == 'relevance':   # exact number, then name matches, then everything else; most recent first within each
-        rank = lambda p: (0 if any(r.startswith('Patient number') for r in reasons.get(p.pk, [])) else 1 if all(r == 'Name' for r in reasons.get(p.pk, [])) else 2)
+        rank = lambda p: (0 if any(r.startswith(('Patient number', 'Phone')) for r in reasons.get(p.pk, [])) else 1 if all(r == 'Name' for r in reasons.get(p.pk, [])) else 2)
         rows = sorted(rows, key=rank)[:limit]
     # enrich the visible rows
     pids = [p.pk for p in rows]

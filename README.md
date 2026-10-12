@@ -95,7 +95,9 @@ pharmacy, finance, management, admin). Superusers may access everything; other a
 - **E-sign** — DocuSign-style envelopes: place fields on any PDF, signing order, links for outside signers with access
   codes, patients signing in person with a witness, a sealed PDF with a certificate page, and a public verify page.
 - **Bedside and injuries** — an animated bed scene and an injury & burns body map, both drawn from the values entered.
-- **Search** — press `Ctrl K` (or `/`) anywhere to find a patient by name, MRN or phone, or jump to a page.
+- **Search** — press `Ctrl K` (or `/`) anywhere to find a patient by name, MRN or phone, or jump to a page. Phone
+  numbers work however they are typed (`+220 341 5919`, `3415919`, `341-5919`, `00220…`, or just the last 4 digits) and
+  also find patients whose emergency contact has that number.
 
 Animations honour the operating system “reduce motion” setting.
 
