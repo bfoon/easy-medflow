@@ -44,7 +44,19 @@ def lab_result(enc, code, values, by, hours=4):
             LabResultValue.objects.create(order=o, parameter=prm, value_number=num, value_text='' if num is not None else str(v),
                                           flag=prm.flag_for(v, enc.patient.sex), entered_by=by)
     o.abnormal = o.values.exclude(flag__in=['', 'N']).exists(); o.save(update_fields=['abnormal'])
+    _realistic_times(o)
     return o
+
+
+def _realistic_times(o):
+    """Ordered, collected and received a plausible time before the result, so turnaround figures make sense."""
+    if not o.resulted_at:
+        return
+    tat = timedelta(minutes=random.randint(35, min(240, (o.test.turnaround_hours or 4) * 60)))
+    ordered = o.resulted_at - tat - timedelta(minutes=20)
+    LabOrder.objects.filter(pk=o.pk).update(created_at=ordered)
+    if o.request_id:
+        LabRequest.objects.filter(pk=o.request_id).update(created_at=ordered, collected_at=ordered + timedelta(minutes=12), received_at=ordered + timedelta(minutes=20))
 
 
 def new_patient(first, last, sex, age, town, **kw):
@@ -189,6 +201,8 @@ def run_all():
     res['specialist logins'] = network_portal(doctor)
     res['hand and foot cases'] = hand_foot_cases(doctor, rad)
     res['pregnancy and reproductive cases'] = pregnancy_cases(doctor, rad)
+    res['blood disease cases'] = blood_cases(doctor, rad)
+    res['lab QC runs'] = lab_management(doctor)
     res['patients placed on map'] = link_patient_locations()
     return res
 
@@ -502,4 +516,118 @@ def pregnancy_cases(doctor, rad):
           'Benign prostatic enlargement.', True, [{'label': 'Prostate volume', 'value': '62', 'unit': 'mL', 'abnormal': True},
                                                    {'label': 'Post-void residual', 'value': '140', 'unit': 'mL', 'abnormal': True}], hours=20)
     made += 1
+    return made
+
+
+def blood_cases(doctor, rad):
+    """Fictional blood-disease patients with full haematology work-ups."""
+    from .models import Bed
+    if Encounter.objects.filter(diagnosis__icontains='HbSS) in vaso-occlusive crisis').exists():
+        return 0
+    med = Department.objects.filter(name='General Medicine').first() or Department.objects.first()
+    em = Department.objects.filter(name='Emergency').first() or med
+    ped = Department.objects.filter(name='Pediatrics').first() or em
+    has = lambda code: LabTest.objects.filter(code=code).exists()
+    def admit(e):
+        bed = Bed.objects.filter(state='available').first()
+        if bed:
+            Admission.objects.create(encounter=e, bed=bed); bed.state = 'occupied'; bed.save(update_fields=['state'])
+    cases = [
+        ('Fatoumata', 'Jallow', 'F', 16, 'Brikama', ped, 'Severe pain in legs, back and chest since last night', 'Sickle cell disease (HbSS) in vaso-occlusive crisis', True,
+         {'CBC': {'HB': 6.8, 'WBC': 15.2, 'PLT': 420, 'RBC': 2.4, 'HCT': 20, 'MCV': 84}, 'SICK': {'SICK': 'Positive'}, 'RETIC': {'RETIC': 14},
+          'HBEP': {'HBA': 0, 'HBS': 88, 'HBF': 9, 'HBA2': 3, 'HBGENO': 'SS'}, 'PBF': {'PBFM': 'Sickle cells', 'BLAST': 0, 'PBFC': 'Many sickle cells, target cells and nucleated red cells.'},
+          'LFT': {'ALT': 34, 'AST': 58, 'ALP': 110, 'TBIL': 64, 'ALB': 38}}, 'Sickle cell disease'),
+        ('Binta', 'Sanneh', 'F', 29, 'Serrekunda', med, 'Tiredness, breathless on stairs, heavy periods', 'Iron-deficiency anaemia', False,
+         {'CBC': {'HB': 7.9, 'WBC': 6.4, 'PLT': 460, 'RBC': 3.9, 'HCT': 26, 'MCV': 64}, 'FERR': {'FERR': 4},
+          'PBF': {'PBFM': 'Microcytic hypochromic', 'BLAST': 0, 'PBFC': 'Microcytic hypochromic red cells with pencil cells.'}}, None),
+        ('Omar', 'Jobe', 'M', 34, 'Bakau', med, 'Mild anaemia found at blood donation; well', 'Beta thalassaemia trait', False,
+         {'CBC': {'HB': 11.4, 'WBC': 7.1, 'PLT': 250, 'RBC': 6.1, 'HCT': 37, 'MCV': 63}, 'FERR': {'FERR': 140},
+          'HBEP': {'HBA': 92.6, 'HBS': 0, 'HBF': 1.8, 'HBA2': 5.6, 'HBGENO': 'Beta thalassaemia trait'}, 'PBF': {'PBFM': 'Target cells', 'BLAST': 0, 'PBFC': 'Microcytosis with target cells.'}}, None),
+        ('Kebba', 'Sowe', 'M', 58, 'Banjul', med, 'Fevers, bleeding gums and bruising for 2 weeks', 'Acute myeloid leukaemia', True,
+         {'CBC': {'HB': 6.9, 'WBC': 86, 'PLT': 18, 'RBC': 2.3, 'HCT': 21, 'MCV': 92}, 'PBF': {'PBFM': 'Normal', 'BLAST': 62, 'PBFC': 'Numerous myeloblasts, some with Auer rods.'},
+          'COAG': {'PT': 14.8, 'INR': 1.3, 'APTT': 38}}, None),
+        ('Awa', 'Manneh', 'F', 22, 'Lamin', em, 'Tiny red spots on legs and bleeding gums for 3 days', 'Immune thrombocytopenic purpura (ITP)', False,
+         {'CBC': {'HB': 12.1, 'WBC': 7.4, 'PLT': 9, 'RBC': 4.3, 'HCT': 36, 'MCV': 88}, 'COAG': {'PT': 12.4, 'INR': 1.0, 'APTT': 30}}, None),
+        ('Ebrima', 'Jallow', 'M', 40, 'Soma', med, 'Dark urine and yellow eyes after starting primaquine for malaria', 'G6PD deficiency with acute haemolysis (drug-induced)', False,
+         {'CBC': {'HB': 8.2, 'WBC': 9.8, 'PLT': 230, 'RBC': 2.8, 'HCT': 25, 'MCV': 96}, 'G6PD': {'G6PD': 'Deficient'}, 'RETIC': {'RETIC': 9},
+          'PBF': {'PBFM': 'Bite cells', 'BLAST': 0, 'PBFC': 'Bite and blister cells; Heinz bodies on supravital stain.'}, 'LFT': {'ALT': 28, 'AST': 44, 'ALP': 90, 'TBIL': 71, 'ALB': 40}}, None),
+    ]
+    made = 0
+    for first, last, sex, age, town, dept, reason, dx, inpatient, tests, condition in cases:
+        p = new_patient(first, last, sex, age, town)
+        if condition:
+            Condition.objects.create(patient=p, name=condition, status='active')
+        e = Encounter.objects.create(patient=p, clinician=doctor, department=dept, status='open', reason=reason, diagnosis=dx,
+                                     vitals={'bp': '112/70', 'heart_rate': '108' if inpatient else '86', 'temperature_c': '37.9' if inpatient else '36.8'})
+        for code, values in tests.items():
+            if has(code):
+                lab_result(e, code, values, doctor, hours=random.randint(2, 20))
+        if inpatient:
+            admit(e)
+        made += 1
+    return made
+
+
+def lab_management(doctor):
+    """Analysers, QC history (with Westgard warnings and a rejected run), reagents, critical calls and specimen activity."""
+    from decimal import Decimal as Dm
+    from .models import Analyzer, AnalyzerLog, CriticalCall, LabParameter, LabRequest, QCMaterial, QCRun, Reagent, StaffProfile
+    if Analyzer.objects.exists():
+        return 0
+    lab = (StaffProfile.objects.filter(role='lab').select_related('user').first() or StaffProfile.objects.filter(role='doctor').first()).user
+    now, today = timezone.now(), timezone.localdate()
+    A = {k: Analyzer.objects.create(name=n, section=sec, model_name=m, serial=f'SN-{random.randint(10000, 99999)}', status=st, status_note=note,
+                                    last_maintenance=today - timedelta(days=lm), next_maintenance=today + timedelta(days=nm))
+         for k, n, sec, m, st, note, lm, nm in [
+            ('haem', 'Haematology analyser', 'haematology', 'Sysmex XN-550', 'online', '', 12, 18),
+            ('chem', 'Chemistry analyser', 'chemistry', 'Mindray BS-240', 'online', '', 20, 10),
+            ('coag', 'Coagulation analyser', 'haematology', 'Sysmex CA-600', 'online', '', 25, 5),
+            ('gas', 'Blood gas analyser', 'blood_gas', 'Radiometer ABL90', 'online', '', 6, 24),
+            ('ua', 'Urine analyser', 'urinalysis', 'Urisys 1100', 'maintenance', 'Printer fault, engineer due tomorrow', 40, -1),
+            ('micro', 'GeneXpert', 'microbiology', 'Cepheid GeneXpert IV', 'online', '', 30, 0)]}
+    for a in A.values():
+        AnalyzerLog.objects.create(analyzer=a, kind='maintenance', note='Routine daily maintenance and cleaning', by=lab)
+    AnalyzerLog.objects.create(analyzer=A['ua'], kind='fault', note='Printer jam; results reported manually', by=lab)
+    prm = {p.code: p for p in LabParameter.objects.filter(code__in=['HB', 'WBC', 'PLT', 'K', 'CREA', 'FBG', 'INR'])}
+    plan = [('haem', 'HB', [('L1', 6.0, .2), ('L2', 12.5, .3), ('L3', 16.5, .4)]), ('haem', 'WBC', [('L2', 7.5, .3)]), ('haem', 'PLT', [('L2', 225, 9)]),
+            ('chem', 'K', [('L1', 3.0, .08), ('L2', 5.5, .12)]), ('chem', 'CREA', [('L2', 180, 6)]), ('chem', 'FBG', [('L2', 6.0, .2)]), ('coag', 'INR', [('L2', 2.5, .1)])]
+    made = 0
+    for ak, code, levels in plan:
+        if code not in prm:
+            continue
+        for lv, mean, sd in levels:
+            m = QCMaterial.objects.create(analyzer=A[ak], parameter=prm[code], level=lv, lot=f'QC{random.randint(1000, 9999)}', mean=Dm(str(mean)), sd=Dm(str(sd)),
+                                          expiry=today + timedelta(days=random.randint(40, 200)))
+            for d in range(20, -1, -1):
+                z = random.gauss(0, .8)
+                if code == 'K' and lv == 'L2' and d <= 3:
+                    z = 1.4 + d * .05                              # a drift: 4-1s by today
+                if code == 'CREA' and d == 0:
+                    z = 3.4                                        # today's run breaks 1-3s
+                if code == 'HB' and lv == 'L2' and d == 6:
+                    z = 2.3                                        # an old 1-2s warning
+                from .lab_mgmt import westgard
+                val = Dm(str(round(mean + z * sd, 3)))
+                status, rules = westgard(m, val)
+                r = QCRun.objects.create(material=m, value=val, status=status, rules=', '.join(rules), by=lab)
+                QCRun.objects.filter(pk=r.pk).update(created_at=now - (timedelta(minutes=random.randint(10, 40)) if d == 0 else timedelta(days=d, hours=random.randint(1, 3))))
+                made += 1
+    A['chem'].status, A['chem'].status_note = 'qc_hold', 'QC failed (1-3s) on Creatinine L2 this morning'; A['chem'].save()
+    AnalyzerLog.objects.create(analyzer=A['chem'], kind='status', note='Put on QC hold: creatinine L2 outside 3 SD', by=lab)
+    for name, ak, lot, days, qty, unit, reorder in [('CBC reagent pack', 'haem', 'H2201', 120, 900, 'tests', 300), ('Lyse reagent', 'haem', 'L8812', 12, 140, 'tests', 200),
+                                                    ('Creatinine reagent', 'chem', 'C4410', 60, 420, 'tests', 150), ('Glucose reagent', 'chem', 'G9031', 6, 80, 'tests', 100),
+                                                    ('PT reagent', 'coag', 'P7754', 90, 60, 'tests', 80), ('Blood gas cartridge', 'gas', 'BG330', 40, 25, 'cartridges', 20),
+                                                    ('Urine strips', 'ua', 'U1290', -3, 200, 'strips', 100), ('Xpert MTB/RIF cartridges', 'micro', 'X5521', 150, 12, 'cartridges', 20)]:
+        Reagent.objects.create(name=name, analyzer=A[ak], lot=lot, expiry=today + timedelta(days=days), quantity=qty, unit=unit, reorder_level=reorder)
+    for v in LabResultValue.objects.filter(flag__in=['LL', 'HH']).select_related('order')[:40]:
+        c, _ = CriticalCall.objects.get_or_create(value=v)
+        if v.order.resulted_at and v.order.resulted_at < now - timedelta(days=1):
+            c.called_to, c.called_by, c.called_at, c.read_back = 'Ward doctor on duty', lab, v.order.resulted_at + timedelta(minutes=random.randint(5, 25)), True; c.save()
+    for o in LabOrder.objects.filter(resulted_at__isnull=False).select_related('test')[:600]:
+        if o.created_at >= o.resulted_at:                          # older demo data: put ordering before the result
+            _realistic_times(o)
+    for lr in LabRequest.objects.filter(collected_at__isnull=False, received_at__isnull=True)[:40]:
+        lr.received_at, lr.received_by = lr.collected_at + timedelta(minutes=random.randint(5, 40)), lab; lr.save(update_fields=['received_at', 'received_by'])
+    for lr in LabRequest.objects.filter(collected_at__isnull=False).order_by('?')[:3]:
+        LabRequest.objects.filter(pk=lr.pk).update(rejection_reason=random.choice(['haemolysed', 'clotted', 'insufficient']), rejected_at=now - timedelta(days=random.randint(1, 5)))
     return made

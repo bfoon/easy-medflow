@@ -1,0 +1,19 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Critical calls{% endblock %}
+{% block heading %}Critical value calls{% endblock %}
+{% block subheading %}<p class="sub">Every critical result must be phoned to the clinical team and read back. The clinician has already been alerted in E-MedFlow.</p>{% endblock %}
+{% block content %}
+{% include 'hospital/lab/_nav.html' %}
+<section class="panel flush mb-3"><div class="panel-head"><h2>To call</h2><span class="hint">{{ pending|length }}</span></div>
+  {% for c in pending %}{% with v=c.value p=c.value.order.encounter.patient %}
+  <div class="crit-row"><div class="flex-fill"><b class="text-danger">{{ v.parameter.name }} {{ v.display }} {{ v.parameter.unit }}</b> <span class="tag red">{{ v.get_flag_display }}</span>
+      <div class="small">{{ p.full_name }} · {{ p.mrn }} · <a href="{% url 'lab_request_detail' v.order.request_id %}">{{ v.order.request.number }}</a> · waiting {{ c.created_at|ago }}</div></div>
+    <form method="post" class="d-flex gap-2 flex-wrap align-items-center">{% csrf_token %}<input type="hidden" name="call" value="{{ c.pk }}">
+      <input class="form-control form-control-sm" name="called_to" placeholder="Spoke to (name, role)" required style="min-width:180px">
+      <label class="small d-flex gap-1 align-items-center"><input type="checkbox" class="form-check-input m-0" name="read_back" required>Read back</label>
+      <input class="form-control form-control-sm" name="note" placeholder="Note" style="max-width:160px"><button class="btn btn-sm btn-primary">Record call</button></form></div>
+  {% endwith %}{% empty %}<div class="empty">No calls waiting.</div>{% endfor %}</section>
+<section class="panel flush"><div class="panel-head"><h2>Recorded calls</h2></div><div class="scroll-y"><table class="mini-table"><thead><tr><th>Result</th><th>Patient</th><th>Told</th><th>By</th><th>When</th><th>Time to call</th></tr></thead><tbody>
+  {% for c in done %}<tr><td><b>{{ c.value.parameter.name }} {{ c.value.display }}</b></td><td>{{ c.value.order.encounter.patient.full_name }}</td><td>{{ c.called_to }}{% if c.read_back %} <i class="bi bi-check2-circle text-success" title="Read back"></i>{% endif %}</td><td>{{ c.called_by|display_name }}</td><td class="small">{{ c.called_at|date:'j M H:i' }}</td><td class="small">{{ c.called_at|timeuntil:c.created_at }}</td></tr>
+  {% empty %}<tr><td colspan="6" class="empty">None yet.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

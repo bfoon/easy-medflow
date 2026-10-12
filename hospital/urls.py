@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views as v
+from . import lab_views as lv
 from . import pharmacy_views as pv
 
 urlpatterns = [
@@ -69,6 +70,14 @@ urlpatterns = [
     path('referrals/<int:pk>/<str:state>/', v.referral_transition, name='referral_transition'),
 
     path('labs/', v.labs, name='labs'),
+    path('labs/dashboard/', lv.lab_dashboard, name='lab_dashboard'),
+    path('labs/specimens/', lv.lab_specimens, name='lab_specimens'),
+    path('labs/qc/', lv.lab_qc, name='lab_qc'),
+    path('labs/analysers/', lv.lab_analyzers, name='lab_analyzers'),
+    path('labs/reagents/', lv.lab_reagents, name='lab_reagents'),
+    path('labs/critical/', lv.lab_critical, name='lab_critical'),
+    path('labs/requests/<int:pk>/label/', lv.lab_label, name='lab_label'),
+    path('labs/requests/<int:pk>/report/', lv.lab_report, name='lab_report'),
     path('labs/new/', v.lab_new, name='lab_new'),
     path('labs/mine/', v.lab_mine, name='lab_mine'),
     path('labs/catalog/', v.lab_catalog, name='lab_catalog'),

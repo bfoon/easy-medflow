@@ -181,10 +181,13 @@
     const box = $('#droplets'); box.innerHTML = '';
     if (reduceMotion || !SYS.blood && !DATA.params.length) return;
     $$('#vessels path').forEach((path, vi) => {
-      const len = path.getTotalLength(), count = Math.max(2, Math.round(len / 90)), dur = (len / 38).toFixed(1);
+      const cells = ((window.MF_ANATOMY || {}).blood || {}).cells || {};   // disease-specific cells (sickle, pale, target, blasts…): see anatomy-layers.js
+      const len = path.getTotalLength(), count = Math.max(2, Math.round(len / 90 * (cells.density || 1))), dur = (len / 38).toFixed(1);
       for (let i = 0; i < count; i++) {
         const d = document.createElementNS(SVGNS, 'path');
-        d.setAttribute('d', 'M0,-5 C3,-1.5 3.6,1.4 0,4.2 C-3.6,1.4 -3,-1.5 0,-5 Z'); d.setAttribute('class', 'drop');
+        const blast = cells.blastEvery && i % cells.blastEvery === 0;
+        d.setAttribute('d', blast ? 'M0,-5.5 A5.5,5.5 0 1,1 -0.01,-5.5 Z' : (cells.shape || 'M0,-5 C3,-1.5 3.6,1.4 0,4.2 C-3.6,1.4 -3,-1.5 0,-5 Z'));
+        d.setAttribute('class', `drop ${blast ? 'blast' : cells.cls || ''}`);
         const durHr = (dur * ((window.MF_ANATOMY || {}).flowFactor || 1)).toFixed(2);   // faster pulse, faster flow
         d.innerHTML = `<animateMotion dur="${durHr}s" repeatCount="indefinite" rotate="auto" begin="-${(i * dur / count + vi * .37).toFixed(2)}s"><mpath href="#${path.id}"/></animateMotion>`;
         box.appendChild(d);

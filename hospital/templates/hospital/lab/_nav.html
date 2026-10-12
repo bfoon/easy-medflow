@@ -1,0 +1,10 @@
+<nav class="lab-nav" aria-label="Laboratory">
+  <a href="{% url 'labs' %}" class="{% if tab == 'board' %}on{% endif %}"><i class="bi bi-kanban"></i>Work board</a>
+  <a href="{% url 'lab_dashboard' %}" class="{% if tab == 'dashboard' %}on{% endif %}"><i class="bi bi-speedometer2"></i>Command centre</a>
+  <a href="{% url 'lab_specimens' %}" class="{% if tab == 'specimens' %}on{% endif %}"><i class="bi bi-upc-scan"></i>Specimens</a>
+  <a href="{% url 'lab_qc' %}" class="{% if tab == 'qc' %}on{% endif %}"><i class="bi bi-graph-up"></i>Quality control</a>
+  <a href="{% url 'lab_analyzers' %}" class="{% if tab == 'analyzers' %}on{% endif %}"><i class="bi bi-cpu"></i>Analysers</a>
+  <a href="{% url 'lab_reagents' %}" class="{% if tab == 'reagents' %}on{% endif %}"><i class="bi bi-box-seam"></i>Reagents</a>
+  <a href="{% url 'lab_critical' %}" class="{% if tab == 'critical' %}on{% endif %}"><i class="bi bi-telephone-outbound"></i>Critical calls</a>
+  <a href="{% url 'lab_catalog' %}"><i class="bi bi-journal-medical"></i>Test catalogue</a>
+</nav>

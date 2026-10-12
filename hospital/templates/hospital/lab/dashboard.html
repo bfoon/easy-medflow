@@ -1,0 +1,43 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Lab command centre{% endblock %}
+{% block heading %}Laboratory command centre{% endblock %}
+{% block subheading %}<p class="sub">Live workload, turnaround, quality control, equipment and stock. Refreshes every minute.</p>{% endblock %}
+{% block content %}
+{% include 'hospital/lab/_nav.html' %}
+<div class="kpis lab-kpis">
+  <div class="kpi"><b>{{ d.received_today }}<small>/{{ d.requests_today }}</small></b><span>samples received today</span></div>
+  <a class="kpi {% if d.stat_open %}abn{% endif %}" href="{% url 'labs' %}"><b>{{ d.stat_open }}</b><span>STAT tests open</span></a>
+  <div class="kpi"><b>{% if d.median_tat is not None %}{{ d.median_tat }}<small> min</small>{% else %}—{% endif %}</b><span>median turnaround today</span></div>
+  <div class="kpi {% if d.within_tat is not None and d.within_tat < 80 %}abn{% endif %}"><b>{% if d.within_tat is not None %}{{ d.within_tat }}%{% else %}—{% endif %}</b><span>within target time ({{ d.done_today }} results)</span></div>
+  <div class="kpi {% if d.rejection_rate >= 5 %}abn{% endif %}"><b>{{ d.rejection_rate }}%</b><span>samples rejected (7 days)</span></div>
+  <a class="kpi {% if d.critical_pending %}abn{% endif %}" href="{% url 'lab_critical' %}"><b>{{ d.critical_pending|length }}</b><span>critical calls to make</span></a>
+</div>
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel"><div class="panel-head"><h2>Work in progress</h2></div>
+      <div class="pipeline">{% for label, n in d.stage %}<div class="pipe-step"><b>{{ n }}</b><span>{{ label }}</span></div>{% endfor %}</div></section>
+    <section class="panel"><div class="panel-head"><h2>Results per hour today</h2></div>
+      <div class="hourbars">{% for n in d.hours %}<i style="--h:{% widthratio n 1 1 %}" data-n="{{ n }}" title="{{ forloop.counter0 }}:00 · {{ n }}"></i>{% endfor %}</div>
+      <div class="d-flex justify-content-between small muted"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div></section>
+    <section class="panel flush"><div class="panel-head"><h2>Overdue</h2><span class="hint">Past the test's turnaround target (STAT: 1 hour)</span></div>
+      <div class="scroll-y"><table class="mini-table"><thead><tr><th>Test</th><th>Patient</th><th>Stage</th><th class="text-end">Late by</th></tr></thead><tbody>
+      {% for r in d.overdue %}<tr><td><a href="{% url 'lab_request_detail' r.o.request_id %}"><b>{{ r.o.test.name }}</b></a>{% if r.o.request.priority == 'stat' %} <span class="tag red">STAT</span>{% endif %}</td><td>{{ r.o.encounter.patient.full_name }}</td><td><span class="tag">{{ r.o.get_status_display }}</span></td><td class="text-end text-danger fw-semibold">{% if r.late_min >= 120 %}{% widthratio r.late_min 60 1 %} h{% else %}{{ r.late_min }} min{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="4" class="empty">Nothing overdue.</td></tr>{% endfor %}</tbody></table></div></section>
+  </div>
+  <div class="stack">
+    <section class="panel"><div class="panel-head"><h2>Analysers</h2><a class="more" href="{% url 'lab_qc' %}">QC</a></div>
+      {% for x in d.analyzers %}<div class="an-row"><span class="qc-light {{ x.light }}" title="Today's QC: {{ x.light }}"></span><span class="flex-fill"><b>{{ x.a.name }}</b><br><span class="small muted">{{ x.a.get_section_display }}</span></span><span class="tag an-{{ x.a.status }}">{{ x.a.get_status_display }}</span></div>
+      {% empty %}<p class="small muted mb-0">No analysers set up.</p>{% endfor %}</section>
+    <section class="panel"><div class="panel-head"><h2>Turnaround by section</h2><span class="hint">median, 7 days</span></div>
+      {% for s in d.sections %}<div class="d-flex small mb-1"><span>{{ s.name }}</span><b class="ms-auto">{% if s.median >= 120 %}{% widthratio s.median 60 1 %} h{% else %}{{ s.median|floatformat:0 }} min{% endif %}</b><span class="muted ms-2">({{ s.n }})</span></div>{% empty %}<p class="small muted mb-0">No results yet.</p>{% endfor %}</section>
+    <section class="panel"><div class="panel-head"><h2>Reagent alerts</h2><a class="more" href="{% url 'lab_reagents' %}">Stock</a></div>
+      {% for r in d.reagents %}<div class="d-flex small mb-1 gap-2"><span>{{ r.name }} <span class="muted">lot {{ r.lot }}</span></span><span class="ms-auto {% if r.days_left <= 7 or r.quantity <= 0 %}text-danger fw-bold{% endif %}">{% if r.days_left < 0 %}expired{% elif r.days_left <= 21 %}expires in {{ r.days_left }} d{% endif %}{% if r.low %} · {{ r.quantity }} {{ r.unit }} left{% endif %}</span></div>{% empty %}<p class="small muted mb-0">No alerts.</p>{% endfor %}</section>
+    {% if d.rejections %}<section class="panel"><div class="panel-head"><h2>Why samples were rejected</h2></div>{% for k, n in d.rejections %}<div class="d-flex small mb-1"><span>{{ k }}</span><b class="ms-auto">{{ n }}</b></div>{% endfor %}</section>{% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+(() => { const bars = [...document.querySelectorAll('.hourbars i')], max = Math.max(1, ...bars.map(b => +b.dataset.n));
+  bars.forEach(b => b.style.setProperty('--h', (+b.dataset.n / max * 100) + '%'));
+  setTimeout(() => { if (!document.hidden) location.reload(); }, 60000); })();
+</script>{% endblock %}

@@ -278,3 +278,30 @@
 .bm-preg .fetus{animation:fetusFloat 4s ease-in-out infinite;transform-box:fill-box}
 @keyframes fetusFloat{50%{translate:0 -2px;rotate:-2deg}}
 @media (prefers-reduced-motion: reduce){.bm-preg .fetus,.bm-preg .fhr,.rp-fhr,.rp-follicle,.rp-cyst{animation:none}}
+
+/* ============================================================= blood disorders on the body map */
+#droplets .drop.sickle{fill:#B42532}#droplets .drop.pale{fill:#F0A3A8}#droplets .drop.small{transform:scale(.7)}
+#droplets .drop.target{fill:#F6C1C1;stroke:#C8323F;stroke-width:1.6}#droplets .drop.big{transform:scale(1.4)}
+#droplets .drop.blast{fill:#EDE7F6;stroke:#7C5CC4;stroke-width:1.4}#droplets .drop.frag{transform:scale(.6,1)}#droplets .drop.dense{fill:#8E1424}
+.voc .voc-ring{fill:rgba(124,58,237,.18);stroke:#7C3AED;stroke-width:1.6;animation:vocPulse 1.6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.voc .voc-cells{fill:#B42532;stroke:#7a1020;stroke-width:.4}
+@keyframes vocPulse{50%{transform:scale(1.35);fill:rgba(124,58,237,.32)}}
+.petechia{fill:#B91C1C;opacity:.85}.bruise{fill:#6D28D9;opacity:.35;filter:blur(1px)}
+#body.jaundice .silhouette path:first-child{fill:#F6E7A6!important}
+.spleen.big{transform:scale(1.7);transform-box:fill-box;transform-origin:center;fill:#B0477A}
+/* blood pop-out */
+.bl-tabs button.on{background:#B42532;border-color:#B42532}
+.oa.bf,.oa.bv{max-height:330px;border-radius:12px}
+.bf-rbc{fill:#D9535E;stroke:#B42532;stroke-width:.6}.bf-rbc.hypo{fill:#EFA3A9}.bf-rbc.sick{fill:#B42532}.bf-rbc.dense{fill:#A91D2B}
+.bf-pale{fill:#F4C3C7}.bf-pale.wide{fill:#FBE3E5}
+.bf-ring{fill:none;stroke:#5B2A86;stroke-width:1.2}.bf-chrom{fill:#5B2A86}
+.bf-blast{fill:#D9D2F2;stroke:#7C5CC4}.bf-blast-n{fill:#7C5CC4;opacity:.85}.bf-nucleolus{fill:#EDE7F6}
+.bf-wbc{fill:#E9E2F7;stroke:#9B8FC9}.bf-lobes{fill:none;stroke:#5B4AA0;stroke-width:3;stroke-linecap:round}
+.bf-plt{fill:#8E5BB5}
+.bf-drift{animation:bfDrift 18s ease-in-out infinite alternate}@keyframes bfDrift{to{transform:translate(6px,-4px)}}
+.bf-cap{font:600 9px var(--body);fill:#c9bccc}.bf-cap.dark{fill:#6D28D9}
+.ischaemic{fill:#6D28D9;opacity:.12;animation:boneHit 2s infinite}
+.jam{animation:jamShake .5s ease-in-out infinite alternate}@keyframes jamShake{to{transform:translateX(1.5px)}}
+.leak{fill:#B91C1C;animation:leakDrop 2.4s ease-in infinite}@keyframes leakDrop{0%{opacity:0;transform:translateY(-14px)}30%{opacity:.9}100%{opacity:.6;transform:translateY(8px)}}
+.leak{transform-box:fill-box}
+@media (prefers-reduced-motion: reduce){.bf-drift,.jam,.leak,.voc .voc-ring{animation:none}}

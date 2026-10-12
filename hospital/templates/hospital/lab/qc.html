@@ -1,0 +1,31 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Quality control{% endblock %}
+{% block heading %}Quality control{% endblock %}
+{% block subheading %}<p class="sub">Run controls before patient samples. Each value is checked against Westgard rules: 1-2s warns; 1-3s, 2-2s, R-4s, 4-1s or 10x rejects the run and puts the analyser on QC hold.</p>{% endblock %}
+{% block content %}
+{% include 'hospital/lab/_nav.html' %}
+{% for x in analyzers %}
+<section class="panel mb-3"><div class="panel-head"><span class="qc-light {{ x.light }}"></span><h2>{{ x.a.name }}</h2><span class="hint">{{ x.a.get_section_display }}</span><span class="tag an-{{ x.a.status }} ms-auto">{{ x.a.get_status_display }}</span></div>
+  {% if x.a.status_note %}<p class="small {% if x.a.status == 'qc_hold' %}text-danger fw-semibold{% else %}muted{% endif %}">{{ x.a.status_note }}</p>{% endif %}
+  <div class="qc-grid">{% for m in x.mats %}
+    <div class="qc-card">
+      <div class="d-flex align-items-baseline gap-2"><b>{{ m.m.parameter.name }}</b><span class="tag">{{ m.m.level }}</span><span class="small muted ms-auto">lot {{ m.m.lot }} · mean {{ m.m.mean|floatformat:2 }} · SD {{ m.m.sd|floatformat:2 }}</span></div>
+      <svg class="lj" viewBox="0 0 320 130" data-points='{{ m.points|safe_json }}' role="img" aria-label="Levey-Jennings chart"></svg>
+      <form method="post" class="d-flex gap-2 align-items-center">{% csrf_token %}<input type="hidden" name="material" value="{{ m.m.pk }}"><input type="hidden" name="next" value="{{ request.path }}">
+        <input class="form-control form-control-sm" name="value" inputmode="decimal" placeholder="Today's control value" required style="max-width:160px" aria-label="Control value">
+        <button class="btn btn-sm btn-ink">Record</button>
+        {% if m.last %}<span class="small ms-auto qc-{{ m.last.status }}">{{ m.last.get_status_display }}{% if m.last.rules %} · {{ m.last.rules }}{% endif %} · {{ m.last.created_at|date:'j M H:i' }}</span>{% endif %}</form>
+    </div>{% empty %}<p class="small muted">No control materials for this analyser.</p>{% endfor %}</div>
+</section>{% empty %}<div class="panel empty">No analysers set up yet.</div>{% endfor %}
+{% endblock %}
+{% block scripts %}<script>
+document.querySelectorAll('svg.lj').forEach(svg => {
+  const pts = JSON.parse(svg.dataset.points || '[]'), W = 320, H = 130, L = 26, R = 6, T = 6, B = 14;
+  const y = z => T + (1 - (Math.max(-4, Math.min(4, z)) + 4) / 8) * (H - T - B), x = i => L + (pts.length < 2 ? (W - L - R) / 2 : i * (W - L - R) / (pts.length - 1));
+  let g = '';
+  [[3, 'sd3'], [2, 'sd2'], [1, 'sd1'], [0, 'mean'], [-1, 'sd1'], [-2, 'sd2'], [-3, 'sd3']].forEach(([z, c]) => { g += `<line x1="${L}" x2="${W - R}" y1="${y(z)}" y2="${y(z)}" class="${c}"/><text x="${L - 4}" y="${y(z) + 3}" text-anchor="end" class="c-ax">${z === 0 ? 'x̄' : (z > 0 ? '+' : '') + z + 's'}</text>`; });
+  if (pts.length) g += `<path d="${pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.z).toFixed(1)}`).join(' ')}" class="lj-line"/>` + pts.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.z).toFixed(1)}" r="3.6" class="lj-pt ${p.s}"><title>${p.d}: ${p.v} (${p.z > 0 ? '+' : ''}${p.z} SD) · ${p.s}</title></circle>`).join('');
+  else g += `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" class="c-ax">No runs yet</text>`;
+  svg.innerHTML = g;
+});
+</script>{% endblock %}

@@ -96,7 +96,33 @@
   // the womb's top (fundus) rises with gestation: pubic bone at 12 weeks, navel at 20, near the ribs at 36
   const fundusY = pregnancy && !pregnancy.ectopic ? Math.max(300, Math.min(470, 470 - (pregnancy.weeks - 12) * (170 / 24))) : null;
 
-  window.MF_ANATOMY = {repro, fundusY, reproSpot: fundusY ? [200, fundusY + 30] : null,spine, realSpine, hands, feet, longBones, cordInjury, weakBone, boneSpot, hr, levels: LEVELS,
+  /* ------------------------------------------------------------------ blood disorders */
+  const disp = code => ((latest(code) || {}).display || '').toLowerCase();
+  const geno = disp('HBGENO'), film = disp('PBFM');
+  const blood = {
+    sickle: /^(ss|sc|s-beta)/.test(geno) || film.includes('sickle') || any('sickle cell disease', 'sickle cell anaemia', 'hbss', 'sickle cell crisis'),
+    trait: geno === 'as' || any('sickle cell trait'),
+    iron: any('iron deficiency', 'iron-deficiency') || film.includes('microcytic') || (flag('MCV') === 'L' && flag('FERR') === 'L'),
+    thal: any('thalass') || geno.includes('thalass') || film.includes('target'),
+    macro: any('megaloblastic', 'b12 deficiency', 'folate deficiency', 'pernicious') || film.includes('macrocyt') || num('MCV') > 105,
+    leuk: any('leukaem', 'leukem') || num('BLAST') >= 20 || num('WBC') > 50,
+    lowPlt: num('PLT') != null && num('PLT') < 50, itp: any('thrombocytopenic purpura', ' itp'),
+    haemolysis: any('haemoly', 'hemoly') || /schisto|spherocyt|bite/.test(film) || disp('G6PD') === 'deficient',
+    g6pd: disp('G6PD') === 'deficient' || any('g6pd'),
+    poly: any('polycyth') || flag('HB') === 'H' || flag('HCT') === 'H',
+    bleeding: flag('INR') === 'H' || flag('INR') === 'HH' || flag('APTT') === 'H' || flag('APTT') === 'HH',
+    malaria: ((latest('RDT') || {}).display || '').toLowerCase().startsWith('positive'),
+  };
+  blood.crisis = blood.sickle && any('crisis', 'vaso-occlusive', 'acute chest');
+  blood.bigSpleen = blood.leuk || blood.thal || (blood.sickle && ((D.patient || {}).age ?? 99) < 6) || any('splenomegaly');
+  blood.jaundice = blood.haemolysis || (blood.sickle && bad('TBIL'));
+  blood.primary = blood.leuk ? 'leuk' : blood.sickle ? 'sickle' : blood.itp || blood.lowPlt ? 'lowplt' : blood.g6pd || blood.haemolysis ? 'haemolysis' : blood.thal ? 'thal'
+    : blood.iron ? 'iron' : blood.macro ? 'macro' : blood.poly ? 'poly' : blood.malaria ? 'malaria' : null;
+  // how the body map's flowing blood cells look for this patient
+  blood.cells = {sickle: {shape: 'M-5,2 C-3,-4.5 3,-4.5 5,2 C2,-1 -2,-1 -5,2 Z', cls: 'sickle'}, iron: {cls: 'pale small'}, thal: {cls: 'target'},
+                 macro: {cls: 'big'}, leuk: {cls: '', blastEvery: 2}, poly: {cls: 'dense', density: 1.8}, haemolysis: {cls: 'frag'}}[blood.primary] || null;
+
+  window.MF_ANATOMY = {blood, repro, fundusY, reproSpot: fundusY ? [200, fundusY + 30] : null,spine, realSpine, hands, feet, longBones, cordInjury, weakBone, boneSpot, hr, levels: LEVELS,
     flowFactor: Math.max(.55, Math.min(1.8, 76 / hr)), nerveIrregular, lymphActive, anaemia, lowO2};
 
   /* ------------------------------------------------------------------ drawing helpers */
@@ -227,9 +253,24 @@
     svg.querySelectorAll('.organs [data-sys="reproductive"] > *').forEach(n => { n.style.opacity = '.0'; });   // the enlarged womb replaces the small drawing
   }
 
+  // blood disorders on the body: vaso-occlusion and pain in sickle crisis, bleeding spots with low platelets, jaundice, big spleen
+  {
+    let fx = '';
+    if (blood.crisis) [[150, 560, 'Thigh bone'], [250, 560, 'Thigh bone'], [92, 300, 'Arm'], [200, 300, 'Spine'], [170, 250, 'Chest (acute chest syndrome)'], [230, 250, 'Chest']].forEach(([x, y, t], i) => {
+      fx += `<g class="voc" style="animation-delay:${(i * .3).toFixed(1)}s"><circle cx="${x}" cy="${y}" r="10" class="voc-ring"/><path d="M${x - 4},${y - 2} C${x - 2},${y - 5} ${x + 2},${y - 5} ${x + 4},${y - 2} C${x + 1},${y - 3.5} ${x - 1},${y - 3.5} ${x - 4},${y - 2} M${x - 4},${y + 3} C${x - 2},${y} ${x + 2},${y} ${x + 4},${y + 3}" class="voc-cells"/><title>Vaso-occlusion: sickled cells blocking small vessels (${t})</title></g>`;
+    });
+    if (blood.lowPlt || blood.bleeding) {
+      const pts = [[160, 600], [168, 640], [240, 610], [234, 660], [150, 700], [252, 720], [92, 380], [308, 400], [182, 300], [220, 330], [160, 520], [244, 540], [86, 430], [316, 450]];
+      pts.forEach(([x, y], i) => { fx += `<circle cx="${x + (i % 3) * 3}" cy="${y}" r="${i % 4 ? 1.6 : 4.2}" class="${i % 4 ? 'petechia' : 'bruise'}"><title>${i % 4 ? 'Petechiae: pinpoint bleeding under the skin' : 'Bruise'}</title></circle>`; });
+    }
+    if (fx) { const gx = document.createElementNS(NS, 'g'); gx.setAttribute('class', 'blood-fx'); gx.innerHTML = fx; svg.querySelector('#markers').before(gx); }
+    svg.classList.toggle('jaundice', !!blood.jaundice);
+    if (blood.bigSpleen) layers.querySelector('.spleen')?.classList.add('big');
+  }
+
   /* ------------------------------------------------------------------ layer switches */
   const want = {skeleton: !!(realSpine.length || hands.inflamed || hands.fracture || feet.gout || feet.fracture || feet.infection || longBones.length),
-                nerves: !!(cordInjury || nerveIrregular.length), lymph: !!lymphActive.length};
+                nerves: !!(cordInjury || nerveIrregular.length), lymph: !!(lymphActive.length || blood.bigSpleen)};
   const LAYERS = [['organs', 'Organs', 'bi-heart-pulse'], ['skeleton', 'Skeleton', 'bi-person-standing'], ['circulation', 'Circulation', 'bi-droplet-half'],
                   ['nerves', 'Nerves', 'bi-lightning'], ['lymph', 'Lymphatic', 'bi-diagram-3']];
   const on = {organs: true, circulation: true, skeleton: want.skeleton, nerves: want.nerves, lymph: want.lymph};
@@ -248,6 +289,13 @@
   if (nerveIrregular.length) notes.push(`Nerve impulses irregular: ${nerveIrregular.join(', ')} out of range`);
   if (lymphActive.length) notes.push(`Lymph nodes active: ${lymphActive.join(', ')} raised`);
   if (anaemia) notes.push('Blood paler: low haemoglobin');
+  const BLOOD_NOTE = {sickle: blood.crisis ? 'Sickle cell crisis: sickled cells blocking vessels in bones and chest' : 'Sickle cell disease: sickle-shaped red cells',
+    iron: 'Iron deficiency: small, pale red cells', thal: 'Thalassaemia: small target cells', macro: 'Large red cells (B12/folate)', leuk: 'Leukaemia: immature white cells (blasts) in the blood',
+    lowplt: 'Low platelets: pinpoint bleeding (petechiae) and bruises', haemolysis: blood.g6pd ? 'G6PD deficiency: red cells breaking down (jaundice)' : 'Red cells breaking down (haemolysis)',
+    poly: 'Too many red cells: thick blood', malaria: 'Malaria parasites in red cells'};
+  if (blood.primary) notes.push(BLOOD_NOTE[blood.primary]);
+  if (blood.trait && !blood.sickle) notes.push('Sickle cell trait (carrier): cells normal in everyday life');
+  if (blood.bigSpleen) notes.push('Spleen enlarged');
   if (hr && Math.abs(hr - 76) > 20) notes.push(`Blood flow ${hr > 76 ? 'faster' : 'slower'}: pulse ${hr}/min`);
   const bar = document.createElement('div');
   bar.className = 'layer-bar';

@@ -1,0 +1,21 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Reagents{% endblock %}
+{% block heading %}Reagents &amp; consumables{% endblock %}
+{% block subheading %}<p class="sub">{{ expiring }} expiring within 3 weeks · {{ low }} at or below reorder level. First-expiring lots are listed first: use them first.</p>{% endblock %}
+{% block content %}
+{% include 'hospital/lab/_nav.html' %}
+<div class="grid g-main">
+  <section class="panel flush"><div class="scroll-y tall"><table class="mini-table"><thead><tr><th>Reagent</th><th>Analyser</th><th>Lot</th><th>Expiry</th><th class="text-end">Stock</th><th></th></tr></thead><tbody>
+  {% for r in rows %}<tr class="{% if r.days_left < 0 %}row-crit{% elif r.days_left <= 21 or r.low %}row-abn{% endif %}"><td><b>{{ r.name }}</b></td><td class="small">{{ r.analyzer|default:'—' }}</td><td class="small">{{ r.lot }}</td>
+    <td class="small">{{ r.expiry|date:'j M Y' }}<br><span class="{% if r.days_left <= 21 %}text-danger fw-semibold{% else %}muted{% endif %}">{% if r.days_left < 0 %}expired{% else %}{{ r.days_left }} days{% endif %}</span></td>
+    <td class="text-end"><b class="{% if r.low %}text-danger{% endif %}">{{ r.quantity }}</b> <span class="small muted">{{ r.unit }}</span><br><span class="small muted">reorder at {{ r.reorder_level }}</span></td>
+    <td><form method="post" class="d-flex gap-1">{% csrf_token %}<input type="hidden" name="reagent" value="{{ r.pk }}"><input type="hidden" name="action" value="use"><input class="form-control form-control-sm" name="qty" type="number" min="1" placeholder="Used" style="width:72px" aria-label="Quantity used"><button class="btn btn-sm btn-ghost">−</button></form></td></tr>
+  {% empty %}<tr><td colspan="6" class="empty">No reagents recorded.</td></tr>{% endfor %}</tbody></table></div></section>
+  <aside class="panel align-self-start"><div class="panel-head"><h2>Receive a new lot</h2></div>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="receive">
+      <input class="form-control mb-2" name="name" placeholder="Reagent name" required><select class="form-select mb-2" name="analyzer" aria-label="Analyser"><option value="">Any analyser</option>{% for a in analyzers %}<option value="{{ a.pk }}">{{ a.name }}</option>{% endfor %}</select>
+      <div class="d-flex gap-2 mb-2"><input class="form-control" name="lot" placeholder="Lot" required><input class="form-control" type="date" name="expiry" required aria-label="Expiry"></div>
+      <div class="d-flex gap-2 mb-2"><input class="form-control" type="number" name="qty" placeholder="Quantity" required><input class="form-control" name="unit" placeholder="Unit (tests, mL)"><input class="form-control" type="number" name="reorder" placeholder="Reorder at"></div>
+      <button class="btn btn-primary w-100">Add to stock</button></form></aside>
+</div>
+{% endblock %}

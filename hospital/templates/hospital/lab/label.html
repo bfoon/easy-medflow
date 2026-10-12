@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Label {{ code }}</title>
+<style>@page{size:50mm 25mm;margin:0}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#000}
+.lbl{width:50mm;height:25mm;padding:1.5mm 2mm;display:grid;grid-template-columns:16mm 1fr;gap:1.5mm;align-items:center}
+.lbl svg{width:15mm;height:15mm}.n{font-weight:900;font-size:9pt}.s{font-size:6.5pt;line-height:1.25}
+.noprint{margin:8px;font:13px system-ui}@media print{.noprint{display:none}}</style></head>
+<body><div class="lbl"><div>{{ qr }}</div><div><div class="n">{{ code }}</div><div class="s"><b>{{ p.last_name|upper }}, {{ p.first_name }}</b><br>{{ p.mrn }} · {{ p.dob|date:'d/m/Y' }} · {{ p.sex }}<br>
+{% for o in lr.active_orders %}{{ o.test.code }}{% if not forloop.last %} {% endif %}{% endfor %} · {% for o in lr.active_orders|slice:':1' %}{{ o.test.container }}{% endfor %}<br>{{ lr.get_priority_display|upper }} · {% now 'd/m H:i' %}</div></div></div>
+<div class="noprint"><button onclick="window.print()">Print label</button> 50 × 25 mm label printer</div>
+<script>window.addEventListener('load', () => setTimeout(() => window.print(), 300));</script></body></html>

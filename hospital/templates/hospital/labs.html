@@ -8,6 +8,7 @@
   <a class="btn btn-primary" href="{% url 'lab_new' %}"><i class="bi bi-plus-lg"></i>New lab request</a>
 {% endblock %}
 {% block content %}
+{% with tab='board' %}{% include 'hospital/lab/_nav.html' %}{% endwith %}
 <div class="board mb-4">
   {% for lane in board %}
   <section class="lane labs" style="cursor:default">

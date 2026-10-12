@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
 
-from .models import (AuditEvent, Notification, Condition, Location, MedicationAdministration, QueueTicket, Allergy, Invoice, Payment, Admission, Bed, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingOrder, StockRequest, LabRequest, PrescriptionItem, LabParameter, LabResultValue, Admission, Allergy, Bed, Department, Encounter, FormDefinition, FormSubmission, LabOrder, LabTest,
+from .models import (CriticalCall, AuditEvent, Notification, Condition, Location, MedicationAdministration, QueueTicket, Allergy, Invoice, Payment, Admission, Bed, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingOrder, StockRequest, LabRequest, PrescriptionItem, LabParameter, LabResultValue, Admission, Allergy, Bed, Department, Encounter, FormDefinition, FormSubmission, LabOrder, LabTest,
                      Medication, Patient, Prescription, QueueTicket, Referral, Signature, StaffProfile, StockBatch,
                      WorkflowDefinition, WorkflowRun)
 from .services import availability, prescription_warnings
@@ -1185,3 +1185,82 @@ class ImagingToolTests(Base):
         self.assertEqual((self.img.mm_per_pixel, self.img.annotations[0]['type']), (.25, 'ruler'))
         self.client.login(username='nurse', password=PW)
         self.assertEqual(self.client.post(reverse('imaging_annotations', args=[self.img.pk]), '{}', content_type='application/json').status_code, 403)
+
+
+class LabManagementTests(Base):
+    def setUp(self):
+        from hospital.models import Analyzer, QCMaterial, LabParameter
+        self.an = Analyzer.objects.create(name='Chem', section='chemistry')
+        self.mat = QCMaterial.objects.create(analyzer=self.an, parameter=LabParameter.objects.get(code='K'), level='L2', lot='Q1', mean=5, sd=Decimal('0.1'))
+
+    def run_values(self, *vals):
+        from hospital.lab_mgmt import record_qc
+        u = StaffProfile.objects.filter(role='lab').first().user
+        return [record_qc(self.mat, Decimal(str(v)), u) for v in vals]
+
+    def test_westgard_rules(self):
+        from hospital.lab_mgmt import westgard
+        self.assertEqual(westgard(self.mat, Decimal('5.05')), ('accepted', []))
+        self.assertEqual(westgard(self.mat, Decimal('5.25')), ('warning', ['1-2s']))
+        self.assertEqual(westgard(self.mat, Decimal('5.35')), ('rejected', ['1-3s']))
+        self.run_values(5.22); self.assertIn('2-2s', westgard(self.mat, Decimal('5.23'))[1])
+        self.run_values(4.75); self.assertIn('R-4s', westgard(self.mat, Decimal('5.24'))[1])
+
+    def test_failed_qc_puts_analyser_on_hold_and_passing_releases_it(self):
+        self.run_values(5.4)
+        self.an.refresh_from_db(); self.assertEqual(self.an.status, 'qc_hold')
+        self.run_values(5.01)
+        self.an.refresh_from_db(); self.assertEqual(self.an.status, 'online')
+
+    def test_drift_trips_4_1s_and_10x(self):
+        runs = self.run_values(5.12, 5.13, 5.11, 5.14)
+        self.assertIn('4-1s', runs[-1].rules)
+        runs = self.run_values(*[5.05] * 6)
+        self.assertIn('10x', runs[-1].rules)
+
+    def test_specimen_reception_rejection_and_critical_calls(self):
+        e = self.encounter()
+        lr = LabRequest.objects.create(encounter=e, requested_by=StaffProfile.objects.filter(role='doctor').first().user, specimen_id='S-77')
+        o = LabOrder.objects.create(encounter=e, request=lr, test=LabTest.objects.get(code='RFT'))
+        c = self.as_('lab')
+        c.post('/labs/specimens/', {'code': 's-77'})
+        lr.refresh_from_db(); o.refresh_from_db(); self.assertIsNotNone(lr.received_at); self.assertEqual(o.status, 'collected')
+        c.post('/labs/specimens/', {'pk': lr.pk, 'action': 'reject', 'reason': 'haemolysed'})
+        lr.refresh_from_db(); o.refresh_from_db()
+        self.assertEqual((lr.rejection_reason, lr.recollect_count, o.status, lr.received_at), ('haemolysed', 1, 'ordered', None))
+        self.assertTrue(Notification.objects.filter(kind='lab_rejected').exists())
+        o.status = 'resulted'; o.save()
+        v = LabResultValue.objects.create(order=o, parameter=o.test.parameters.get(code='K'), value_number=Decimal('7.1'), flag='HH')
+        from hospital.lab_mgmt import register_criticals
+        self.assertEqual(register_criticals(lr, c.session and StaffProfile.objects.filter(role='lab').first().user), 1)
+        self.assertTrue(Notification.objects.filter(kind='lab_critical').exists())
+        call = CriticalCall.objects.get(value=v)
+        c.post('/labs/critical/', {'call': call.pk, 'called_to': 'Dr Ceesay'})                    # no read-back: refused
+        call.refresh_from_db(); self.assertIsNone(call.called_at)
+        c.post('/labs/critical/', {'call': call.pk, 'called_to': 'Dr Ceesay', 'read_back': 'on'})
+        call.refresh_from_db(); self.assertTrue(call.read_back); self.assertIsNotNone(call.called_at)
+
+    def test_delta_check(self):
+        from hospital.lab_mgmt import delta
+        self.assertEqual(delta(Decimal('12'), Decimal('8'), 'HB'), (-33, True))
+        self.assertEqual(delta(Decimal('12'), Decimal('11.5'), 'HB'), (-4, False))
+
+    def test_pages(self):
+        e = self.encounter(); lr = LabRequest.objects.create(encounter=e)
+        LabOrder.objects.create(encounter=e, request=lr, test=LabTest.objects.get(code='CBC'))
+        c = self.as_('lab')
+        for url in ['/labs/dashboard/', '/labs/specimens/', '/labs/qc/', '/labs/analysers/', '/labs/reagents/', '/labs/critical/', f'/labs/requests/{lr.pk}/label/', f'/labs/requests/{lr.pk}/report/']:
+            self.assertEqual(c.get(url).status_code, 200, url)
+        self.client.logout()
+        self.assertEqual(self.as_('reception').get('/labs/qc/').status_code, 403)
+
+    def test_blood_samples_and_catalogue(self):
+        from hospital.demo_extras import blood_cases
+        self.assertTrue(LabTest.objects.filter(code='HBEP').exists())
+        doc = StaffProfile.objects.filter(role='doctor').first().user
+        self.assertEqual(blood_cases(doc, doc), 6); self.assertEqual(blood_cases(doc, doc), 0)
+        e = Encounter.objects.get(diagnosis__icontains='vaso-occlusive')
+        self.assertEqual(e.labs.get(test__code='HBEP').values.get(parameter__code='HBGENO').display, 'SS')
+        self.assertEqual(e.category, 'blood')
+        html = self.as_('doctor').get(f'/patients/{e.patient_id}/labs/').content.decode()
+        self.assertLess(html.index('organs-blood.js'), html.index('insights.js'))

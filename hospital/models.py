@@ -262,6 +262,13 @@ class LabRequest(Tracked):
     clinical_notes=models.TextField(blank=True,help_text='Relevant history or question for the lab')
     specimen_id=models.CharField(max_length=80,blank=True)
     collected_at=models.DateTimeField(null=True,blank=True)
+    received_at=models.DateTimeField(null=True,blank=True,help_text='When the specimen arrived in the lab')
+    received_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='+')
+    REJECT=[('haemolysed','Haemolysed'),('clotted','Clotted'),('insufficient','Insufficient volume'),('unlabelled','Unlabelled or mislabelled'),
+            ('wrong_tube','Wrong container'),('delayed','Delayed in transport'),('leaking','Leaking or broken')]
+    rejection_reason=models.CharField(max_length=20,choices=REJECT,blank=True)
+    rejected_at=models.DateTimeField(null=True,blank=True)
+    recollect_count=models.PositiveSmallIntegerField(default=0)
     class Meta: ordering=['-created_at']
     @property
     def number(self):return f'LR-{self.pk:06d}'
@@ -909,3 +916,76 @@ class Notification(Tracked):
     read_at=models.DateTimeField(null=True,blank=True)
     emailed_at=models.DateTimeField(null=True,blank=True)
     class Meta: ordering=['-created_at']; indexes=[models.Index(fields=['user','read_at'])]
+
+
+# ============================================================== laboratory management
+LAB_SECTIONS=[('haematology','Haematology'),('chemistry','Clinical chemistry'),('microbiology','Microbiology'),('serology','Serology & immunology'),('urinalysis','Urinalysis'),('blood_gas','Blood gas')]
+
+class Analyzer(Tracked):
+    STATUS=[('online','Online'),('qc_hold','QC hold'),('maintenance','Maintenance'),('down','Down')]
+    name=models.CharField(max_length=120)
+    section=models.CharField(max_length=20,choices=LAB_SECTIONS)
+    model_name=models.CharField(max_length=120,blank=True)
+    serial=models.CharField(max_length=80,blank=True)
+    status=models.CharField(max_length=12,choices=STATUS,default='online')
+    status_note=models.CharField(max_length=200,blank=True)
+    last_maintenance=models.DateField(null=True,blank=True)
+    next_maintenance=models.DateField(null=True,blank=True)
+    class Meta: ordering=['section','name']
+    def __str__(self):return self.name
+
+class AnalyzerLog(Tracked):
+    analyzer=models.ForeignKey(Analyzer,on_delete=models.CASCADE,related_name='logs')
+    kind=models.CharField(max_length=12,choices=[('maintenance','Maintenance'),('calibration','Calibration'),('fault','Fault'),('status','Status change')])
+    note=models.CharField(max_length=300)
+    by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name='+')
+    class Meta: ordering=['-created_at']
+
+class QCMaterial(Tracked):
+    """A control material for one test parameter on one analyser, with its target mean and SD."""
+    analyzer=models.ForeignKey(Analyzer,on_delete=models.CASCADE,related_name='qc_materials')
+    parameter=models.ForeignKey('LabParameter',on_delete=models.CASCADE,related_name='qc_materials')
+    level=models.CharField(max_length=10,choices=[('L1','Level 1 (low)'),('L2','Level 2 (normal)'),('L3','Level 3 (high)')])
+    lot=models.CharField(max_length=40)
+    mean=models.DecimalField(max_digits=10,decimal_places=3)
+    sd=models.DecimalField(max_digits=10,decimal_places=3)
+    expiry=models.DateField(null=True,blank=True)
+    active=models.BooleanField(default=True)
+    class Meta: ordering=['analyzer','parameter','level']
+    def __str__(self):return f'{self.parameter.name} {self.level} · {self.analyzer}'
+
+class QCRun(Tracked):
+    material=models.ForeignKey(QCMaterial,on_delete=models.CASCADE,related_name='runs')
+    value=models.DecimalField(max_digits=10,decimal_places=3)
+    status=models.CharField(max_length=10,choices=[('accepted','Accepted'),('warning','Warning'),('rejected','Rejected')],default='accepted')
+    rules=models.CharField(max_length=80,blank=True,help_text='Westgard rules broken, e.g. 1-3s, 2-2s')
+    comment=models.CharField(max_length=200,blank=True)
+    by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name='+')
+    class Meta: ordering=['-created_at']
+    @property
+    def z(self):return float((self.value-self.material.mean)/self.material.sd) if self.material.sd else 0.0
+
+class Reagent(Tracked):
+    name=models.CharField(max_length=160)
+    analyzer=models.ForeignKey(Analyzer,on_delete=models.SET_NULL,null=True,blank=True,related_name='reagents')
+    lot=models.CharField(max_length=40)
+    expiry=models.DateField()
+    quantity=models.PositiveIntegerField(default=0)
+    unit=models.CharField(max_length=30,default='tests')
+    reorder_level=models.PositiveIntegerField(default=50)
+    opened_at=models.DateField(null=True,blank=True)
+    class Meta: ordering=['expiry','name']
+    @property
+    def low(self):return self.quantity<=self.reorder_level
+    @property
+    def days_left(self):return (self.expiry-timezone.localdate()).days
+
+class CriticalCall(Tracked):
+    """A critical result phoned through to the clinical team, with read-back confirmation."""
+    value=models.OneToOneField('LabResultValue',on_delete=models.CASCADE,related_name='critical_call')
+    called_to=models.CharField(max_length=120,blank=True,help_text='Name and role of the person informed')
+    called_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='+')
+    called_at=models.DateTimeField(null=True,blank=True)
+    read_back=models.BooleanField(default=False,help_text='The receiver read the result back correctly')
+    note=models.CharField(max_length=200,blank=True)
+    class Meta: ordering=['called_at','-created_at']

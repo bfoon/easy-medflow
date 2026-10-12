@@ -1,0 +1,29 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Specimen reception{% endblock %}
+{% block heading %}Specimen reception{% endblock %}
+{% block subheading %}<p class="sub">Scan the label or type the specimen or request number to receive a sample. Reject unsuitable samples with a reason; the requester is told to recollect.</p>{% endblock %}
+{% block content %}
+{% include 'hospital/lab/_nav.html' %}
+<form method="post" class="panel big-search mb-3">{% csrf_token %}<i class="bi bi-upc-scan"></i>
+  <input class="form-control form-control-lg" name="code" placeholder="Scan or type the specimen ID or LR-number" autofocus autocomplete="off" aria-label="Specimen or request number">
+  <button class="btn btn-primary btn-lg">Receive</button></form>
+<div class="grid g-main">
+  <section class="panel flush"><div class="panel-head"><h2>Waiting to be received</h2><span class="hint">{{ pending|length }}</span></div>
+    <div class="scroll-y tall">{% for r in pending %}
+    <div class="spec-row prio-{{ r.priority }}">
+      <div class="flex-fill"><b>{{ r.number }}</b> {% if r.priority != 'routine' %}<span class="tag {% if r.priority == 'stat' %}red{% else %}amber{% endif %}">{{ r.get_priority_display }}</span>{% endif %}{% if r.recollect_count %}<span class="tag amber">Recollection {{ r.recollect_count }}</span>{% endif %}
+        <div class="small">{{ r.encounter.patient.full_name }} · {% for o in r.active_orders %}{{ o.test.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+        <div class="small muted">{% for o in r.active_orders|slice:':1' %}{{ o.test.container|default:o.test.sample_type }}{% endfor %} · ordered {{ r.created_at|ago }} ago</div></div>
+      <a class="btn btn-sm btn-ghost" href="{% url 'lab_label' r.pk %}" target="_blank" title="Print specimen label"><i class="bi bi-upc"></i></a>
+      <form method="post">{% csrf_token %}<input type="hidden" name="pk" value="{{ r.pk }}"><button class="btn btn-sm btn-primary">Receive</button></form>
+      <details class="inform"><summary class="btn btn-sm btn-ghost">Reject</summary>
+        <form method="post" class="pop-card" style="position:absolute;right:20px;z-index:20">{% csrf_token %}<input type="hidden" name="pk" value="{{ r.pk }}"><input type="hidden" name="action" value="reject">
+          <select class="form-select form-select-sm mb-2" name="reason" required>{% for v, l in reasons %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select>
+          <button class="btn btn-sm btn-danger-soft w-100">Reject and ask to recollect</button></form></details>
+    </div>{% empty %}<div class="empty">No samples waiting.</div>{% endfor %}</div></section>
+  <aside class="stack align-self-start">
+    <section class="panel"><div class="panel-head"><h2>Received recently</h2></div><ul class="plain ruled small">{% for r in recent %}<li><b>{{ r.number }}</b> · {{ r.encounter.patient.full_name }}<br><span class="muted">{{ r.received_at|date:'j M H:i' }} · {{ r.received_by|display_name }}</span></li>{% empty %}<li class="muted">None yet.</li>{% endfor %}</ul></section>
+    <section class="panel"><div class="panel-head"><h2>Rejected (7 days)</h2></div><ul class="plain ruled small">{% for r in rejected %}<li><b>{{ r.number }}</b> · {{ r.get_rejection_reason_display }}<br><span class="muted">{{ r.encounter.patient.full_name }} · {{ r.rejected_at|date:'j M H:i' }}</span></li>{% empty %}<li class="muted">None.</li>{% endfor %}</ul></section>
+  </aside>
+</div>
+{% endblock %}

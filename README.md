@@ -130,6 +130,26 @@ earliest-expiring stock first, and nothing is dispensed if any line is short.
 
 Port 8000 already in use? Start with `MEDFLOW_PORT=8080 docker compose up -d` (PowerShell: `$env:MEDFLOW_PORT=8080; docker compose up -d`).
 
+## Laboratory management
+
+The **Laboratory** pages share a bar: Work board, **Command centre**, **Specimens**, **Quality control**,
+**Analysers**, **Reagents**, **Critical calls** and the test catalogue.
+- **Command centre**: samples received, STAT tests open, median turnaround and % within each test's target,
+  rejection rate, a work-in-progress pipeline, results per hour, overdue tests, turnaround by section, analyser status
+  with today's QC light, reagent alerts and critical calls still to make. Refreshes every minute.
+- **Specimens**: scan or type the specimen or LR number to receive a sample; reject with a reason (haemolysed,
+  clotted, insufficient, mislabelled…). Rejection sends the tests back for recollection and notifies the requester.
+  Print a 50 × 25 mm specimen label with a QR code.
+- **Quality control**: Levey-Jennings charts per control material, with Westgard rules (1-2s warns; 1-3s, 2-2s, R-4s,
+  4-1s and 10x reject). A rejected run puts the analyser on **QC hold** until a control passes.
+- **Analysers** (status, maintenance and fault log) and **Reagents** (lots, expiry, stock, reorder levels).
+- **Critical values**: submitting a critical result alerts the requesting clinician (bell and email) and creates a
+  call-back task; the call is recorded with who was told and a read-back confirmation.
+- The result sheet shows each patient's **previous value** and flags large changes (delta check). Every request has a
+  printable **lab report** with reference ranges, flags, verification and a QR code.
+- Blood-disease tests: sickling screen, haemoglobin electrophoresis (HbA/S/F/A2 and genotype), reticulocytes,
+  ferritin, blood film, G6PD and clotting profile.
+
 ## Find patients
 
 **Find patients** (menu, or Ctrl+K from anywhere) searches the whole record with one box: name, patient number,

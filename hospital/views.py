@@ -647,22 +647,29 @@ def lab_results_entry(request, pk):
                 if partial:
                     messages.warning(request, f'Saved but not submitted (values missing): {", ".join(partial)}.')
                 if crit:
-                    messages.warning(request, f'{crit} critical value{"s" if crit > 1 else ""} submitted. Telephone the requesting clinician now and document it.')
+                    from . import lab_mgmt
+                    lab_mgmt.register_criticals(lr, request.user)     # call-back task in Critical calls + bell/email to the clinician
+                    messages.warning(request, f'{crit} critical value{"s" if crit > 1 else ""} submitted. The clinician has been alerted; telephone them now and record the call under Critical calls.')
                 if not completed and not partial:
                     messages.error(request, 'Enter every value of at least one test before submitting, or save as draft.')
                 return redirect('labs' if completed and not partial else request.path)
             messages.success(request, 'Draft saved.')
             return redirect(request.path)
     rules = []
+    from . import lab_mgmt
+    prev_cache = {}
     for o in orders:
         existing = {v.parameter_id: v for v in o.values.all()}
+        prev_cache[o.pk] = lab_mgmt.previous_values(p, o)
         rows = []
         for prm in o.test.parameters.all():
             key = f'p_{o.pk}_{prm.pk}'
             v = existing.get(prm.pk)
             lo, hi = prm.range_for(p.sex)
             rows.append({'p': prm, 'key': key, 'value': request.POST.get(key) if request.method == 'POST' else (v.display if v else ''),
-                         'flag': v.flag if v else '', 'error': errors.get(key), 'range': prm.range_label(p.sex)})
+                         'flag': v.flag if v else '', 'error': errors.get(key), 'range': prm.range_label(p.sex),
+                         'prev': prev_cache[o.pk].get(prm.pk),
+                         'delta': lab_mgmt.delta(prev_cache[o.pk][prm.pk].value_number, v.value_number if v else None, prm.code) if prm.pk in prev_cache[o.pk] and v else (None, False)})
             rules.append({'id': key, 'kind': prm.kind, 'lo': _f(lo), 'hi': _f(hi), 'clo': _f(prm.critical_low), 'chi': _f(prm.critical_high), 'abn': prm.abnormal_choices})
         sections.append({'o': o, 'rows': rows})
     return render(request, 'hospital/lab_entry.html', {'lr': lr, 'p': p, 'sections': sections, 'rules': rules,

@@ -36,6 +36,20 @@ CATALOG = [
             N('DENS', 'Parasite density', '/µL', None, 0, None, 100000, 0), C('SPEC', 'Species seen', ['None', 'P. falciparum', 'P. malariae', 'P. ovale', 'P. vivax'], ['P. falciparum', 'P. malariae', 'P. ovale', 'P. vivax'])]),
         ('BGRP', 'Blood Group & Rhesus', 'blood', 'Whole blood', 'Purple-top EDTA', 1, [
             C('ABO', 'Blood group', ['A+', 'A−', 'B+', 'B−', 'AB+', 'AB−', 'O+', 'O−'], [])]),
+        ('SICK', 'Sickling Test (screen)', 'blood', 'Whole blood', 'Purple-top EDTA', 2, [C('SICK', 'Sickling', ['Negative', 'Positive'], ['Positive'])]),
+        ('HBEP', 'Haemoglobin Electrophoresis', 'blood', 'Whole blood', 'Purple-top EDTA', 48, [
+            N('HBA', 'HbA', '%', 95, 98, None, None, 1), N('HBS', 'HbS', '%', None, 0.5, None, None, 1), N('HBF', 'HbF', '%', None, 2, None, None, 1),
+            N('HBA2', 'HbA2', '%', 1.5, 3.5, None, None, 1),
+            C('HBGENO', 'Haemoglobin genotype', ['AA', 'AS', 'SS', 'SC', 'AC', 'S-beta thalassaemia', 'Beta thalassaemia trait'], ['SS', 'SC', 'S-beta thalassaemia'])]),
+        ('RETIC', 'Reticulocyte Count', 'blood', 'Whole blood', 'Purple-top EDTA', 4, [N('RETIC', 'Reticulocytes', '%', 0.5, 2.5, None, None, 1)]),
+        ('FERR', 'Ferritin', 'blood', 'Serum', 'Gold-top SST', 24, [N('FERR', 'Ferritin', 'µg/L', 30, 400, None, None, 0, 15, 150)]),
+        ('PBF', 'Peripheral Blood Film', 'blood', 'Whole blood', 'Purple-top EDTA', 24, [
+            C('PBFM', 'Red cell morphology', ['Normal', 'Sickle cells', 'Target cells', 'Microcytic hypochromic', 'Macrocytes', 'Schistocytes', 'Bite cells', 'Spherocytes'],
+              ['Sickle cells', 'Target cells', 'Microcytic hypochromic', 'Macrocytes', 'Schistocytes', 'Bite cells', 'Spherocytes']),
+            N('BLAST', 'Blasts', '%', None, 0, None, 20, 0, sys='immune'), T('PBFC', 'Film comment')]),
+        ('G6PD', 'G6PD Screen', 'blood', 'Whole blood', 'Purple-top EDTA', 24, [C('G6PD', 'G6PD activity', ['Normal', 'Deficient'], ['Deficient'])]),
+        ('COAG', 'Clotting Profile', 'blood', 'Plasma', 'Blue-top citrate', 4, [
+            N('PT', 'Prothrombin time', 's', 11, 13.5, None, 30, 1), N('INR', 'INR', '', 0.8, 1.2, None, 5, 2), N('APTT', 'APTT', 's', 25, 35, None, 100, 1)]),
     ]),
     ('chemistry', 'Clinical Chemistry', '#4A5FC1', [
         ('GLU', 'Blood Glucose (fasting)', 'pancreas', 'Plasma', 'Grey-top fluoride', 1, [N('FBG', 'Fasting glucose', 'mmol/L', 3.9, 5.5, 2.8, 22.2)]),

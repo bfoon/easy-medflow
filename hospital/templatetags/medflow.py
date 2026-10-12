@@ -167,3 +167,11 @@ def patient_qr(context, patient, size=4):
 def split_pairs(value):
     """'7:Last 7 days,30:Last 30 days' -> [('7', 'Last 7 days'), ('30', 'Last 30 days')] for small fixed option lists."""
     return [tuple(x.split(':', 1)) for x in value.split(',')]
+
+
+@register.filter
+def safe_json(value):
+    """JSON for a data attribute (single-quoted), with quotes escaped so it cannot break out of the attribute."""
+    import json
+    from django.utils.safestring import mark_safe
+    return mark_safe(json.dumps(value).replace("'", '&#39;').replace('<', '\\u003c'))

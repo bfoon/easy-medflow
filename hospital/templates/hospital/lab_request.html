@@ -6,6 +6,8 @@
 {% block actions %}
   <a class="btn btn-ghost" href="{% url 'patient_chart' p.pk %}#labs"><i class="bi bi-arrow-left"></i>Patient</a>
   <a class="btn btn-ghost" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-person-arms-up"></i>Body map &amp; trends</a>
+  {% if can_lab %}<a class="btn btn-ghost" href="{% url 'lab_label' lr.pk %}" target="_blank"><i class="bi bi-upc"></i>Label</a>{% endif %}
+  <a class="btn btn-ghost" href="{% url 'lab_report' lr.pk %}"><i class="bi bi-file-earmark-medical"></i>Report</a>
   {% if can_lab %}
     {% if lr.stage == 'ordered' %}<form method="post" action="{% url 'lab_request_action' lr.pk 'collect' %}" class="d-flex gap-1">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><input class="form-control" name="specimen_id" placeholder="Specimen ID" style="width:150px" aria-label="Specimen ID"><button class="btn btn-ink">Collected</button></form>
     {% elif lr.stage == 'collected' %}<form method="post" action="{% url 'lab_request_action' lr.pk 'process' %}">{% csrf_token %}<button class="btn btn-ink"><i class="bi bi-play-fill"></i>Process &amp; enter results</button></form>
