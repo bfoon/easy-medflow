@@ -44,3 +44,9 @@ def report_assist_task(pk):
 def imaging_ai_task(pk):
     from .imaging_ai import run
     run(pk)
+
+
+@shared_task(ignore_result=True, soft_time_limit=300)
+def drflow_ask_task(pk):
+    from .drflow_ask import run_ask
+    run_ask(pk)

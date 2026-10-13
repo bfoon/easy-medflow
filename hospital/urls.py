@@ -8,6 +8,7 @@ from . import esign_views as ev
 from . import evidence_views as gv
 from . import report_views as rv
 from . import imaging_ai_views as iav
+from . import drflow_views as dfv
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -17,6 +18,11 @@ urlpatterns = [
     path('api/rx-check/', v.api_rx_check, name='api_rx_check'),
     path('api/clinical/', v.api_clinical, name='api_clinical'),
     path('encounters/<int:pk>/ai-context/', v.ai_context_preview, name='ai_context_preview'),
+    path('drflow/rx/', dfv.api_rx, name='drflow_rx'),
+    path('drflow/labs/', dfv.api_lab, name='drflow_lab'),
+    path('drflow/ask/', dfv.ask, name='drflow_ask'),
+    path('drflow/ask/<int:pk>/', dfv.ask_status, name='drflow_ask_status'),
+    path('drflow/patients/<int:pk>/brief/', dfv.api_brief, name='drflow_brief'),
 
     path('search/', v.search, name='search'),
     path('patients/', v.patients, name='patients'),

@@ -16,10 +16,12 @@
   const $ = (s, el = box) => el.querySelector(s);
   const CONCERN = {urgent: 'Urgent', abnormal: 'Abnormal', watch: 'Check', normal: 'Normal'};
   const THINK = {
-    analyse: ['Removing names and metadata', 'Checking the image quality', 'Finding the anatomy', 'Marking what I see', 'Weighing TB, pneumonia and the usual suspects', 'Writing the explanation'],
-    question: ['Reading your question', 'Looking at the image again', 'Checking the labels', 'Writing the answer'],
+    analyse: ['Removing names and metadata', 'Checking the image quality', 'Finding the anatomy', 'Checking tubes and lines against the bed',
+              'Marking what I see', 'Weighing TB, pneumonia and the usual suspects', 'Checking medicines and pharmacy stock', 'Writing the explanation'],
+    question: ['Reading your question', 'Looking at the image again', 'Checking the bedside record', 'Checking the pharmacy', 'Writing the answer'],
   };
   const ASK_IDEAS = ['What is the most important finding?', 'Is the image quality good enough to report?', 'Could this be TB?',
+                     'Are the tubes and lines where the bed record says?', 'Which treatment do we have in stock?',
                      'Explain this in plain words for the patient', 'What should I compare it with?', 'What would change your impression?'];
 
   let state = {enabled: false, canKeep: false, cancelled: false, runs: [], image: null};
@@ -106,7 +108,8 @@
         <div class="iva-ask-row"><textarea class="form-control form-control-sm" rows="2" maxlength="1000" placeholder="Ask Dr. Flow about this image… (Enter to send)" aria-label="Question for Dr. Flow" ${ok ? '' : 'disabled'}></textarea>
         <button type="button" class="btn btn-ink btn-sm" data-iva="ask" ${ok ? '' : 'disabled'} aria-label="Ask"><i class="bi bi-send"></i></button></div>
       </div>` : ''}
-      <p class="iva-disclaimer"><i class="bi bi-shield-check"></i> AI suggestions, not a report. Labels are approximate. The clinician decides.</p>`;
+      <p class="iva-disclaimer"><i class="bi bi-shield-check"></i> AI suggestions, not a report. Labels are approximate. The clinician decides.
+        Dr. Flow also sees this patient's medicines and doses given, pharmacy stock, bed type, bedside devices and observations, with no names, numbers, dates or staff.</p>`;
     const ta = $('.iva-ask textarea'); if (ta && draft) ta.value = draft;
   }
 

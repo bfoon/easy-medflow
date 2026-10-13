@@ -6,7 +6,9 @@ What is sent (from the server only, never from the browser):
     "Cover names" are painted solid black first. A phone photo of a film often shows the patient's name on the film
     label, so the page asks the clinician to cover it (and to confirm) before anything is sent;
   * a de-identified context: modality, region, the clinical question and captions with the patient's name, record
-    number and phone removed, sex and age band, the visit diagnosis, calibration and the names of measurements;
+    number and phone removed, sex and age band, the visit diagnosis, calibration and the names of measurements,
+    plus the pharmacy and bedside sections from dr_flow_context.py (medicines and doses given, allergies, what the
+    pharmacy has in stock, bed type, devices at the bed and recent observations; no names, codes, staff or dates);
   * for questions only: the radiologist's draft findings (also scrubbed) and the earlier questions and answers on
     this image. A first analysis is deliberately blind to the draft so it is an independent second read.
 
@@ -33,6 +35,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from . import medical_ai
+from .dr_flow_context import care_context, scrub as _scrub     # shared with the lab and report AI
 
 CONCERNS = ('normal', 'watch', 'abnormal', 'urgent')
 CONFIDENCE = ('low', 'moderate', 'high')
@@ -54,6 +57,13 @@ Rules:
 - Think about conditions common in West Africa where they fit the image: TB (cavities, upper-zone change, miliary
   pattern, hilar nodes), pneumonia, pleural effusion and empyema, cardiomegaly from rheumatic or hypertensive heart
   disease, sickle cell bone and chest changes, osteomyelitis, trauma from road traffic accidents, HIV-related disease.
+- Use the bedside section: check every line, tube and drain against the devices recorded at the bed (e.g. NG
+  tube tip below the diaphragm, chest drain on the recorded side, endotracheal or central line position, cervical
+  collar in trauma) and say when the image and the bed record disagree. Use the observations (SpO2, oxygen, NEWS2)
+  to judge urgency.
+- Use the pharmacy section: if you suggest a medicine, prefer one marked in stock in hospital_formulary, say when
+  it is out of stock and offer an in-stock alternative, check the allergies, and note what the patient is already
+  taking and receiving (e.g. on TB treatment, on antibiotics for days). Never invent doses.
 - Never read text that identifies the patient (names, numbers, dates) even if some is visible; do not repeat it.
 - Do not invent measurements in millimetres unless a calibration is given; describe size relative to anatomy instead.
 - Be concise and practical. Plain English for a clinician.
@@ -142,22 +152,6 @@ def prepare_image(fileobj, redactions=()):
 
 
 # ------------------------------------------------------------------ the words
-def _scrub(text, patient, limit=1500):
-    """Remove the patient's names, record number and phone from free text before it leaves the server."""
-    t = str(text or '')[:limit]
-    if not t or patient is None:
-        return t
-    tokens = {patient.mrn, patient.phone, patient.first_name, patient.last_name, f'{patient.first_name} {patient.last_name}'}
-    tokens |= set((patient.first_name or '').split()) | set((patient.last_name or '').split())
-    for tok in sorted({x.strip() for x in tokens if x and len(x.strip()) >= 2}, key=len, reverse=True):
-        t = re.sub(rf'(?i)(?<![\w]){re.escape(tok)}(?![\w])', '[patient]', t)
-    digits = re.sub(r'\D', '', patient.phone or '')
-    if len(digits) >= 6:
-        t = t.replace(digits, '[phone]')
-    t = re.sub(r'\bMF-[0-9A-F]{6,}\b', '[record]', t)          # any record number, not only this patient's
-    return t
-
-
 def image_context(run, include_draft=False):
     """The de-identified context sent with the image. No name, record number, phone, address, date of birth or dates."""
     from .clinical import _age_band
@@ -180,6 +174,7 @@ def image_context(run, include_draft=False):
         'patient': {'sex': p.sex, 'age_band': _age_band(p)},
         'visit': {'department': str(e.department or ''), 'working_diagnosis': _scrub(e.diagnosis, p, 300) or None},
     }
+    ctx.update(care_context(e))             # pharmacy and bedside, de-identified (see dr_flow_context.py)
     if include_draft:
         ctx['radiologist_draft'] = {'findings': _scrub(o.findings, p, 3000) or None, 'impression': _scrub(o.impression, p, 800) or None,
                                     'measurements': [{'label': _scrub(m.get('label'), p, 60), 'value': m.get('value'), 'unit': m.get('unit')}

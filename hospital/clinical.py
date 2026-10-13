@@ -207,7 +207,8 @@ def _age_band(p):
 def deidentified_context(encounter):
     """Minimum-necessary clinical context with no direct identifiers: no name, record number, phone, address,
     date of birth or real dates (days are counted relative to this visit). Free-text notes are excluded because
-    they can contain names; structured findings are sent instead."""
+    they can contain names; structured findings are sent instead. Includes the de-identified pharmacy and bedside
+    sections from dr_flow_context (medicines, doses given, stock status, bed type, devices, observations)."""
     p, start = encounter.patient, encounter.created_at
     rel = lambda dt: (dt - start).days if dt else None
     vals = []
@@ -216,13 +217,15 @@ def deidentified_context(encounter):
               .select_related('parameter', 'order').order_by('order__resulted_at')[:200]):
         vals.append({'test': v.parameter.name, 'value': v.display, 'unit': v.parameter.unit, 'flag': v.flag,
                      'reference': v.parameter.range_label(p.sex), 'day': rel(v.order.resulted_at or v.order.created_at)})
-    return {
+    from .dr_flow_context import care_context, scrub
+    care = care_context(encounter)          # pharmacy and bedside, de-identified (see dr_flow_context.py)
+    ctx = {
         'patient': {'sex': p.sex, 'age_band': _age_band(p), 'blood_group': p.blood_group or None},
         'visit': {'department': str(encounter.department or ''), 'status': encounter.status, 'diagnosis': encounter.diagnosis,
                   'vitals': encounter.vitals},
         'allergies': [{'substance': a.substance, 'severity': a.severity} for a in p.allergies.filter(status='active')],
         'conditions': list(p.conditions.filter(status='active').values_list('name', flat=True)),
-        'medicines': [{'medicine': str(i.medication), 'directions': i.directions, 'day': rel(i.prescription.created_at)}
+        'medicines': [{'medicine': str(i.medication), 'directions': scrub(i.directions, p, 300), 'day': rel(i.prescription.created_at)}
                       for i in PrescriptionItem.objects.filter(prescription__encounter__patient=p).exclude(prescription__state='cancelled')
                       .select_related('medication', 'prescription').order_by('-prescription__created_at')[:40]],
         'lab_results': vals,
@@ -230,6 +233,10 @@ def deidentified_context(encounter):
                     for o in ImagingOrder.objects.filter(encounter__patient=p, status='reported')],
         'rule_based_findings': [{'level': f['level'], 'title': f['title']} for f in clinical_review(encounter)],
     }
+    if 'pharmacy' in care:
+        ctx.pop('medicines')                # the pharmacy section is fuller (dispensing, doses given, stock)
+    ctx.update(care)
+    return ctx
 
 
 def ai_enabled():
