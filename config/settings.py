@@ -122,6 +122,8 @@ CLINICAL_AI_FALLBACK_MODEL = env('CLINICAL_AI_FALLBACK_MODEL', default='')
 # Lab result guidance: summaries from trusted medical sources (WHO, MedlinePlus, PubMed), fetched in the background.
 # Only test names and the direction of a result are sent to these sites, never patient data. Off in tests.
 MEDICAL_EVIDENCE_FETCH = env.bool('MEDICAL_EVIDENCE_FETCH', default=not TESTING)
+# Dr. Flow pictures from NLM Open-i and Wikimedia Commons (no patient data is sent). Unset = follow MEDICAL_EVIDENCE_FETCH.
+DRFLOW_IMAGES = env.bool('DRFLOW_IMAGES', default=None) if not TESTING else False
 MEDICAL_EVIDENCE_MAX_AGE_DAYS = env.int('MEDICAL_EVIDENCE_MAX_AGE_DAYS', default=30)
 MEDICAL_TRUSTED_DOMAINS = env.list('MEDICAL_TRUSTED_DOMAINS', default=[
     'who.int', 'nih.gov', 'medlineplus.gov', 'cdc.gov', 'nice.org.uk', 'msf.org', 'cochranelibrary.com', 'bmj.com', 'thelancet.com', 'nejm.org'])

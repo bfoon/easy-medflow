@@ -842,6 +842,8 @@ def prescription_new(request):
             form.add_error('allergy_reviewed', 'Confirm that you reviewed the allergy history before saving.')
         elif flagged and not form.cleaned_data['override_reason'].strip():
             form.add_error('override_reason', f'Possible allergy match for {", ".join(str(m) for m in flagged)}. Document a clinical justification or remove it.')
+        elif (serious := drflow_blocking(enc, live, None)) and not form.cleaned_data['override_reason'].strip():
+            form.add_error('override_reason', 'Dr. Flow found: ' + '; '.join(f['title'] for f in serious[:3]) + '. Document a clinical justification or change the prescription.')
         elif len(meds) != len(set(meds)):
             form.add_error(None, 'The same medicine is listed twice. Combine it into one line.')
         else:
@@ -849,13 +851,23 @@ def prescription_new(request):
                 p = form.save()
                 for i, f in enumerate(live):
                     item = f.save(commit=False); item.prescription = p; item.sort_order = i; item.save()
-                audit(request, 'create', f'hospital.Prescription:{p.pk}', {'lines': len(live), 'possible_allergy_match': bool(flagged)})
+                audit(request, 'create', f'hospital.Prescription:{p.pk}', {'lines': len(live), 'possible_allergy_match': bool(flagged),
+                                                                         'drflow_overridden': [f['title'] for f in serious]})
             return finish(request, request.POST.get('next') or reverse('prescription_detail', args=[p.pk]),
                           f'Prescription {p.number} saved as a draft with {len(live)} medicine{"s" if len(live) > 1 else ""}.')
     meds = {m.pk: {'form': m.form, 'strength': m.strength, 'name': str(m)} for m in Medication.objects.filter(active=True)}
     return render(request, 'hospital/prescription_form.html', {
         'form': form, 'formset': formset, 'title': 'New prescription', 'meds': meds,
         'per_day': {c: n for c, _, n in FREQUENCIES}, 'subtitle': 'Add each medicine as its own line. Saved as a draft until a prescriber signs it.'})
+
+
+def drflow_blocking(encounter, live_forms, prescription=None):
+    """Serious Dr. Flow warnings (interactions, pregnancy, age, G6PD, results, maximum dose) for the lines being saved."""
+    from .drflow import blocking, rx_findings
+    lines = [{'med': f.cleaned_data['medication'], 'dose': f.cleaned_data.get('dose'), 'units': f.cleaned_data.get('units_per_dose'),
+              'frequency': f.cleaned_data.get('frequency'), 'days': f.cleaned_data.get('duration_days'), 'quantity': f.cleaned_data.get('quantity'),
+              'route': f.cleaned_data.get('route')} for f in live_forms]
+    return blocking(rx_findings(encounter, lines, exclude_prescription=prescription))
 
 
 @login_required
@@ -1080,6 +1092,8 @@ def prescription_edit(request, pk):
             form.add_error('allergy_reviewed', 'Confirm that you reviewed the allergy history before saving.')
         elif flagged and not form.cleaned_data['override_reason'].strip():
             form.add_error('override_reason', f'Possible allergy match for {", ".join(str(m) for m in flagged)}. Document a clinical justification or remove it.')
+        elif (serious := drflow_blocking(p.encounter, live, p)) and not form.cleaned_data['override_reason'].strip():
+            form.add_error('override_reason', 'Dr. Flow found: ' + '; '.join(f['title'] for f in serious[:3]) + '. Document a clinical justification or change the prescription.')
         elif len(meds) != len(set(meds)):
             form.add_error(None, 'The same medicine is listed twice. Combine it into one line.')
         else:
@@ -1090,7 +1104,7 @@ def prescription_edit(request, pk):
                         f.instance.delete()
                 for i, f in enumerate(live):
                     item = f.save(commit=False); item.prescription = p; item.sort_order = i; item.save()
-                audit(request, 'update', f'hospital.Prescription:{p.pk}', {'lines': len(live)})
+                audit(request, 'update', f'hospital.Prescription:{p.pk}', {'lines': len(live), 'drflow_overridden': [f['title'] for f in serious]})
             return finish(request, reverse('prescription_detail', args=[p.pk]), f'{p.number} updated.')
     meds = {m.pk: {'form': m.form, 'strength': m.strength, 'name': str(m)} for m in Medication.objects.filter(active=True)}
     return render(request, 'hospital/prescription_form.html', {

@@ -1,0 +1,31 @@
+/* Dr. Flow on forms and the chart: "?" buttons, inline warnings under each medicine, the advice list, the brief. */
+.df-q{border:1px solid #cdd5f5;background:#fff;color:var(--indigo);width:22px;height:22px;border-radius:50%;display:inline-grid;place-items:center;
+  font-size:.72rem;padding:0;margin-left:6px;vertical-align:middle;cursor:help;transition:background .15s,transform .15s}
+.df-q:hover{background:var(--indigo-wash);transform:scale(1.08)}
+.df-q:focus-visible{outline:2px solid var(--indigo);outline-offset:2px}
+.test-pick{position:relative}
+.test-pick .df-q{position:absolute;top:6px;right:30px;margin:0}
+.df-inline{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.df-inline:empty{display:none}
+.df-chip{display:inline-flex;gap:6px;align-items:center;border:1px solid transparent;border-radius:999px;padding:3px 10px;font-size:.8rem;font-weight:600;
+  text-align:left;cursor:pointer;background:var(--teal-wash);color:var(--teal-2)}
+.df-chip.danger{background:var(--red-wash);color:#8E1F2A;border-color:#f2c3c8}
+.df-chip.warn{background:var(--amber-wash);color:#6E420A;border-color:#f3d9ae}
+.df-chip:hover{filter:brightness(.97)}
+.df-chip:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.rx-line.df-danger{box-shadow:inset 4px 0 0 var(--red)}
+.df-list{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.df-list:empty{display:none}
+.df-list-head{font-size:.8rem;font-weight:700;color:var(--indigo);display:flex;gap:6px;align-items:center}
+.df-item{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:10px;font-size:.84rem;background:var(--teal-wash);color:var(--teal-2)}
+.df-item.danger{background:var(--red-wash);color:#8E1F2A}.df-item.warn{background:var(--amber-wash);color:#6E420A}
+.df-item>div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.df-acts{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+.df-acts button{border:1px solid currentColor;background:#fff;color:inherit;border-radius:999px;font-size:.76rem;font-weight:600;padding:1px 9px}
+.df-override-note{font-size:.84rem;color:#8E1F2A;background:var(--red-wash);border-radius:8px;padding:6px 10px;margin-bottom:6px}
+.df-brief{margin:6px 0 0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.df-brief li{padding-left:14px;position:relative;font-size:.84rem}
+.df-brief li::before{content:'';position:absolute;left:0;top:.5em;width:7px;height:7px;border-radius:50%;background:var(--teal)}
+.df-brief li.danger{color:#8E1F2A;font-weight:600}.df-brief li.danger::before{background:var(--red)}
+.df-brief li.warn::before{background:var(--amber)}
+@media print{.df-q,.df-list,.df-inline{display:none!important}}

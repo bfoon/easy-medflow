@@ -1,9 +1,10 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}{{ title }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endblock %}
 {% block heading %}{{ title }}{% endblock %}
 {% block subheading %}<p class="sub">{{ subtitle }}</p>{% endblock %}
 {% block content %}
-<form method="post" novalidate id="rx-form">{% csrf_token %}
+<form method="post" novalidate id="rx-form"{% if editing %} data-prescription="{{ editing.pk }}"{% endif %}>{% csrf_token %}
   <input type="hidden" name="next" value="{{ request.GET.next }}">
   {% for e in form.non_field_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ e }}</div></div>{% endfor %}
   {% for e in formset.non_form_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ e }}</div></div>{% endfor %}
@@ -41,7 +42,7 @@
 {{ meds|json_script:"rx-meds" }}{{ per_day|json_script:"rx-perday" }}
 {% endblock %}
 {% block scripts %}
-<script src="{% asset 'hospital/js/decision.js' %}"></script>
+<script src="{% asset 'hospital/js/decision.js' %}"></script><script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/drflow.js' %}" defer></script>
 <script>
 (() => {
   const MEDS = JSON.parse(document.getElementById('rx-meds').textContent), PER_DAY = JSON.parse(document.getElementById('rx-perday').textContent);
@@ -85,7 +86,7 @@
       overrideToggle();
     }).catch(() => {}), 250));
   }
-  function overrideToggle() { document.getElementById('override-wrap').hidden = !Object.values(allergyMatch).some(Boolean) && !document.querySelector('[name="override_reason"]').value; }
+  function overrideToggle() { document.getElementById('override-wrap').hidden = !Object.values(allergyMatch).some(Boolean) && !window.drflowBlocking && !document.querySelector('[name="override_reason"]').value; }
   function summary() {
     const live = [...lines.querySelectorAll('[data-line]')].filter(l => !l.hidden);
     live.forEach((l, i) => l.querySelector('.rx-n').textContent = i + 1);

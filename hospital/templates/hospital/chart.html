@@ -1,6 +1,7 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}{{ p.full_name }}{% endblock %}
 {% block topbar %}{% endblock %}
+{% block head %}{% if nav_role == 'doctor' or nav_role == 'nurse' or nav_role == 'admin' %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endif %}{% endblock %}
 {% block content %}
 {% with active_allergies=allergies %}
 <section class="wristband {% if p.medical_alerts or allergies %}alerting{% endif %}">
@@ -25,6 +26,7 @@
     {% else %}
       <button class="btn btn-primary" data-drawer="{% url 'encounter_new' %}?patient={{ p.pk }}" data-title="Start encounter"><i class="bi bi-clipboard2-plus"></i>Start encounter</button>
     {% endif %}
+    {% if nav_role == 'doctor' or nav_role == 'nurse' or nav_role == 'admin' %}<button type="button" class="btn btn-ghost" data-drflow-ask title="Ask Dr. Flow about a medicine, a test or this patient"><i class="bi bi-robot"></i>Ask Dr. Flow</button>{% endif %}
     <a class="btn btn-ghost" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-activity"></i>Lab insights</a>
     <a class="btn btn-ghost" href="{% url 'patient_story' p.pk %}"><i class="bi bi-play-circle"></i>Play history</a>
     <div class="dropdown">
@@ -193,4 +195,5 @@
 <template id="qr-tpl"><div class="qr-card print-area"><div class="wrist"><div>{% patient_qr p 5 %}</div><div class="text-start"><b class="display" style="font-size:1.3rem">{{ p.full_name }}</b><div>{{ p.mrn }}</div><div class="small">{{ p.get_sex_display }} · born {{ p.dob|date:'j M Y' }}{% if p.blood_group %} · {{ p.blood_group }}{% endif %}</div>{% if allergies %}<div class="small text-danger fw-bold mt-1">ALLERGIES: {% for a in allergies %}{% if a.status == 'active' %}{{ a.substance }} {% endif %}{% endfor %}</div>{% endif %}</div></div>
   <p class="small muted mt-2 mb-2">Scanning opens this record after staff sign-in. It contains only a link, no medical details.</p><button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i>Print wristband / card</button></div></template>
 {% endblock %}
-{% block scripts %}<script>document.addEventListener('click',e=>{if(!e.target.closest('.dropdown'))document.querySelectorAll('.dropdown-menu.show').forEach(m=>m.classList.remove('show'))})</script>{% endblock %}
+{% block scripts %}{% if nav_role == 'doctor' or nav_role == 'nurse' or nav_role == 'admin' %}<div hidden data-drflow-chart data-brief="{% url 'drflow_brief' p.pk %}" data-encounter="{{ open_encounter.pk|default:'' }}"></div>
+<script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/drflow.js' %}"></script>{% endif %}<script>document.addEventListener('click',e=>{if(!e.target.closest('.dropdown'))document.querySelectorAll('.dropdown-menu.show').forEach(m=>m.classList.remove('show'))})</script>{% endblock %}

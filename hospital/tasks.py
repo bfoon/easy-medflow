@@ -38,3 +38,9 @@ def ai_suggestion_task(pk):
 def report_assist_task(pk):
     from .reports import run_assist
     run_assist(pk)
+
+
+@shared_task(ignore_result=True, soft_time_limit=240)
+def drflow_ask_task(pk):
+    from .drflow_ask import run_ask
+    run_ask(pk)

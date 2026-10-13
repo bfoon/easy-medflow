@@ -4,6 +4,9 @@
    the guidance panel; other pages (the report editor) drive it through the same API. */
 (() => {
   if (window.RoboDoc) return;
+  try {   // a form opened in the drawer (same-origin iframe) uses the page's Dr. Flow, who stands beside the drawer
+    if (window.parent !== window && window.parent.RoboDoc) { window.RoboDoc = window.parent.RoboDoc; return; }
+  } catch { /* cross-origin parent: use our own */ }
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -84,12 +87,45 @@
     bodyEl.addEventListener('click', activate);
     bodyEl.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && state !== 'hidden') { bubble.classList.remove('show'); stopSpeaking(); } });
+    new MutationObserver(place).observe(document.body, {attributes: true, attributeFilter: ['class']});
+    addEventListener('resize', place);
     addEventListener('pointermove', e => { pointer = {x: e.clientX, y: e.clientY}; lastMove = performance.now(); }, {passive: true});
     addEventListener('pointerdown', e => { pointer = {x: e.clientX, y: e.clientY}; lastMove = performance.now(); }, {passive: true});
   }
 
+  function rectOf(el) {
+    const r = el.getBoundingClientRect();
+    const fr = el.ownerDocument !== document && el.ownerDocument.defaultView?.frameElement;
+    if (!fr) return r;
+    const f = fr.getBoundingClientRect();
+    return {left: r.left + f.left, top: r.top + f.top, width: r.width, height: r.height};
+  }
+
+  function trackFrame(win) {    // follow the pointer inside the drawer too
+    try {
+      const fr = win.frameElement;
+      if (!fr || win.__rdTracked) return;
+      win.__rdTracked = true;
+      const h = e => { const f = fr.getBoundingClientRect(); pointer = {x: e.clientX + f.left, y: e.clientY + f.top}; lastMove = performance.now(); };
+      win.addEventListener('pointermove', h, {passive: true});
+      win.addEventListener('pointerdown', h, {passive: true});
+    } catch { /* ignore */ }
+  }
+
+  // stand beside the drawer when it is open, so the form stays visible
+  function place() {
+    if (!root) return;
+    const d = document.getElementById('drawer'), open = !!(d && d.classList.contains('open'));
+    const w = open ? d.getBoundingClientRect().width : 0;
+    root.style.right = open && innerWidth - w > 200 ? `${Math.round(w + 16)}px` : '';
+    root.classList.toggle('by-drawer', open);
+  }
+
   function target() {
-    try { return focusFn ? focusFn() : null; } catch { return null; }
+    try {
+      const el = focusFn ? focusFn() : null;
+      return el && el.isConnected && el.ownerDocument.defaultView ? el : null;
+    } catch { return null; }
   }
 
   // ---------------------------------------------------------------- gaze: you ↔ the summary
@@ -117,7 +153,7 @@
     else if (gaze === 'summary') {
       const el = target();
       if (el) {
-        const r = el.getBoundingClientRect();
+        const r = rectOf(el);
         pt = {x: clamp(r.left + Math.min(r.width, 420) / 2, 0, innerWidth), y: clamp(r.top + Math.min(r.height, 260) / 2, 0, innerHeight)};
         looking = el;
       }
@@ -138,7 +174,7 @@
     if (pointing) {
       const el = target();
       if (el) {
-        const r = el.getBoundingClientRect(), b = toBox({x: r.left + Math.min(r.width, 420) / 2, y: r.top + Math.min(r.height, 200) / 2});
+        const r = rectOf(el), b = toBox({x: r.left + Math.min(r.width, 420) / 2, y: r.top + Math.min(r.height, 200) / 2});
         const deg = Math.atan2(b.y - 112, b.x - 42) * 180 / Math.PI;      // arm hangs at 90°
         armL.style.transform = `rotate(${clamp(deg - 90, 25, 165).toFixed(1)}deg)`;
       }
@@ -164,7 +200,7 @@
 
   function mood(cls, ms) {
     clearTimeout(moodTimer);
-    root.classList.remove('happy', 'sad');
+    root.classList.remove('happy', 'sad', 'alarm');
     if (cls) { root.classList.add(cls); if (ms) moodTimer = setTimeout(() => root.classList.remove(cls), ms); }
   }
 
@@ -174,6 +210,7 @@
     if (state !== 'hidden' && !root.classList.contains('leave')) return;
     root.classList.remove('leave');
     root.hidden = false;
+    place();
     state = 'idle';
     root.classList.add('idle');
     cancelAnimationFrame(raf); raf = requestAnimationFrame(tick);
@@ -197,6 +234,7 @@
     build();
     clearInterval(msgTimer);
     textEl.innerHTML = html;
+    bubble.classList.remove('alert');
     actsEl.innerHTML = '';
     actions.forEach(a => {
       const b = document.createElement('button');
@@ -233,6 +271,7 @@
     pointing = true;
     setTimeout(() => { pointing = false; }, 5200);
     say(html, actions);
+    bubble.classList.remove('alert');
     setGaze('summary', 2400);
     root.classList.add('wave');
     setTimeout(() => root.classList.remove('wave'), 2300);
@@ -246,6 +285,94 @@
     state = 'idle';
     mood('sad', 4000);
     say(html, actions);
+  }
+
+  // a serious warning: wide eyes, steady red light, a shake and a red-edged bubble
+  async function alert(html, actions = []) {
+    build();
+    clearInterval(msgTimer);
+    root.classList.remove('thinking');
+    state = 'idle';
+    mood('alarm', 5000);
+    pointing = true;
+    setTimeout(() => { pointing = false; }, 4000);
+    say(html, actions);
+    bubble.classList.add('alert');
+    setGaze('summary', 3000);
+    await anim('shake', 520);
+  }
+
+  // ---------------------------------------------------------------- information card (facts, AI answer, pictures)
+  let card = null, cardOpts = {}, lightbox = null;
+  function closeCard() { card?.remove(); card = null; root?.classList.remove('has-card'); }
+  function openLightbox(img) {
+    lightbox?.remove();
+    lightbox = document.createElement('div');
+    lightbox.className = 'rd-lightbox';
+    lightbox.setAttribute('role', 'dialog');
+    lightbox.setAttribute('aria-label', img.caption || 'Picture');
+    lightbox.innerHTML = `<figure><img src="${esc(img.full)}" alt="${esc(img.caption)}" referrerpolicy="no-referrer">
+      <figcaption>${esc(img.caption)}<span>${esc(img.credit || '')} · <a href="${esc(img.page)}" target="_blank" rel="noopener noreferrer">${esc(img.source)} <i class="bi bi-box-arrow-up-right"></i></a>
+      · check the licence on the source before reusing</span></figcaption></figure><button type="button" class="rd-lightbox-x" aria-label="Close picture"><i class="bi bi-x-lg"></i></button>`;
+    const close = () => { lightbox?.remove(); lightbox = null; };
+    lightbox.addEventListener('click', e => { if (e.target === lightbox || e.target.closest('.rd-lightbox-x')) close(); });
+    document.addEventListener('keydown', function k(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', k); } });
+    document.body.appendChild(lightbox);
+    lightbox.querySelector('.rd-lightbox-x').focus();
+  }
+  function renderCard() {
+    const o = cardOpts, lvl = {danger: 'exclamation-octagon-fill', warn: 'exclamation-triangle-fill', info: 'info-circle'};
+    card.querySelector('.rd-card-title').textContent = o.title || 'Dr. Flow';
+    card.querySelector('.rd-card-sub').textContent = o.subtitle || '';
+    card.querySelector('.rd-card-warn').innerHTML = (o.warnings || []).map(w => `<div class="rd-w ${esc(w.level)}"><i class="bi bi-${lvl[w.level] || 'info-circle'}"></i>
+      <div><b>${esc(w.title)}</b><span>${esc(w.detail)}</span>${w.basis ? `<small>${esc(w.basis)}</small>` : ''}</div></div>`).join('');
+    card.querySelector('.rd-card-facts').innerHTML = (o.facts || []).map(f => `<dt>${esc(f.label)}</dt><dd>${esc(f.value)}</dd>`).join('');
+    const ai = card.querySelector('.rd-card-ai');
+    ai.innerHTML = o.ai === 'loading' ? '<p class="rd-load"><span class="spinner-border spinner-border-sm"></span> Asking the AI, with trusted medical sites…</p>'
+      : o.ai === 'html' ? `<div class="rd-ai-label"><i class="bi bi-stars"></i> AI explanation${o.model ? ` · ${esc(o.model)}` : ''}</div>${o.html}`
+      : o.ai === 'error' ? `<p class="rd-err"><i class="bi bi-wifi-off"></i> The AI could not answer this time. ${esc(o.error || '')}</p>`
+      : o.ai === 'off' ? '<p class="rd-note">AI is not connected on this server, so you see the hospital\'s own facts and the rule checks only.</p>' : '';
+    const imgs = card.querySelector('.rd-card-imgs');
+    imgs.innerHTML = o.images === 'loading' ? '<p class="rd-load"><span class="spinner-border spinner-border-sm"></span> Finding pictures from the sources…</p>'
+      : Array.isArray(o.images) && o.images.length ? `<div class="rd-ai-label"><i class="bi bi-images"></i> Pictures from the sources</div><div class="rd-gallery">${o.images.map((im, i) =>
+          `<button type="button" data-img="${i}" title="${esc(im.caption)}"><img src="${esc(im.thumb)}" alt="${esc(im.caption)}" loading="lazy" referrerpolicy="no-referrer"><span>${esc(im.source)}</span></button>`).join('')}</div>`
+      : Array.isArray(o.images) ? '<p class="rd-note">No pictures found for this in the open sources.</p>' : '';
+    imgs.querySelectorAll('[data-img]').forEach(b => b.addEventListener('click', () => openLightbox(o.images[+b.dataset.img])));
+    imgs.querySelectorAll('img').forEach(im => im.addEventListener('error', () => im.closest('button')?.remove()));
+    card.querySelector('.rd-card-src').innerHTML = (o.sources || []).length ? `<div class="rd-ai-label"><i class="bi bi-link-45deg"></i> Sources</div><ol>${o.sources.map(s =>
+      `<li><a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title || s.url)}</a></li>`).join('')}</ol>` : '';
+    const form = card.querySelector('.rd-card-ask');
+    form.hidden = !o.onAsk;
+    form.querySelector('input').placeholder = o.askPlaceholder || 'Ask a follow-up question…';
+  }
+  function showCard(opts) {
+    build();
+    cardOpts = {...opts};
+    if (!card) {
+      card = document.createElement('section');
+      card.className = 'rd-card';
+      card.setAttribute('role', 'dialog');
+      card.setAttribute('aria-label', 'Dr. Flow');
+      card.innerHTML = `<header><div><b class="rd-card-title"></b><span class="rd-card-sub"></span></div>
+        <button type="button" class="rd-card-x" aria-label="Close"><i class="bi bi-x-lg"></i></button></header>
+        <div class="rd-card-body"><div class="rd-card-warn"></div><dl class="rd-card-facts"></dl><div class="rd-card-imgs"></div>
+        <div class="rd-card-ai gd-ai-text"></div><div class="rd-card-src"></div></div>
+        <form class="rd-card-ask"><input type="text" maxlength="400" aria-label="Question for Dr. Flow"><button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-send"></i>Ask</button></form>`;
+      card.querySelector('.rd-card-x').addEventListener('click', closeCard);
+      card.querySelector('.rd-card-ask').addEventListener('submit', e => {
+        e.preventDefault();
+        const q = e.target.querySelector('input').value.trim();
+        if (q.length < 3) return;
+        e.target.querySelector('input').value = '';
+        try { cardOpts.onAsk?.(q); } catch { say('That form was closed. Ask me again from the page.'); }
+      });
+      root.appendChild(card);
+    }
+    root.classList.add('has-card');
+    renderCard();
+    card.scrollTop = 0;
+    if (opts.focusInput) setTimeout(() => card.querySelector('.rd-card-ask input')?.focus(), 50);
+    return {update(more) { if (card) { Object.assign(cardOpts, more); renderCard(); } }, close: closeCard, get open() { return !!card; }};
   }
 
   // ---------------------------------------------------------------- reading aloud (the trace mouth beats as it talks)
@@ -274,7 +401,7 @@
   }
 
   window.RoboDoc = {
-    summon, hide, think, done, fail, say, speak, stopSpeaking,
+    summon, hide, think, done, fail, say, speak, stopSpeaking, alert, card: showCard, closeCard, trackFrame,
     focus(fn) { focusFn = typeof fn === 'function' ? fn : () => fn; },
     get state() { return state; },
   };

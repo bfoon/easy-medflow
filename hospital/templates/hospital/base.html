@@ -123,7 +123,8 @@
   window.MEDFLOW = {
     pulse: "{% url 'api_pulse' %}", search: "{% url 'api_search' %}", notifications: "{% url 'api_notifications' %}", notificationsRead: "{% url 'notifications_read' %}", notificationsEmail: "{% url 'notifications_email' %}", rxCheck: "{% url 'api_rx_check' %}",
     patientNew: "{% url 'patient_new' %}", ticketNew: "{% url 'ticket_new' %}", encounterNew: "{% url 'encounter_new' %}",
-    rxNew: "{% url 'prescription_new' %}", display: "{% url 'queue_display' %}"
+    rxNew: "{% url 'prescription_new' %}", display: "{% url 'queue_display' %}",
+    drflowRx: "{% url 'drflow_rx' %}", drflowLab: "{% url 'drflow_lab' %}", drflowAsk: "{% url 'drflow_ask' %}"
   };
 </script>
 <script src="{% asset 'hospital/js/medflow.js' %}"></script>

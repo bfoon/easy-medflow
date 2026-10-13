@@ -1,5 +1,6 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}Order tests{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endblock %}
 {% block heading %}New lab request{% endblock %}
 {% block subheading %}<p class="sub">Pick a visit and tick every test you need. They go to the lab together as one request for this patient.</p>{% endblock %}
 {% block content %}
@@ -45,7 +46,7 @@
 </form>
 {% endblock %}
 {% block scripts %}
-<script src="{% asset 'hospital/js/decision.js' %}"></script>
+<script src="{% asset 'hospital/js/decision.js' %}"></script><script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/drflow.js' %}" defer></script>
 <script>
 (() => {
   const boxes = [...document.querySelectorAll('input[name="tests"]')], list = document.getElementById('sum-list');

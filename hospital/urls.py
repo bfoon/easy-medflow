@@ -7,6 +7,7 @@ from . import studio_views as sv
 from . import esign_views as ev
 from . import evidence_views as gv
 from . import report_views as rv
+from . import drflow_views as dfv
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -106,6 +107,11 @@ urlpatterns = [
     path('reports/<int:pk>/assist/<str:kind>/', rv.report_assist, name='report_assist'),
     path('reports/assist/<int:pk>/', rv.report_assist_status, name='report_assist_status'),
     path('reports/verify/<str:token>/', rv.report_verify, name='report_verify'),
+    path('drflow/patients/<int:pk>/brief/', dfv.api_brief, name='drflow_brief'),
+    path('drflow/rx/', dfv.api_rx, name='drflow_rx'),
+    path('drflow/labs/', dfv.api_lab, name='drflow_lab'),
+    path('drflow/ask/', dfv.ask, name='drflow_ask'),
+    path('drflow/ask/<int:pk>/', dfv.ask_status, name='drflow_ask_status'),
     path('labs/requests/<int:pk>/report/', lv.lab_report, name='lab_report'),
     path('labs/new/', v.lab_new, name='lab_new'),
     path('labs/mine/', v.lab_mine, name='lab_mine'),

@@ -528,7 +528,7 @@ def run_assist(pk):
             ctx = deidentified_context(r.encounter)
         ctx['doctor_draft_report'] = a.input_text
         text, _sources, _ = medical_ai._ask(ctx, f'report_{a.kind}', ASSIST_TASKS[a.kind] +
-                                            '\n\nThe draft is in the context as doctor_draft_report.')
+                                            '\n\nThe draft is in the context as doctor_draft_report.', system=medical_ai.GENERAL_SYSTEM_PROMPT)
         if not text:
             raise RuntimeError('The AI service returned no text')
         a.text, a.status = text.strip(), 'done'
