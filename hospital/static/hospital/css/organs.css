@@ -305,3 +305,42 @@
 .leak{fill:#B91C1C;animation:leakDrop 2.4s ease-in infinite}@keyframes leakDrop{0%{opacity:0;transform:translateY(-14px)}30%{opacity:.9}100%{opacity:.6;transform:translateY(8px)}}
 .leak{transform-box:fill-box}
 @media (prefers-reduced-motion: reduce){.bf-drift,.jam,.leak,.voc .voc-ring{animation:none}}
+
+/* ---------- 3D heart: see-through mode (valves and blood flow) */
+.h3d-pin.interior{display:none}
+.h3d.xray .h3d-pin.interior{display:flex}
+.h3d-read{position:absolute;left:10px;top:10px;max-width:calc(100% - 64px);z-index:2;display:none;background:rgba(15,25,33,.78);border:1px solid rgba(255,255,255,.12);
+  border-radius:11px;padding:7px 9px;color:#e7eef2;font-size:.7rem;backdrop-filter:blur(4px)}
+.h3d.xray .h3d-read{display:block}
+.h3d-read-h{font-weight:700;margin-bottom:4px}.h3d-read-h span{font-weight:500;color:#9fb3bd}
+.h3d-chips{display:flex;flex-wrap:wrap;gap:4px}
+.h3d-chips span{display:inline-flex;gap:4px;align-items:baseline;background:rgba(255,255,255,.08);border-radius:6px;padding:2px 6px}
+.h3d-chips small{color:#9fb3bd;font-size:.64rem}.h3d-chips b{font-weight:700}
+.h3d-chips span.typ b{color:#f5c26b;font-weight:600}
+.h3d-key{display:flex;gap:8px;align-items:center;margin-top:5px;color:#c6d3d9}
+.h3d-key span{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:-4px}
+.h3d-key .ox{background:#E3222C}.h3d-key .de{background:#3A4FB6}.h3d-key .vl{background:#F3DED2;border-radius:2px}
+.h3d.xray .h3d-hint{opacity:0}
+
+/* ---------- stroke on the brain */
+.sk .sk-art{fill:none;stroke:#C42532;stroke-width:2.4;stroke-linecap:round;opacity:.92}
+.sk .sk-art.blocked{stroke:#8E8E99;stroke-dasharray:3 3;opacity:.75}
+.sk .sk-rbc{fill:#FF5C64}
+.sk .sk-terr path,.sk .sk-terr ellipse{fill:rgba(40,40,62,.58);stroke:none}
+.sk .sk-terr.old path,.sk .sk-terr.old ellipse{fill:rgba(130,130,145,.6)}
+.sk .sk-terr.tia path{fill:rgba(40,40,62,.5)}
+.sk .sk-pen path,.sk .sk-pen ellipse{fill:none;stroke:#F5A524;stroke-width:5;stroke-linejoin:round;opacity:.8}
+.sk .sk-clot circle{fill:#3A0710;stroke:#FF4D5A;stroke-width:1.6}
+.sk .sk-clot .pulse{fill:none;stroke:#FF4D5A;animation:sk-ping 1.6s ease-out infinite;transform-box:fill-box;transform-origin:center}
+.sk .sk-emb{fill:#3A0710;stroke:#FF8A90;stroke-width:1}
+.sk .sk-bleed circle{fill:#7E0A14;opacity:.9}
+.sk .sk-bleed .oedema{fill:rgba(255,236,200,.45);stroke:rgba(255,200,140,.6);stroke-width:1}
+.sk .sk-leak{fill:#B3121F}
+.sk .sk-sah path{fill:none;stroke:#A50F1C;stroke-width:4;stroke-linecap:round;opacity:.85}
+.sk .sk-sah .rim{stroke-width:3;stroke-dasharray:6 4}
+.sk .sk-callout path{stroke:#1F2B33;stroke-width:1;fill:none}
+.sk .sk-callout rect{fill:#1F2B33;opacity:.9}
+.sk .sk-callout text{fill:#fff;font-size:8.5px;font-weight:700;font-family:var(--body,system-ui)}
+.sk .sk-side{font-size:8px;fill:#5A6F7D;font-family:var(--body,system-ui)}
+@keyframes sk-ping{0%{transform:scale(1);opacity:.9}100%{transform:scale(2.6);opacity:0}}
+@media (prefers-reduced-motion:reduce){.sk .sk-clot .pulse{animation:none}}

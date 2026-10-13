@@ -39,6 +39,16 @@
       (s.imaging ||= []).push(im);
       if (im.reported && im.abnormal && SEVERITY.A > SEVERITY[s.worst]) s.worst = 'A';
     }
+    // diagnoses and vitals light up organs too (anatomy-layers.js works them out): a stroke marks the brain, and
+    // recorded vitals, atrial fibrillation or valve disease make the heart (and its blood flow) openable
+    const A = window.MF_ANATOMY || {};
+    const touch = (key, flag) => { const s = out[key] ||= {key, label: DATA.systems[key] || key, params: [], worst: '', open: 0, crit: 0}; if (SEVERITY[flag] > SEVERITY[s.worst]) s.worst = flag; return s; };
+    if (A.stroke) touch('brain', A.stroke.old ? 'A' : 'HH').stroke = A.stroke;
+    const v = A.vitals || {};
+    if (v.hr || v.sbp || A.af || Object.keys(A.valves || {}).length) {
+      const off = (v.hr && (v.hr < 50 || v.hr > 120)) || (v.sbp && (v.sbp < 90 || v.sbp > 180)) || (v.spo2 && v.spo2 < 92);
+      touch('heart', off || A.af || Object.keys(A.valves || {}).length ? 'A' : 'N');
+    }
     for (const s of Object.values(out)) s.params.sort((a, b) => SEVERITY[b.latest.flag] - SEVERITY[a.latest.flag] || a.name.localeCompare(b.name));
     return out;
   }
@@ -268,7 +278,7 @@
   function renderOverview() {
     const list = Object.values(SYS).sort((a, b) => SEVERITY[b.worst] - SEVERITY[a.worst]);
     const untested = Object.keys(DATA.systems).filter(k => !SYS[k]);
-    detail.innerHTML = !DATA.params.length && !(DATA.imaging || []).length ? `<div class="empty"><i class="bi bi-droplet"></i>No resulted lab tests for this patient yet. Results appear here once the lab submits them.</div>` :
+    detail.innerHTML = !DATA.params.length && !(DATA.imaging || []).length && !list.length ? `<div class="empty"><i class="bi bi-droplet"></i>No resulted lab tests for this patient yet. Results appear here once the lab submits them.</div>` :
       `<div class="panel-head"><h2>Body systems</h2><span class="hint">Click a marker or a row</span></div>
       <ul class="plain sys-list">${list.map(s => `<li><button class="sys ${flagClass(s.worst)}" data-sys="${s.key}"><span class="sdot"></span><span><b>${esc(s.label)}</b><small>${s.params.length} value${s.params.length === 1 ? '' : 's'}${(s.imaging || []).length ? ` · ${s.imaging.length} scan${s.imaging.length > 1 ? 's' : ''}` : ''}${s.open ? ` · ${s.open} to review` : ''}</small></span><span class="flag ${flagClass(s.worst)}">${isAbn(s.worst) ? (SEVERITY[s.worst] === 4 ? 'Critical' : 'Out of range') : 'In range'}</span></button></li>`).join('')}</ul>
       ${untested.length ? `<p class="small muted mt-3 mb-0">Not tested: ${untested.map(k => esc(DATA.systems[k])).join(', ')}</p>` : ''}`;

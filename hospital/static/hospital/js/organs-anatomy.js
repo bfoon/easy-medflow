@@ -273,6 +273,110 @@
       meninges: 'Spinal fluid (blue dots) circulates inside the meninges. Raised white cells or protein in a lumbar puncture suggest meningitis; low CSF glucose suggests bacteria.'}};
   };
 
+  /* ================================================================ STROKE (on the brain)
+     anatomy-layers.js works out the kind (blocked artery, bleed, subarachnoid bleed or mini-stroke), the side and the
+     artery from the diagnosis and scan reports. The brain is seen from its side, front to the left; a right-sided
+     stroke flips it so the right hemisphere is shown. Blood flows through open arteries; beyond the clot the artery
+     is grey and the brain it feeds turns dark, with an amber edge for brain that can still be saved if flow returns. */
+  const ARTERY = {
+    ica: 'M150,216 C152,196 150,176 146,160 C143,148 138,138 130,128', mca: 'M130,128 C146,118 168,112 196,112',
+    mca1: 'M168,112 C172,92 182,72 200,54', mca2: 'M186,111 C206,94 228,82 252,78', mca3: 'M196,112 C216,120 236,128 256,138',
+    aca: 'M130,128 C118,112 106,92 108,72 C112,52 136,40 168,38 C192,36 214,38 232,44', bas: 'M212,214 C211,196 210,176 210,158',
+    pca: 'M210,158 C226,150 248,142 264,128 C276,116 282,102 280,86', sca: 'M211,168 C226,168 246,170 262,176', len: 'M146,121 C148,116 152,112 158,110'};
+  const TERR = {
+    MCA: 'M104,124 C112,92 140,64 186,54 C222,48 254,62 270,92 C268,118 250,140 220,146 C186,150 140,144 104,124Z',
+    ACA: 'M62,118 C60,80 90,46 140,36 C176,30 220,32 250,40 C222,46 186,52 160,60 C130,72 110,92 100,122Z',
+    PCA: 'M256,92 C272,84 290,98 290,124 C288,146 268,156 242,150 C246,130 248,110 256,92Z',
+    stem: 'M196,150 C200,170 204,190 208,214 L224,214 C220,190 218,168 216,150Z', cb: 'M228,146 C250,140 282,148 284,166 C284,184 252,190 232,182 C218,176 216,154 228,146Z'};
+  const BLOCK = {      // path to the clot, what lies beyond it, which arteries it replaces, where the clot sits, what it starves
+    MCA: {name: 'middle cerebral artery (MCA)', pre: 'M130,128 C138,123 146,119 152,117', down: ['M152,117 C166,113 180,111 196,112', 'mca1', 'mca2', 'mca3', 'len'], drop: ['mca', 'mca1', 'mca2', 'mca3', 'len'], at: [152, 117], terr: ['MCA'], from: 'ica'},
+    ACA: {name: 'anterior cerebral artery (ACA)', pre: 'M130,128 C122,118 114,102 110,86', down: ['M110,86 C108,64 130,42 168,38 C192,36 214,38 232,44'], drop: ['aca'], at: [110, 86], terr: ['ACA'], from: 'ica'},
+    PCA: {name: 'posterior cerebral artery (PCA)', pre: 'M210,158 C220,153 228,149 234,146', down: ['M234,146 C248,140 258,134 264,128 C276,116 282,102 280,86'], drop: ['pca'], at: [234, 146], terr: ['PCA'], from: 'bas'},
+    basilar: {name: 'basilar artery', pre: 'M212,214 C211,204 211,194 210,184', down: ['M210,184 C210,176 210,166 210,158', 'pca', 'sca'], drop: ['bas', 'pca', 'sca'], at: [210, 184], terr: ['stem', 'cb', 'PCA'], from: null},
+    cerebellar: {name: 'cerebellar artery', pre: 'M211,168 C218,168 224,168 230,169', down: ['M230,169 C242,170 252,172 262,176'], drop: ['sca'], at: [230, 169], terr: ['cb'], from: 'bas'},
+    lacunar: {name: 'small deep artery (lacunar)', pre: 'M146,121 C147,118 149,116 151,114', down: ['M151,114 C153,112 155,111 158,110'], drop: ['len'], at: [151, 114], terr: [], lacune: [156, 112], from: 'ica'},
+    ICA: {name: 'internal carotid artery', pre: 'M150,216 C152,200 151,186 149,172', down: ['M149,172 C147,160 140,140 130,128', 'mca', 'mca1', 'mca2', 'mca3', 'aca', 'len'], drop: ['ica', 'mca', 'mca1', 'mca2', 'mca3', 'aca', 'len'], at: [149, 172], terr: ['MCA', 'ACA'], from: null},
+  };
+  const EFFECT = (art, side) => {
+    const opp = side === 'left' ? 'right' : 'left';
+    return {MCA: `weakness and numbness of the ${opp} face and arm${side === 'left' ? ', and trouble speaking or understanding (language sits on the left)' : ', and ignoring the left side of the world (neglect)'}`,
+      ACA: `weakness of the ${opp} leg more than the arm`, PCA: `loss of the ${opp} half of vision in both eyes`,
+      basilar: 'reduced consciousness, double vision, weakness on both sides and trouble breathing: an emergency',
+      cerebellar: `poor balance and clumsiness on the ${side} side (the same side), dizziness and vomiting`,
+      lacunar: `weakness of the ${opp} face, arm and leg, usually without speech problems`,
+      ICA: `weakness of the ${opp} face, arm and leg${side === 'left' ? ', with trouble speaking' : ', with neglect of the left side'}`}[art] || '';
+  };
+  function strokeOverlay(st) {
+    const anim = (attr, values, dur, extra = '') => still ? '' : `<animate attributeName="${attr}" values="${values}" dur="${dur}s" repeatCount="indefinite" ${extra}/>`;
+    const vessel = (d, cls = '') => `<path d="${d}" class="sk-art ${cls}"/>`;
+    const flowOn = d => ride(d, 'sk-rbc', 3, 2.4, 1.5);
+    let svg = '', notes = [], parts = {}, callout = null;
+    const bleed = st.kind === 'haemorrhagic' || st.kind === 'subarachnoid';
+    const B = !bleed ? BLOCK[st.artery] || BLOCK.MCA : null;
+    const sd = st.artery === 'basilar' ? '' : `${st.side} `;          // the basilar artery is in the midline
+    const keep = Object.keys(ARTERY).filter(k => !(B && B.drop.includes(k)));
+    svg += keep.map(k => vessel(ARTERY[k]) + flowOn(ARTERY[k])).join('');
+    if (B) {
+      // the starved brain: dark core; amber edge (penumbra) for brain that can still be saved, unless it is an old stroke
+      const shapes = B.terr.map(t => TERR[t]);
+      const clip = B.terr.some(t => t === 'MCA' || t === 'ACA' || t === 'PCA') ? 'clip-path="url(#ox-br-clip)"' : '';
+      if (st.kind !== 'tia') {
+        svg += part('territory', 'Brain without blood flow', `<g class="sk-terr ${st.old ? 'old' : ''}" ${clip}>${shapes.map(d => `<path d="${d}"/>`).join('')}${B.lacune ? `<ellipse cx="${B.lacune[0]}" cy="${B.lacune[1]}" rx="9" ry="6"/>` : ''}</g>`);
+        if (!st.old) svg += `<g class="sk-pen" ${clip}>${shapes.map(d => `<path d="${d}"/>`).join('')}${B.lacune ? `<ellipse cx="${B.lacune[0]}" cy="${B.lacune[1]}" rx="12" ry="9"/>` : ''}${anim('opacity', '.25;.9;.25', 2.2)}</g>`;
+      } else svg += `<g class="sk-terr tia" ${clip}>${shapes.map(d => `<path d="${d}"/>`).join('')}${anim('opacity', '0;0;.55;.55;0;0', 6, 'keyTimes="0;.25;.32;.62;.7;1"')}</g>`;
+      svg += vessel(B.pre) + flowOn(B.pre);
+      // a mini-stroke clears, so blood flows on beyond it; a real blockage leaves the arteries beyond it empty (grey)
+      svg += B.down.map(k => st.kind === 'tia' ? vessel(ARTERY[k] || k) + flowOn(ARTERY[k] || k) : vessel(ARTERY[k] || k, 'blocked')).join('');
+      // the clot, and (for a clot that travelled) its journey from the neck
+      const [cx, cy] = B.at;
+      const route = B.from ? ARTERY[B.from] + ' ' + B.pre.replace(/^M[\d.]+,[\d.]+\s*/, '') : B.pre;
+      if (!still && st.kind !== 'tia' && st.artery !== 'lacunar') svg += `<circle r="3.6" class="sk-emb"><animateMotion dur="5s" repeatCount="indefinite" path="${route}" keyPoints="0;1;1" keyTimes="0;.42;1" calcMode="linear"/>${anim('opacity', '1;1;0;0', 5, 'keyTimes="0;.42;.43;1"')}</circle>`;
+      svg += part('blockage', 'The blockage', `<g class="sk-clot ${st.kind === 'tia' ? 'tia' : ''}"><circle cx="${cx}" cy="${cy}" r="5.2"/>${still ? '' : `<circle cx="${cx}" cy="${cy}" r="5.2" class="pulse"/>`}${st.kind === 'tia' ? anim('opacity', '0;0;1;1;0;0', 6, 'keyTimes="0;.22;.25;.62;.68;1"') : ''}</g>`);
+      callout = {x: cx, y: cy, text: `${st.kind === 'tia' ? 'Brief blockage' : 'Blockage'}: ${sd}${st.artery === 'lacunar' ? 'deep small artery' : st.artery}`};
+      notes.push(st.kind === 'tia' ? `Mini-stroke (TIA): the ${sd}${B.name} blocked briefly and cleared. A warning sign: the risk of a full stroke is highest in the next days.`
+        : st.old ? `Old stroke: the ${sd}${B.name} was blocked; the grey area is scarred brain.`
+        : `Blocked ${sd}${B.name}: the brain it feeds gets no blood (dark). The amber edge can still be saved if flow returns quickly: time matters.`);
+      parts = {blockage: `The clot blocking the ${sd}${B.name}.${st.kind === 'tia' ? ' It clears on its own in a mini-stroke.' : ' Beyond it the artery is grey: no blood gets through.'}`,
+               territory: `Brain fed by the ${B.name}. Without blood, brain cells start dying within minutes.`};
+    } else {
+      const at = st.kind === 'subarachnoid' ? [150, 118] : ({PCA: [250, 120], cerebellar: [252, 166], basilar: [212, 180], ACA: [118, 80], MCA: [190, 96]}[st.artery] || [158, 114]);
+      if (st.kind === 'subarachnoid') {
+        svg += part('bleed', 'Bleeding around the brain', `<g class="sk-sah"><path d="M108,120 C140,106 170,104 202,112" /><path d="M64,128 C46,92 72,46 130,36 C180,26 248,34 280,72" class="rim"/>${anim('opacity', '.5;1;.5', 2)}</g>`);
+        notes.push('Bleeding into the space around the brain (subarachnoid): often from a burst aneurysm; sudden worst-ever headache.');
+        parts = {bleed: 'Blood in the space around the brain irritates it and raises pressure inside the skull.'};
+      } else {
+        svg += part('bleed', 'Bleeding inside the brain', `<g class="sk-bleed"><circle cx="${at[0]}" cy="${at[1]}" r="18" class="oedema"/><circle cx="${at[0]}" cy="${at[1]}" r="11">${anim('r', '6;13;13;6', 5)}</circle>${still ? '' : ride(`M${at[0] - 9},${at[1] - 4} C${at[0] - 4},${at[1] - 10} ${at[0] + 6},${at[1] - 9} ${at[0] + 10},${at[1] - 2}`, 'sk-leak', 4, 1.6, 1.3)}</g>`);
+        notes.push(`Bleeding inside the ${st.side} side of the brain: a burst small artery, often from high blood pressure. The blood pool presses on the brain around it.`);
+        parts = {bleed: 'The blood pool (dark red) and the swollen brain around it (pale ring).'};
+      }
+      callout = {x: at[0], y: at[1], text: st.kind === 'subarachnoid' ? 'Bleed around the brain' : `Bleed: ${st.side} side`};
+    }
+    const eff = st.kind !== 'subarachnoid' ? EFFECT(bleed ? (st.artery || 'lacunar') : st.artery, st.side) : '';
+    if (eff) notes.push(`Expected signs: ${eff}.`);
+    if (st.arteryGuessed && !bleed) notes.push('The artery is not named in the notes: shown as the middle cerebral artery, the most common.');
+    if (st.sideGuessed && st.artery !== 'basilar' && st.kind !== 'subarachnoid') notes.push('The side is not stated in the notes: shown on the left.');
+    if (st.source === 'heart') notes.push('Likely a clot from the heart (atrial fibrillation): open Heart to see where it formed.');
+    if (st.source === 'carotid') notes.push('The carotid artery in the neck is involved: check a carotid ultrasound.');
+    return {svg, notes, parts, callout};
+  }
+  const brainBase = ART.brain;
+  ART.brain = r => {
+    const art = brainBase(r), st = (window.MF_ANATOMY || {}).stroke;
+    if (!st) return art;
+    const o = strokeOverlay(st), flip = st.side === 'right';
+    const cut = art.svg.indexOf('</defs>') + 7, end = art.svg.lastIndexOf('</svg>');
+    const body = art.svg.slice(cut, end) + o.svg;
+    const X = x => flip ? 340 - x : x;
+    const c = o.callout, lx = c ? (X(c.x) > 170 ? X(c.x) - 120 : X(c.x) + 16) : 0, ly = c ? Math.max(14, c.y - 46) : 0;
+    const label = c ? `<g class="sk-callout"><path d="M${X(c.x)},${c.y} L${lx + (X(c.x) > 170 ? 104 : 0)},${ly + 4}"/><rect x="${lx}" y="${ly - 9}" width="104" height="17" rx="5"/><text x="${lx + 52}" y="${ly + 3}" text-anchor="middle">${c.text.replace(/[<&]/g, '')}</text></g>` : '';
+    const sideTag = `<text x="${flip ? 330 : 10}" y="212" class="sk-side" text-anchor="${flip ? 'end' : 'start'}">${flip ? 'Right' : 'Left'} side of the brain · front ${flip ? '→' : '←'}</text>`;
+    art.svg = art.svg.slice(0, cut).replace('class="oa ox ox-brain', `class="oa ox ox-brain sk sk-${st.kind}${st.old ? ' sk-old' : ''}`) +
+      (flip ? `<g transform="translate(340,0) scale(-1,1)">${body}</g>` : body) + label + sideTag + '</svg>';
+    art.notes = [...o.notes, ...art.notes.filter(n => !/signals firing normally/.test(n))];
+    Object.assign(art.parts, o.parts);
+    return art;
+  };
+
   /* ================================================================ THYROID */
   ART.thyroid = r => {
     const tsh = r.num('TSH'), hi = high(r, 'TSH'), lo = low(r, 'TSH'), ft4 = r.num('FT4');

@@ -75,6 +75,43 @@
   }
 
   const hr = parseFloat((D.vitals || {}).heart_rate) || 76;
+
+  /* ------------------------------------------------------------------ the heart's real numbers, rhythm and valves */
+  // what the 3D heart beats and pumps with: recorded values only, and it says when it had to use a typical value
+  const V = D.vitals || {}, bpm = String(V.bp || '').match(/(\d{2,3})\s*\/\s*(\d{2,3})/);
+  const vitals = {hr: parseFloat(V.heart_rate) || null, sbp: bpm ? +bpm[1] : null, dbp: bpm ? +bpm[2] : null, spo2: parseFloat(V.spo2) || null,
+                  source: (D.vitals_meta || {}).source || null, hoursAgo: (D.vitals_meta || {}).hours_ago ?? null, onOxygen: !!(D.vitals_meta || {}).on_oxygen};
+  const af = texts.some(t => (positive(t, 'atrial fibrillation') || positive(t, 'afib') || /\baf\b/.test(t) && !negated(t, 'af')) && !/flutter only/.test(t));
+  const VALVES = {mitral: 'mitral', aortic: 'aortic', tricuspid: 'tricuspid', pulmonary: 'pulmon(?:ary|ic) valve'};
+  const valves = {};
+  for (const [k, word] of Object.entries(VALVES)) {
+    const t = texts.find(x => new RegExp(word).test(x) && /stenosis|regurgitation|incompetence|insufficien|prolapse|\bms\b|\bmr\b|\bas\b|\bar\b/.test(x));
+    if (t) valves[k] = {stenosis: /stenosis/.test(t), regurg: /regurgitation|incompetence|insufficien|prolapse/.test(t)};
+  }
+  const rhd = any('rheumatic heart');
+  if (rhd && !valves.mitral) valves.mitral = {stenosis: true, regurg: false, assumed: true};   // rheumatic disease scars the mitral valve first
+
+  /* ------------------------------------------------------------------ stroke: what kind, which side, which artery */
+  // from diagnoses and scan reports (e.g. "CT head: acute left MCA infarct", "right hemiparesis", "haemorrhagic stroke")
+  const strokeText = texts.filter(t => /stroke|\bcva\b|cerebrovascular|cerebral infarct|infarct[^.;]{0,30}(mca|aca|pca|territory|cerebr|lacun|basal ganglia|thalam|pons|brain)|(mca|aca|pca|lacun|basal ganglia|thalam|pons|pontine|cerebell|capsul|occipital|parietal|frontal|temporal)[^.;]{0,30}(infarct|isch)|(intracerebral|intracranial|subarachnoid|basal ganglia|thalam|pons|pontine|cerebell|capsul|lobar|cerebral|brain)[^.;]{0,25}(haemorrh|hemorrh|bleed)|(carotid|\bica\b|\bmca\b|basilar|cerebral artery)[^.;]{0,20}(occlu|thromb|embol)|\btia\b|transient isch|\b(ich|sah)\b|hemipar|hemipleg/.test(t)
+    && !negated(t, '(stroke|infarct|haemorrh|hemorrh|bleed|cva|tia)'));
+  let stroke = null;
+  if (strokeText.length) {
+    const all = strokeText.join(' . ');
+    const bleed = /(haemorrh|hemorrh|bleed|\bich\b|\bsah\b)/.test(all) && !/haemorrhagic transformation/.test(all) ? (/subarachnoid|\bsah\b/.test(all) ? 'subarachnoid' : 'haemorrhagic') : null;
+    const kind = bleed || (/\btia\b|transient isch/.test(all) && !/infarct|stroke/.test(all.replace(/\btia\b/g, '')) ? 'tia' : 'ischaemic');
+    const ART_RE = [['MCA', /\bmca\b|middle cerebral/], ['ACA', /\baca\b|anterior cerebral/], ['PCA', /\bpca\b|posterior cerebral|occipital/],
+                    ['basilar', /basilar|brain ?stem|pons|pontine|medulla/], ['cerebellar', /cerebell/], ['lacunar', /lacun|basal ganglia|internal capsule|thalam/],
+                    ['ICA', /internal carotid|\bica\b|carotid occlusion/]];
+    const hit = ART_RE.find(([, re]) => re.test(all));
+    // "right hemiparesis" means the LEFT side of the brain; an explicit side next to the lesion wins
+    const lesionSide = (() => { const m = all.match(/\b(left|right)\b(?:(?!weak|hemipar|hemipleg|sided|arm\b|leg\b|face\b)[^.;,]){0,25}\b(mca|aca|pca|ica|hemisphere|cerebral|frontal|parietal|temporal|occipital|basal ganglia|thalam|capsule|carotid|infarct|haemorrh|hemorrh|stroke)/); return m ? m[1] : null; })();
+    const weakSide = (() => { const m = all.match(/\b(left|right)[- ]?(sided )?(hemipar|hemipleg|weakness|arm|leg|face)/); return m ? m[1] : null; })();
+    const sideOf = lesionSide || (weakSide ? (weakSide === 'left' ? 'right' : 'left') : null);
+    const old = /old|previous|history of|prior|chronic|remote/.test(all) && !/acute|new|recent|hyperacute/.test(all);
+    stroke = {kind, artery: hit ? hit[0] : (kind === 'subarachnoid' ? null : kind === 'haemorrhagic' ? 'lacunar' : 'MCA'), arteryGuessed: !hit && kind !== 'subarachnoid',
+              side: sideOf || 'left', sideGuessed: !sideOf, old, source: af ? 'heart' : /carotid/.test(all) ? 'carotid' : null, text: strokeText[0]};
+  }
   const nerveIrregular = ['K', 'NA', 'CA'].filter(bad);
   const lymphActive = ['WBC', 'CRP', 'ESR'].filter(bad);
   const anaemia = flag('HB') === 'L' || flag('HB') === 'LL';
@@ -123,7 +160,7 @@
                  macro: {cls: 'big'}, leuk: {cls: '', blastEvery: 2}, poly: {cls: 'dense', density: 1.8}, haemolysis: {cls: 'frag'}}[blood.primary] || null;
 
   window.MF_ANATOMY = {blood, repro, fundusY, reproSpot: fundusY ? [200, fundusY + 30] : null,spine, realSpine, hands, feet, longBones, cordInjury, weakBone, boneSpot, hr, levels: LEVELS,
-    flowFactor: Math.max(.55, Math.min(1.8, 76 / hr)), nerveIrregular, lymphActive, anaemia, lowO2};
+    flowFactor: Math.max(.55, Math.min(1.8, 76 / hr)), nerveIrregular, lymphActive, anaemia, lowO2, vitals, af, valves, stroke};
 
   /* ------------------------------------------------------------------ drawing helpers */
   const g = (cls, html) => `<g class="${cls}">${html}</g>`;

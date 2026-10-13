@@ -2,7 +2,13 @@
    Every part is modelled and rendered with physically based, wet-tissue materials: chambers, auricles,
    great vessels, coronary arteries and veins, and the yellow fat that lies in the grooves.
    The patient's results decide what is highlighted, and red or amber pins mark where to look.
-   Falls back to the 2D heart (organs-real.js) when WebGL is not available. Teaching illustration only. */
+   See-through mode turns the walls clear to show the four valves opening and closing and the blood flowing through
+   the chambers. The flow is driven by this patient's recorded numbers (anatomy-layers.js works them out): heart rate
+   sets the beat, blood pressure how hard blood is pushed out, SpO2 the colour of oxygen-rich blood, haemoglobin how
+   many red cells there are, potassium or atrial fibrillation an irregular rhythm, BNP and troponin a weaker squeeze,
+   and valve disease from the diagnosis narrows or leaks the valve. A stroke caused by atrial fibrillation shows the
+   clot in the left auricle. Falls back to the 2D heart (organs-real.js) when WebGL is not available.
+   Teaching illustration only. */
 (() => {
   'use strict';
   const ART = window.__MF_ART, CFG = window.MF_THREE;
@@ -34,7 +40,16 @@
     fat: ['Epicardial fat', 'Normal fat that cushions the coronary arteries in the grooves between the chambers.'],
     sa: ['SA node (natural pacemaker)', 'Starts each heartbeat with an electrical signal. Potassium that is too high or too low disturbs this rhythm.'],
     apex: ['Apex', 'The tip of the heart, formed by the left ventricle. You can feel its beat below the left nipple.'],
+    tv: ['Tricuspid valve', 'Three flaps between the right atrium and right ventricle. They open to let used blood in, then snap shut when the ventricle squeezes.'],
+    mv: ['Mitral valve', 'Two flaps between the left atrium and left ventricle. Rheumatic heart disease, common in West Africa, most often scars this valve.'],
+    av: ['Aortic valve', 'Three cusps at the exit of the left ventricle. They open when the ventricle squeezes and close so blood cannot fall back.'],
+    pvv: ['Pulmonary valve', 'Three cusps at the exit of the right ventricle, opening to send used blood to the lungs.'],
+    septum: ['Septum', 'The muscular wall between the two sides. It keeps oxygen-rich blood (red) apart from used blood (blue).'],
+    clot: ['Clot (thrombus)', 'Blood that has pooled and set in the left auricle.'],
   };
+  const INTERIOR = new Set(['tv', 'mv', 'av', 'pvv', 'septum', 'clot']);    // only seen in see-through mode
+  const VALVE_WORD = {mitral: 'mv', aortic: 'av', tricuspid: 'tv', pulmonary: 'pvv'};
+  const anatomy = () => window.MF_ANATOMY || {};
 
   function findings(r) {
     const out = [], lvl = (...codes) => codes.some(c => r.crit(c)) ? 'crit' : 'abn';
@@ -47,12 +62,45 @@
     if (r.abn('K')) out.push({part: 'sa', level: lvl('K'), title: 'Rhythm risk', detail: `Potassium ${r.txt('K')}: disturbs the heart's electrical signal; the beat is shown irregular.`});
     const lip = ['LDL', 'TC', 'TG'].filter(c => r.abn(c)), lowHdl = ['L', 'LL'].includes(r.flag('HDL'));
     if (lip.length || lowHdl) out.push({part: 'rca', level: 'abn', title: 'Plaque risk', detail: `${[...lip.map(c => `${c} ${r.txt(c)}`), lowHdl && `HDL ${r.txt('HDL')}`].filter(Boolean).join(', ')}: cholesterol builds plaque inside the coronary arteries (yellow bumps).`});
+    // from the diagnosis and the vitals (anatomy-layers.js)
+    const A = anatomy(), V = A.vitals || {};
+    if (A.af) out.push({part: 'la', level: 'abn', title: 'Atrial fibrillation', detail: 'The atria quiver instead of squeezing, so the beat is irregular and blood can pool and clot in the left auricle.'});
+    for (const [name, v] of Object.entries(A.valves || {})) {
+      const k = VALVE_WORD[name]; if (!k) continue;
+      const what = [v.stenosis && 'narrowed (stenosis): it barely opens, so blood squeezes through a small gap', v.regurg && 'leaking (regurgitation): it does not close, so blood falls back (bright jet)'].filter(Boolean).join(' and ');
+      out.push({part: k, level: 'abn', title: v.stenosis && v.regurg ? 'Narrowed and leaking' : v.stenosis ? 'Narrowed' : 'Leaking',
+                detail: `The ${name} valve is ${what}.${v.assumed ? ' Assumed from rheumatic heart disease in the diagnosis; confirm with an echo.' : ''}`});
+    }
+    if (A.stroke && A.stroke.source === 'heart') out.push({part: 'clot', level: 'crit', title: 'Clot source', detail: 'In atrial fibrillation a clot can form here and travel up the carotid artery to the brain. This is the likely source of the stroke (see Brain & nerves).'});
+    if (V.hr && !out.some(x => x.part === 'sa') && (V.hr > 120 || V.hr < 50))
+      out.push({part: 'sa', level: V.hr > 150 || V.hr < 40 ? 'crit' : 'abn', title: V.hr > 120 ? 'Fast heart rate' : 'Slow heart rate', detail: `Heart rate ${V.hr}/min: the beat and the blood flow are shown at this speed.`});
+    if (V.spo2 && V.spo2 < 92) out.push({part: 'pv', level: V.spo2 < 85 ? 'crit' : 'abn', title: 'Low oxygen', detail: `SpO2 ${V.spo2}%: blood coming back from the lungs carries less oxygen, so the red side is shown darker.`});
     return out;
+  }
+
+  /* ------------------------------------------------------------------ the numbers the blood flow is drawn from */
+  function flowInputs(r) {
+    const A = anatomy(), V = A.vitals || {}, hb = r.num('HB');
+    return {hr: V.hr || 72, hrReal: !!V.hr, sbp: V.sbp, dbp: V.dbp, spo2: V.spo2 || 98, spo2Real: !!V.spo2, hb, onO2: V.onOxygen,
+            source: V.source, hoursAgo: V.hoursAgo, k: r.has('K') ? r.txt('K') : null, af: !!A.af};
+  }
+  function readout(r) {
+    const I = flowInputs(r), chip = (label, val, real = true) => `<span class="${real ? '' : 'typ'}"><small>${label}</small><b>${esc(val)}</b></span>`;
+    const src = I.source === 'bedside' ? `bedside observation${I.hoursAgo != null ? `, ${I.hoursAgo} h ago` : ''}` : I.source === 'visit' ? 'the visit vitals' : '';
+    return `<div class="h3d-read" aria-live="polite"><div class="h3d-read-h">Blood flow drawn from this patient's numbers${src ? ` · <span>${esc(src)}</span>` : ''}</div>
+      <div class="h3d-chips">${chip('Heart rate', I.hrReal ? `${I.hr}/min` : '72/min typical', I.hrReal)}${chip('BP', I.sbp ? `${I.sbp}/${I.dbp}` : 'not recorded', !!I.sbp)}
+      ${chip('SpO₂', I.spo2Real ? `${I.spo2}%${I.onO2 ? ' on O₂' : ''}` : 'not recorded', I.spo2Real)}${chip('Hb', I.hb != null ? `${r.txt('HB')} g/dL` : 'not tested', I.hb != null)}
+      ${I.k ? chip('K', `${I.k} mmol/L`) : ''}${I.af ? chip('Rhythm', 'AF, irregular') : ''}</div>
+      <div class="h3d-key"><span class="ox"></span>Oxygen-rich <span class="de"></span>Used blood <span class="vl"></span>Valve</div></div>`;
   }
 
   ART.heart = r => {
     const base = svgHeart(r), f = findings(r);
     const notes = [...base.notes];
+    const A = anatomy(), I = flowInputs(r);
+    if (A.af) notes.push('Atrial fibrillation: the atria quiver and the beat is irregular');
+    if (Object.keys(A.valves || {}).length) notes.push('Valve disease from the diagnosis: open see-through mode to watch the valve');
+    notes.push(I.hrReal ? `Beat and blood flow at ${I.hr}/min${I.sbp ? `, BP ${I.sbp}/${I.dbp}` : ''}` : 'No heart rate recorded: a typical 72/min is used');
     const plaque = f.find(x => x.part === 'rca');
     if (plaque) notes.push(plaque.detail);
     const parts = Object.fromEntries(Object.entries(PARTS).map(([k, [n, t]]) => [k, `${n}: ${t}`]));
@@ -60,13 +108,15 @@
       svg: `<div class="h3d-wrap"><div class="h3d" tabindex="0" aria-label="3D heart. Drag to rotate, scroll to zoom.">
         <canvas></canvas><div class="h3d-pins"></div>
         <div class="h3d-tools">
+          <button type="button" data-h="xray" title="See through: valves and blood flow" aria-pressed="false"><i class="bi bi-transparency"></i></button>
           <button type="button" data-h="reset" title="Reset view"><i class="bi bi-arrow-counterclockwise"></i></button>
           <button type="button" data-h="spin" title="Auto-rotate"><i class="bi bi-arrow-repeat"></i></button>
           <button type="button" data-h="back" title="Show the back"><i class="bi bi-arrow-left-right"></i></button>
           <button type="button" data-h="labels" title="Show or hide part labels"><i class="bi bi-tags"></i></button>
           <button type="button" data-h="full" title="Full screen"><i class="bi bi-arrows-fullscreen"></i></button>
         </div>
-        <div class="h3d-hint">Drag to rotate · scroll or pinch to zoom · tap a part</div>
+        <div class="h3d-hint">Drag to rotate · scroll or pinch to zoom · tap a part · <i class="bi bi-transparency"></i> to see the valves and blood flow</div>
+        ${readout(r)}
         <div class="h3d-loading"><i class="bi bi-heart-pulse"></i> Building 3D heart…</div></div>
         ${f.length ? `<div class="h3d-legend"><b>Needs attention</b>${f.map(x => `<button type="button" class="${x.level}" data-go="${x.part}"><span></span>${esc(PARTS[x.part][0])} <small>${esc(x.title)}</small></button>`).join('')}</div>` : '<div class="h3d-legend ok"><span></span>No heart findings in these results</div>'}</div>`,
       notes, parts,
@@ -294,6 +344,142 @@
     }
     if (strain) { ventricles.scale.setScalar(1.08); atria.scale.setScalar(1.05); }
 
+    /* ---------------- inside the heart (see-through mode): septum, the four valves, a clot, and the blood itself */
+    const A = anatomy(), FI = flowInputs(r);
+    const interior = new T.Group(); interior.visible = false; heart.add(interior);
+    const V3 = a => new T.Vector3(...a);
+    const septum = reg('septum', new T.Mesh(geo(new T.CircleGeometry(.5, 40)), mat({color: '#7A1E2A', roughness: .6, transparent: true, opacity: .32, side: T.DoubleSide, depthWrite: false})));
+    septum.position.set(.03, -.18, .1); septum.lookAt(septum.position.clone().add(V3([.39, -.1, -.37]))); septum.scale.set(.62, 1, 1);
+    interior.add(septum);
+    registry.septum.anchor = {p: septum.position.clone(), n: V3([.3, 0, .9]).normalize()};
+
+    // a valve: a ring with 2 or 3 leaflets hinged at the ring. Leaflets swing towards the flow to open.
+    const LEAF = mat({color: '#F3DED2', roughness: .55, clearcoat: .35, transparent: true, opacity: .93, side: T.DoubleSide, normalScale: new T.Vector2(.05, .05)});
+    const SCAR = mat({color: '#E3C88A', roughness: .7, clearcoat: .2, transparent: true, opacity: .96, side: T.DoubleSide, normalScale: new T.Vector2(.3, .3)});
+    const RING = mat({color: '#E6C3A2', roughness: .5, normalScale: new T.Vector2(.05, .05)});
+    const valves = {};
+    function valve(key, centre, from, to, R, n, semi) {
+      const g = new T.Group(), dir = V3(to).sub(V3(from)).normalize();
+      g.position.set(...centre); g.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), dir);
+      g.add(reg(key, new T.Mesh(geo(new T.TorusGeometry(R, R * .11, 10, 44)), RING)));
+      const sick = (A.valves || {})[Object.keys(VALVE_WORD).find(w => VALVE_WORD[w] === key)] || null;
+      const leaves = [];
+      for (let i = 0; i < n; i++) {
+        const a0 = i / n * Math.PI * 2, a1 = (i + 1) / n * Math.PI * 2, am = (a0 + a1) / 2, hinge = new T.Vector3(Math.cos(am) * R, Math.sin(am) * R, 0);
+        const pos = [], S = 10, tip = new T.Vector3(Math.cos(am) * R * .05, Math.sin(am) * R * .05, semi ? -R * .28 : -R * .1).sub(hinge);
+        for (let k = 0; k < S; k++) {
+          const t0 = a0 + (a1 - a0) * k / S, t1 = a0 + (a1 - a0) * (k + 1) / S;
+          const p0 = new T.Vector3(Math.cos(t0) * R * .97, Math.sin(t0) * R * .97, 0).sub(hinge), p1 = new T.Vector3(Math.cos(t1) * R * .97, Math.sin(t1) * R * .97, 0).sub(hinge);
+          pos.push(tip.x, tip.y, tip.z, p0.x, p0.y, p0.z, p1.x, p1.y, p1.z);
+        }
+        const lg = geo(new T.BufferGeometry()); lg.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); lg.computeVertexNormals();
+        const pivot = new T.Group(); pivot.position.copy(hinge); pivot.userData.axis = new T.Vector3(-Math.sin(am), Math.cos(am), 0);
+        const leaf = reg(key, new T.Mesh(lg, sick && sick.stenosis ? SCAR : LEAF));
+        if (sick && sick.stenosis) leaf.scale.setScalar(1.04);
+        pivot.add(leaf); g.add(pivot); leaves.push(pivot);
+      }
+      interior.add(g);
+      registry[key].anchor = {p: g.position.clone(), n: g.position.clone().sub(HC).normalize()};
+      // most open it can get, and how far it stays open when it should be shut
+      const max = sick && sick.stenosis ? .32 : 1, leak = sick && sick.regurg ? .24 : 0;
+      return (valves[key] = {g, leaves, open: semi ? 0 : 1, max, leak, semi, angle: semi ? 1.3 : 1.15, dir, sick});
+    }
+    valve('tv', [-.42, .14, .2], [-.62, .42, .02], [-.17, -.1, .27], .17, 3, false);
+    valve('mv', [.2, .2, -.3], [.18, .5, -.5], [.22, -.2, -.1], .16, 2, false);
+    valve('av', [.0, .36, .03], [.22, -.2, -.1], [0, .62, .08], .135, 3, true);
+    valve('pvv', [.1, .38, .39], [-.17, -.1, .27], [.2, .85, .38], .135, 3, true);
+
+    if (A.stroke && A.stroke.source === 'heart') {          // the clot that travelled to the brain started here
+      const CLOT = mat({color: '#3A0710', roughness: .75, clearcoat: .2, normalMap: lumpTex, normalScale: new T.Vector2(.8, .8)});
+      const clot = new T.Group();
+      [[0, 0, 0, .075], [.05, .03, .02, .05], [-.04, .04, -.02, .045]].forEach(([x, y, z, rr]) => { const b = new T.Mesh(geo(new T.SphereGeometry(rr, 18, 14)), CLOT); b.position.set(x, y, z); clot.add(reg('clot', b)); });
+      clot.position.set(.5, .6, .22); interior.add(clot);
+      registry.clot.anchor = {p: clot.position.clone(), n: V3([.6, .3, .7]).normalize()};
+    }
+
+    // the blood: red cells streaming along each side of the heart in four stages. Inflow keeps coming from the veins;
+    // through the inlet valve only while it is open; out through the outlet valve only while the ventricle squeezes;
+    // then on through the arteries, fast in the squeeze and slower between beats.
+    const hbF = FI.hb != null ? Math.max(.45, Math.min(1.15, FI.hb / 14)) : (A.anaemia ? .7 : 1);
+    const ox = new T.Color('#E3222C').lerp(new T.Color('#7E2A6C'), Math.max(0, Math.min(1, (98 - FI.spo2) / 18)));
+    const de = new T.Color('#3A4FB6');
+    if (hbF < 1) { ox.lerp(new T.Color('#F2A6A6'), (1 - hbF) * .7); de.lerp(new T.Color('#9AA6E0'), (1 - hbF) * .6); }
+    const push = FI.sbp ? Math.max(.6, Math.min(1.4, FI.sbp / 120)) : 1;
+    const weak = (strain ? .65 : 1) * (injury ? .8 : 1);
+    const sickle = !!(A.blood && A.blood.sickle);
+    const SEG_R = [.055, .12, .085, .055];
+    const routes = {
+      right: [
+        [[[-.58, 1.65, -.05], [-.6, 1.0, -.01], [-.62, .42, .02]], [[-.6, -.7, -.29], [-.6, -.1, -.18], [-.62, .42, .02]]],
+        [[[-.62, .42, .02], [-.42, .14, .2], [-.15, -.25, .28], [-.02, -.58, .32]]],
+        [[[-.02, -.58, .32], [.0, .02, .38], [.1, .38, .39], [.2, .85, .38], [.25, 1.1, .12]]],
+        [[[.25, 1.1, .12], [.55, 1.18, -.05], [.88, 1.1, -.26]], [[.25, 1.1, .12], [-.1, 1.2, -.26], [-.62, 1.12, -.36]]],
+      ],
+      left: [
+        [[[.95, .75, -.62], [.45, .6, -.6], [.18, .5, -.5]], [[.96, .3, -.72], [.45, .38, -.62], [.18, .5, -.5]], [[-.55, .72, -.72], [-.05, .6, -.62], [.18, .5, -.5]], [[-.52, .28, -.78], [-.05, .38, -.64], [.18, .5, -.5]]],
+        [[[.18, .5, -.5], [.2, .2, -.3], [.3, -.35, -.05], [.45, -.8, .05]]],
+        [[[.45, -.8, .05], [.12, -.05, .05], [.0, .36, .03], [-.05, .9, .12], [-.03, 1.35, .05]]],
+        [[[-.03, 1.35, .05], [.17, 1.63, -.2], [.45, 1.5, -.55], [.52, 1.1, -.72], [.5, .4, -.78], [.48, -.45, -.72]], [[-.03, 1.35, .05], [.2, 1.63, -.16], [.22, 1.9, -.12], [.24, 2.12, -.1]]],
+      ],
+    };
+    const curves = {};
+    for (const side of ['right', 'left']) curves[side] = routes[side].map(stage => stage.map(pts => { const c = new T.CatmullRomCurve3(pts.map(V3)); c.len = c.getLength(); return c; }));
+    const cellGeo = geo(new T.SphereGeometry(.024, 8, 6));
+    const flows = ['right', 'left'].map(side => {
+      const n = Math.round(110 * hbF);
+      const m = new T.InstancedMesh(cellGeo, mat({color: side === 'left' ? ox : de, roughness: .4, clearcoat: .5, normalMap: null}), n);
+      m.frustumCulled = false; interior.add(m);
+      const cells = Array.from({length: n}, () => ({stage: Math.floor(Math.random() * 4), branch: [0, 0, 0, 0].map(() => Math.random()), d: Math.random(), off: new T.Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(2)}));
+      cells.forEach(c => { c.d *= curves[side][c.stage][Math.floor(c.branch[c.stage] * curves[side][c.stage].length)].len; });
+      return {side, m, cells, inlet: side === 'left' ? 'mv' : 'tv', outlet: side === 'left' ? 'av' : 'pvv'};
+    });
+    // a leaking inlet valve sprays a bright jet back into the atrium while the ventricle squeezes
+    const jets = flows.filter(fl => valves[fl.inlet].leak).map(fl => {
+      const v = valves[fl.inlet], n = 26, m = new T.InstancedMesh(cellGeo, mat({color: fl.side === 'left' ? '#FF5A5F' : '#6F86FF', emissive: fl.side === 'left' ? '#7a0010' : '#10208a', emissiveIntensity: .6}), n);
+      m.frustumCulled = false; interior.add(m);
+      return {m, v, from: v.g.position.clone(), to: v.g.position.clone().addScaledVector(v.dir, -.42), cells: Array.from({length: n}, () => ({t: Math.random(), off: new T.Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(.12)}))};
+    });
+    const M4 = new T.Matrix4(), Q = new T.Quaternion(), SC = new T.Vector3(sickle ? 1.9 : 1.35, sickle ? .55 : .8, sickle ? .55 : .8), PX = new T.Vector3(1, 0, 0), P = new T.Vector3(), TG = new T.Vector3();
+    function stepBlood(dt, ph, systole) {
+      const spd = FI.hr / 60;                       // beats a second: more beats a minute, more blood a minute
+      for (const fl of flows) {
+        const vin = valves[fl.inlet].open, vout = valves[fl.outlet].open;
+        const speed = [.5 * spd, 2.6 * vin * spd, 5 * vout * push * weak * spd, (systole ? 3 * push : .7) * spd];
+        fl.cells.forEach((c, i) => {
+          let list = curves[fl.side][c.stage], cv = list[Math.floor(c.branch[c.stage] * list.length)];
+          c.d += speed[c.stage] * dt;
+          while (c.d > cv.len) {
+            c.d -= cv.len;
+            c.stage = (c.stage + 1) % 4;
+            if (c.stage === 0) c.branch = c.branch.map(() => Math.random());
+            if (speed[c.stage] === 0 && c.stage !== 0) { c.d = 0; }
+            list = curves[fl.side][c.stage]; cv = list[Math.floor(c.branch[c.stage] * list.length)];
+          }
+          const u = Math.min(1, c.d / cv.len);
+          cv.getPointAt(u, P); cv.getTangentAt(u, TG);
+          P.addScaledVector(c.off, SEG_R[c.stage]);
+          Q.setFromUnitVectors(PX, TG);
+          M4.compose(P, Q, SC); fl.m.setMatrixAt(i, M4);
+        });
+        fl.m.instanceMatrix.needsUpdate = true;
+      }
+      for (const j of jets) {
+        const on = systole ? 1 : 0;
+        j.cells.forEach((c, i) => {
+          c.t += dt * 2.4 * on;
+          if (c.t > 1) c.t -= 1;
+          P.lerpVectors(j.from, j.to, c.t).addScaledVector(c.off, 1 + c.t * 2.5);
+          M4.compose(P, Q.identity(), SC.clone().multiplyScalar(on ? 1 - c.t * .5 : 0.001)); j.m.setMatrixAt(i, M4);
+        });
+        j.m.instanceMatrix.needsUpdate = true;
+      }
+    }
+    // the walls that fade in see-through mode, and how clear each becomes
+    const CLEAR = {lv: .14, rv: .14, ra: .14, la: .14, rau: .2, lau: .2, aorta: .26, arch: .3, pt: .26, pv: .3, svc: .26, ivc: .26, fat: .1, lad: .55, cx: .55, rca: .55, gcv: .5};
+    const shell = [];
+    heart.traverse(o => { if (o.isMesh && CLEAR[o.userData.part] != null && !interior.children.includes(o)) shell.push(o); });
+    let xray = false, xo = 0;
+
     /* ---------------- anchors for the pins */
     const anchorOn = (key, guide, lift = .06) => { if (!registry[key].anchor) registry[key].anchor = onSurface(guide, lift); };
     anchorOn('lv', [.85, -.45, .25]); anchorOn('rv', [-.35, -.25, .78]); anchorOn('ra', [-1, .45, .15]); anchorOn('la', [.2, .55, -1]);
@@ -311,7 +497,7 @@
       const el = document.createElement('button');
       const fi = issue[key];
       el.type = 'button';
-      el.className = `h3d-pin ${fi ? 'issue ' + fi.level : 'part'}`;
+      el.className = `h3d-pin ${fi ? 'issue ' + fi.level : 'part'}${INTERIOR.has(key) ? ' interior' : ''}`;
       el.innerHTML = fi ? `<span class="ring"></span><span class="dot"></span><span class="tag">${esc(fi.title)}</span>` : `<span class="dot"></span><span class="tag">${esc(PARTS[key][0])}</span>`;
       el.title = PARTS[key][0] + (fi ? ': ' + fi.title : '');
       el.setAttribute('aria-label', PARTS[key][0] + (fi ? `, needs attention: ${fi.title}` : ''));
@@ -324,6 +510,7 @@
     let glow = null, fly = null;
     function pick(key, turn) {
       const fi = issue[key];
+      if (INTERIOR.has(key) && !xray) setXray(true);
       say(`${PARTS[key][0]}: ${fi ? fi.detail + ' ' : ''}${PARTS[key][1]}`);
       if (glow) glow.meshes.forEach(m => m.material.emissive && m.material.emissive.setHex(0));
       const meshes = [...new Set(registry[key].meshes)];
@@ -353,12 +540,19 @@
       if (go) return pick(go.dataset.go, true);
       if (!b) return;
       const h = b.dataset.h;
+      if (h === 'xray') return setXray(!xray);
       if (h === 'reset') { fly = {from: camera.position.clone(), to: HOME.clone(), t0: performance.now()}; controls.target.copy(TARGET); }
       if (h === 'spin') { controls.autoRotate = !controls.autoRotate; b.classList.toggle('on', controls.autoRotate); }
       if (h === 'back') { const p = camera.position.clone().sub(controls.target); fly = {from: camera.position.clone(), to: controls.target.clone().add(new T.Vector3(-p.x, p.y, -p.z)), t0: performance.now()}; }
       if (h === 'labels') { showLabels = !showLabels; box.classList.toggle('no-labels', !showLabels); b.classList.toggle('on', !showLabels); }
       if (h === 'full') { document.fullscreenElement ? document.exitFullscreen() : box.requestFullscreen?.(); }
     });
+
+    function setXray(on) {
+      xray = on; box.classList.toggle('xray', on);
+      const b = box.querySelector('[data-h=xray]'); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (on) say(`See-through: the valves open and close with each beat and the blood flows at ${FI.hr}/min${FI.hrReal ? '' : ' (typical; no heart rate recorded)'}. Red is oxygen-rich blood from the lungs, blue is used blood from the body.`);
+    }
 
     /* ---------------- size, beat, render loop */
     function resize() {
@@ -368,8 +562,8 @@
     }
     const ro = new ResizeObserver(resize); ro.observe(box); resize();
 
-    const arrhythmia = f.some(x => x.part === 'sa');
-    let period = 60 / 72, beatStart = 0, nextBeat = 0;
+    const arrhythmia = f.some(x => x.part === 'sa' && x.title !== 'Fast heart rate' && x.title !== 'Slow heart rate') || !!A.af;
+    let period = 60 / Math.max(30, Math.min(200, FI.hr)), beatStart = 0, nextBeat = 0, ph = .7;
     const tmp = new T.Vector3(), camDir = new T.Vector3();
     let raf = 0, visible = true, last = 0, slowFrames = 0, quality = 2;
     const io = new IntersectionObserver(es => { visible = es[0].isIntersecting; }); io.observe(box);
@@ -391,15 +585,33 @@
       if (!visible || document.hidden) { last = 0; return; }      // no work while scrolled away or in a background tab
       if (last) adapt(now - last);
       last = now;
-      const t = now / 1000;
+      const t = now / 1000, dt = Math.min(.05, (now - (frame.prev || now)) / 1000); frame.prev = now;
       if (!still) {                                 // atria squeeze first, then the ventricles; irregular gaps when the rhythm is disturbed
         if (t >= nextBeat) { beatStart = t; nextBeat = t + (arrhythmia ? period * (.55 + Math.random() * .95) : period); }
-        const ph = (t - beatStart) / period;
+        ph = (t - beatStart) / period;
         const pulse = (a, b) => ph < a || ph > b ? 0 : Math.sin(Math.PI * (ph - a) / (b - a));
-        const s = strain ? 1.08 : 1, ca = pulse(0, .16), cv = pulse(.16, .5);
-        atria.scale.setScalar((strain ? 1.05 : 1) * (1 - .055 * ca));
+        const s = strain ? 1.08 : 1, ca = A.af ? 0 : pulse(0, .16), cv = pulse(.16, .5) * (injury ? .7 : 1);
+        const quiver = A.af ? Math.sin(t * 47) * .006 + Math.sin(t * 31) * .004 : 0;     // fibrillating atria quiver instead of squeezing
+        atria.scale.setScalar((strain ? 1.05 : 1) * (1 - .055 * ca + quiver));
         ventricles.scale.set(s * (1 - .035 * cv), s * (1 - .05 * cv), s * (1 - .035 * cv));
         heart.rotation.y = .025 * cv;
+      }
+      // see-through: walls fade, the inside appears; valves follow the beat and the blood follows the valves
+      xo += ((xray ? 1 : 0) - xo) * Math.min(1, dt * 7);
+      if (Math.abs(xo - (frame.lastXo ?? -1)) > .002) {
+        frame.lastXo = xo;
+        for (const m of shell) { const mm = m.material, op = 1 - (1 - CLEAR[m.userData.part]) * xo; mm.transparent = op < .999; mm.opacity = op; mm.depthWrite = op > .6; }
+        interior.visible = xo > .03;
+      }
+      if (interior.visible) {
+        const systole = ph > .16 && ph < .5;
+        for (const v of Object.values(valves)) {
+          const want = still ? (v.semi ? .15 : .6) : v.semi ? (ph > .19 && ph < .47 ? 1 : 0) : (ph < .12 || ph > .55 ? 1 : 0);
+          const target = Math.max(v.leak, want * v.max);
+          v.open += (target - v.open) * Math.min(1, dt * 16);
+          v.leaves.forEach(l => l.quaternion.setFromAxisAngle(l.userData.axis, v.open * v.angle));
+        }
+        if (!still) stepBlood(dt, ph, systole); else if (!frame.placed) { stepBlood(.001, .3, true); frame.placed = true; }
       }
       if (fly) {
         const k = Math.min(1, (now - fly.t0) / 700), e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
@@ -441,6 +653,7 @@
     }
     raf = requestAnimationFrame(frame);
     box.classList.add('ready');
+    box._h3d = {valves, flows, interior, shell, phase: () => ph, xray: () => xo};   // read-only hook for automated tests
 
     function dispose() {
       cancelAnimationFrame(raf); ro.disconnect(); io.disconnect(); controls.dispose();

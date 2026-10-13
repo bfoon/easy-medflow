@@ -773,8 +773,19 @@ def patient_lab_data(patient):
     # diagnoses, conditions and the latest vitals: the anatomy layers use them to place findings (e.g. spine level, which hand)
     dx = [e.diagnosis for e in patient.encounters.exclude(status='cancelled').exclude(diagnosis='').order_by('-created_at')[:25]]
     dx += [c.name for c in patient.conditions.filter(status='active')]
-    last_vitals = next((e.vitals for e in patient.encounters.exclude(vitals={}).order_by('-created_at')[:1]), {}) or {}
-    return {'dx': dx, 'vitals': last_vitals, 'open_encounter': open_enc.pk if open_enc else None, 'lab_new_url': reverse('lab_new'), 'imaging': imaging,
+    last_vitals = dict(next((e.vitals for e in patient.encounters.exclude(vitals={}).order_by('-created_at')[:1]), {}) or {})
+    # the newest bedside observation (if under 48 hours old) is more current than the visit's vitals: the 3D heart's
+    # beat and blood flow use it, and say which one they used
+    vitals_meta = {'source': 'visit'} if last_vitals else None
+    from .models_care import BedsideObservation
+    obs = BedsideObservation.objects.filter(admission__encounter__patient=patient).order_by('-taken_at').first()
+    if obs and (timezone.now() - obs.taken_at) < timedelta(hours=48):
+        bed = {'heart_rate': obs.heart_rate, 'spo2': obs.spo2, 'resp_rate': obs.resp_rate,
+               'temperature_c': float(obs.temperature_c) if obs.temperature_c is not None else None,
+               'bp': f'{obs.systolic}/{obs.diastolic}' if obs.systolic and obs.diastolic else None}
+        last_vitals.update({k: v for k, v in bed.items() if v not in (None, '')})
+        vitals_meta = {'source': 'bedside', 'hours_ago': round((timezone.now() - obs.taken_at).total_seconds() / 3600, 1), 'on_oxygen': obs.on_oxygen}
+    return {'dx': dx, 'vitals': last_vitals, 'vitals_meta': vitals_meta, 'open_encounter': open_enc.pk if open_enc else None, 'lab_new_url': reverse('lab_new'), 'imaging': imaging,
             'guidance_url': reverse('lab_request_detail', args=[0]), 'patient': {'name': patient.full_name, 'sex': patient.sex, 'age': patient.age, 'mrn': patient.mrn},
             'systems': dict(BODY_SYSTEMS), 'params': list(params.values()), 'orders': list(reversed(order_list))}
 
