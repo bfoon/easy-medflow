@@ -85,7 +85,17 @@
     </form>{% endif %}
   </section>
 
-  <section class="panel align-self-start">
+  <div class="iva-side">
+  {% if viewer.images %}{% if nav_role == 'radiology' or nav_role == 'doctor' or nav_role == 'nurse' or nav_role == 'admin' %}
+  <section class="panel iva" id="iva" aria-labelledby="iva-title"
+           data-thread-url="{% url 'imaging_ai_thread' 0 %}" data-ask-url="{% url 'imaging_ai_ask' 0 %}" data-preview-url="{% url 'imaging_ai_preview' 0 %}"
+           data-run-url="{% url 'imaging_ai_run' 0 %}" data-rate-url="{% url 'imaging_ai_rate' 0 %}">
+    <div class="panel-head"><h2 id="iva-title"><i class="bi bi-stars"></i>Dr. Flow</h2><span class="hint">AI second read · labels &amp; questions</span>
+      <button type="button" class="rd-call ms-auto" data-robodoc-call title="Call Dr. Flow, the AI assistant" aria-label="Call Dr. Flow"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="7" width="22" height="17" rx="6" fill="#0F2C3F"/><circle cx="12.5" cy="15" r="2.4" fill="#3FE0B0"/><circle cx="19.5" cy="15" r="2.4" fill="#3FE0B0"/><path d="M11 20.5h3l1-1.6 1.6 3 1-1.4H21" fill="none" stroke="#3FE0B0" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 7V3.6" stroke="#0F2C3F" stroke-width="1.6"/><circle cx="16" cy="3" r="1.8" fill="#C8323F"/></svg></button></div>
+    <div class="iva-body"><div class="iva-thread"></div></div>
+  </section>
+  {% endif %}{% endif %}
+  <section class="panel">
     <div class="panel-head"><h2>Report</h2>{% if o.reported_at %}<span class="hint">{{ o.reported_by|display_name }} · {{ o.reported_at|date:'j M H:i' }}</span>{% endif %}</div>
     {% if can_image and o.status != 'reported' and o.status != 'cancelled' %}
     <form method="post" action="{% url 'imaging_report' o.pk %}" id="report-form">{% csrf_token %}
@@ -104,6 +114,7 @@
       {% if o.measurements %}<div class="label-sm mb-1">Measurements</div><div>{% for m in o.measurements %}<span class="vchip {% if m.abnormal %}abn{% else %}ok{% endif %}">{{ m.label }} <b>{{ m.value }}</b> {{ m.unit }}</span>{% endfor %}</div>{% endif %}
     {% else %}<p class="muted small mb-0">Waiting for the radiology report.</p>{% endif %}
   </section>
+  </div>
 </div>
 {% if can_image and viewer.images %}
 <dialog id="iv-process" class="ivp" aria-labelledby="ivp-title">
@@ -134,8 +145,8 @@
 </dialog>{% endif %}
 {{ o.measurements|json_script:"meas-data" }}
 {% endblock %}
-{% block head %}<link href="{% asset 'hospital/css/imaging.css' %}" rel="stylesheet">{% endblock %}
-{% block scripts %}<script src="{% asset 'hospital/js/imaging-viewer.js' %}"></script><script>
+{% block head %}<link href="{% asset 'hospital/css/imaging.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/imaging-ai.css' %}" rel="stylesheet">{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/imaging-viewer.js' %}"></script><script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/imaging-ai.js' %}"></script><script>
 (() => {
   // ---------- measurements editor
   const box = document.getElementById('meas'); if (!box) return;

@@ -1011,4 +1011,4 @@ from .models_studio import (FormVersion, FormDraft, WorkflowTask, WorkflowEvent,
                             EnvelopeRecipient, EnvelopeField, EnvelopeEvent)
 from .models_evidence import ReferenceRange, ParameterGuidance, EvidenceItem, EvidenceFetch, AISuggestion  # noqa: E402,F401
 from .models_reports import DoctorReport, ReportAttachment, ReportAssist  # noqa: E402,F401
-from .models_drflow import DrFlowAsk  # noqa: E402,F401
+from .models_imaging_ai import ImagingAIRun  # noqa: E402,F401

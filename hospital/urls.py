@@ -7,7 +7,7 @@ from . import studio_views as sv
 from . import esign_views as ev
 from . import evidence_views as gv
 from . import report_views as rv
-from . import drflow_views as dfv
+from . import imaging_ai_views as iav
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -107,11 +107,6 @@ urlpatterns = [
     path('reports/<int:pk>/assist/<str:kind>/', rv.report_assist, name='report_assist'),
     path('reports/assist/<int:pk>/', rv.report_assist_status, name='report_assist_status'),
     path('reports/verify/<str:token>/', rv.report_verify, name='report_verify'),
-    path('drflow/patients/<int:pk>/brief/', dfv.api_brief, name='drflow_brief'),
-    path('drflow/rx/', dfv.api_rx, name='drflow_rx'),
-    path('drflow/labs/', dfv.api_lab, name='drflow_lab'),
-    path('drflow/ask/', dfv.ask, name='drflow_ask'),
-    path('drflow/ask/<int:pk>/', dfv.ask_status, name='drflow_ask_status'),
     path('labs/requests/<int:pk>/report/', lv.lab_report, name='lab_report'),
     path('labs/new/', v.lab_new, name='lab_new'),
     path('labs/mine/', v.lab_mine, name='lab_mine'),
@@ -165,6 +160,11 @@ urlpatterns = [
     path('imaging/files/<int:pk>/', v.imaging_file, name='imaging_file'),
     path('imaging/images/<int:pk>/annotations/', v.imaging_annotations, name='imaging_annotations'),
     path('imaging/images/<int:pk>/process/', v.imaging_process, name='imaging_process'),
+    path('imaging/images/<int:pk>/ai/', iav.thread, name='imaging_ai_thread'),
+    path('imaging/images/<int:pk>/ai/ask/', iav.ask, name='imaging_ai_ask'),
+    path('imaging/images/<int:pk>/ai/preview/', iav.preview, name='imaging_ai_preview'),
+    path('imaging/ai/<int:pk>/', iav.run, name='imaging_ai_run'),
+    path('imaging/ai/<int:pk>/rate/', iav.rate, name='imaging_ai_rate'),
     path('cases/<str:token>/', v.case_detail, name='case_detail'),
     path('prescriptions/<int:pk>/sign/', v.prescription_sign, name='prescription_sign'),
     path('prescriptions/<int:pk>/dispense/', v.prescription_dispense, name='prescription_dispense'),

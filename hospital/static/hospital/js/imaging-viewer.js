@@ -1,7 +1,9 @@
 /* Imaging viewer: zoom/pan, window/level, rotate/flip, invert, colour maps, magnifier, side-by-side compare,
    measurement tools (ruler, angle, Cobb angle, elliptical region with intensity stats, arrow, note) with mm
    calibration, saved per image, and a photo-processing dialog (straighten from 4 corners, enhance, denoise).
-   Display adjustments never change the stored image; processing saves a new copy beside the original. */
+   Display adjustments never change the stored image; processing saves a new copy beside the original.
+   Dr. Flow (imaging-ai.js) draws its AI labels on a separate layer through window.ImagingViewer, and the "Cover
+   names" tool paints boxes that are blacked out on the server before an image is sent to the AI. */
 (() => {
   'use strict';
   const root = document.getElementById('iv');
@@ -60,6 +62,11 @@
   const cmp = new Pane($('.iv-pane.compare'));
   let cur = DATA.images.find(i => i.id === DATA.start) || DATA.images[0];
   let anns = [], mm = null, dirty = false, undo = [], selected = -1, tool = 'pan', pending = null, pixels = null;
+  // Dr. Flow's labels for the current image ([{n, name, box:[x,y,w,h]|null, point:[x,y]|null, concern}], fractions 0-1),
+  // and the boxes to black out before sending (per image id, fractions 0-1; kept in this page only, never saved)
+  const ai = {labels: [], show: true, active: -1};
+  const covers = {}; let coverDraft = null;
+  const emit = (name, detail) => root.dispatchEvent(new CustomEvent(name, {detail}));
 
   function select(img) {
     if (dirty && !confirm('You have unsaved measurements on this image. Discard them?')) return false;
@@ -68,8 +75,10 @@
     $$('.iv-thumb').forEach(t => t.classList.toggle('on', +t.dataset.id === img.id));
     $('.iv-processed').hidden = !img.processed;
     $('.iv-processed span').textContent = img.processed ? describeSteps(img.steps) : '';
+    ai.labels = []; ai.active = -1; coverDraft = null;
     status(); list();
     history.replaceState(null, '', `?img=${img.id}`);
+    emit('iv:image', {id: img.id});
     return true;
   }
   const describeSteps = st => Object.keys(st || {}).filter(k => k !== 'source_image' && k !== 'resized').map(k => ({corners: 'straightened', grayscale: 'greyscale', enhance: 'contrast enhanced', level: 'levelled', denoise: 'denoised', sharpen: 'sharpened'}[k] || k)).join(', ');
@@ -149,6 +158,47 @@
       if (a.type === 'calibrate' && P[1]) label(P[1][0], P[1][1], lenText(dist(P[0], P[1])), g);
       if (i === selected && CAN_EDIT) P.forEach((p, k) => el('circle', {cx: p[0], cy: p[1], r: hr, class: 'iv-handle', 'data-h': k}, g));
     });
+    drawAi(svg, s, label);
+    drawCovers(svg, s);
+  }
+
+  /* Dr. Flow's labels: numbered boxes or points, coloured by concern; the active one shows its name */
+  function drawAi(svg, s, label) {
+    if (!ai.show || !ai.labels.length) return;
+    const layer = el('g', {class: 'iv-ai-layer'}, svg), W = main.w, H = main.h;
+    ai.labels.forEach((lb, i) => {
+      const on = i === ai.active, g = el('g', {class: `iv-ai c-${lb.concern || 'watch'}${on ? ' on' : ''}`, 'data-ai': i}, layer);
+      let bx, by;
+      if (lb.box) {
+        const [x, y, w, h] = lb.box;
+        el('rect', {x: x * W, y: y * H, width: w * W, height: h * H, rx: 4 / s, class: 'iv-ai-box'}, g);
+        bx = x * W; by = y * H;
+      } else if (lb.point) {
+        const [x, y] = lb.point;
+        el('circle', {cx: x * W, cy: y * H, r: 14 / s, class: 'iv-ai-ring'}, g);
+        el('circle', {cx: x * W, cy: y * H, r: 2.5 / s, class: 'iv-ai-dot'}, g);
+        bx = x * W - 14 / s; by = y * H - 14 / s;
+      } else return;
+      const t = el('g', {transform: `translate(${bx},${by}) scale(${main.flip ? -1 : 1},1) rotate(${-main.rot})`, class: 'iv-ai-badge'}, g);
+      el('circle', {cx: 0, cy: 0, r: 10 / s}, t);
+      const n = el('text', {x: 0, y: 0, 'font-size': 11 / s, 'text-anchor': 'middle', 'dominant-baseline': 'central'}, t); n.textContent = lb.n || i + 1;
+      if (on) label(bx + 8 / s, by + 4 / s, lb.name, g);
+    });
+  }
+  /* boxes that will be blacked out before sending to the AI */
+  function drawCovers(svg, s) {
+    const list = [...(covers[cur?.id] || []), ...(coverDraft ? [coverDraft] : [])];
+    if (!list.length) return;
+    const layer = el('g', {class: 'iv-cover-layer'}, svg), W = main.w, H = main.h;
+    list.forEach((b, i) => {
+      const g = el('g', {class: `iv-cover${b === coverDraft ? ' draft' : ''}`, 'data-cover': b === coverDraft ? -1 : i}, layer);
+      el('rect', {x: b[0] * W, y: b[1] * H, width: b[2] * W, height: b[3] * H}, g);
+      if (b !== coverDraft && b[2] * W * s > 60 && b[3] * H * s > 16) {
+        const t = el('text', {x: (b[0] + b[2] / 2) * W, y: (b[1] + b[3] / 2) * H, 'font-size': 11 / s, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+          transform: `rotate(${-main.rot} ${(b[0] + b[2] / 2) * W} ${(b[1] + b[3] / 2) * H})`}, g);
+        t.textContent = 'hidden from AI';
+      }
+    });
   }
 
   /* ================================================================ HUD, list, status */
@@ -185,6 +235,13 @@
     const p = main.toImage(e.clientX, e.clientY), h = e.target.closest('.iv-handle'), a = e.target.closest('.iv-a');
     if (h && selected >= 0) { undo.push(JSON.stringify({anns, mm})); drag = {type: 'handle', k: +h.dataset.h}; return; }
     if (e.button === 2 || tool === 'wl') { drag = {type: 'wl', x: e.clientX, y: e.clientY, b: main.f.b, c: main.f.c}; return; }
+    if (tool === 'cover') {
+      const c = e.target.closest('.iv-cover');
+      if (c && +c.dataset.cover >= 0) { covers[cur.id].splice(+c.dataset.cover, 1); draw(); emit('iv:cover', {count: covers[cur.id].length}); return; }
+      drag = {type: 'cover', start: p}; coverDraft = null; return;
+    }
+    const aiHit = e.target.closest('.iv-ai');
+    if (tool === 'pan' && aiHit) { ai.active = +aiHit.dataset.ai; draw(); emit('iv:ai-select', {index: ai.active}); drag = {type: 'pan', x: e.clientX - main.px, y: e.clientY - main.py}; return; }
     if (tool === 'pan') {
       if (a && +a.dataset.i >= 0) { selected = +a.dataset.i; draw(); list(); drag = {type: 'move', start: p, orig: JSON.parse(JSON.stringify(anns[selected].points)), pushed: false}; return; }
       selected = -1; draw(); list(); drag = {type: 'pan', x: e.clientX - main.px, y: e.clientY - main.py}; return;
@@ -211,7 +268,14 @@
       anns[selected].points = drag.orig.map(q => [q[0] + dx, q[1] + dy]); dirty = true; draw(); status();
     }
     else if (drag.type === 'draw' && pending) { pending.points[pending.points.length - 1] = p; draw(); }
+    else if (drag.type === 'cover') { coverDraft = boxFrac(drag.start, p); draw(); }
   });
+  const clamp01 = v => Math.min(1, Math.max(0, v));
+  function boxFrac(a, b) {
+    const x0 = clamp01(Math.min(a[0], b[0]) / main.w), y0 = clamp01(Math.min(a[1], b[1]) / main.h);
+    const x1 = clamp01(Math.max(a[0], b[0]) / main.w), y1 = clamp01(Math.max(a[1], b[1]) / main.h);
+    return [x0, y0, x1 - x0, y1 - y0];
+  }
   pane.addEventListener('pointerup', e => {
     if (drag && drag.type === 'draw' && pending) {
       const pts = pending.points, last = pts[pts.length - 1], prev = pts[pts.length - 2];
@@ -219,6 +283,11 @@
       finishIfComplete(); draw();
     }
     if (drag && drag.type === 'move') list();
+    if (drag && drag.type === 'cover') {
+      const b = coverDraft; coverDraft = null;
+      if (b && b[2] * main.w * main.scale() > 6 && b[3] * main.h * main.scale() > 6) { (covers[cur.id] = covers[cur.id] || []).push(b); emit('iv:cover', {count: covers[cur.id].length}); }
+      draw();
+    }
     drag = null;
   });
   pane.addEventListener('pointerleave', () => { $('.iv-lens').hidden = true; });
@@ -265,8 +334,10 @@
     $('.iv-tip').textContent = {pan: 'Drag to pan · scroll to zoom · double-click to zoom in · click a measurement to select, drag to move · right-drag for window/level',
       wl: 'Drag left/right for contrast, up/down for brightness', ruler: 'Drag from one end to the other', angle: 'Drag along the first arm to the corner, then click the end of the second arm',
       cobb: 'Drag along the first endplate, then drag along the second', ellipse: 'Drag across the region', arrow: 'Drag from the label position to the point of interest',
-      text: 'Click where the note should go', calibrate: 'Drag along something of known length, then enter its size in mm', lens: 'Move over the image to magnify'}[t] || '';
+      text: 'Click where the note should go', calibrate: 'Drag along something of known length, then enter its size in mm', lens: 'Move over the image to magnify',
+      cover: 'Drag a box over any name, record number or date on the film. It is blacked out before Dr. Flow sees the image. Click a box to remove it.'}[t] || '';
     if (t === 'lens') $('.iv-lens').hidden = false;
+    emit('iv:tool', {tool: t});
   }
   const syncSliders = () => { $('[data-f=b]').value = main.f.b; $('[data-f=c]').value = main.f.c; };
   root.addEventListener('click', e => {
@@ -300,7 +371,7 @@
     if (e.target.closest('input,textarea,select,dialog')) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); $('[data-act=undo]').click(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && CAN_EDIT) { e.preventDefault(); save(); return; }
-    if (e.key === 'Escape') { pending = null; selected = -1; draw(); list(); return; }
+    if (e.key === 'Escape') { pending = null; selected = -1; if (tool === 'cover') setTool('pan'); draw(); list(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && selected >= 0 && CAN_EDIT) { e.preventDefault(); change(() => { anns.splice(selected, 1); selected = -1; }); return; }
     const keys = {v: 'pan', w: 'wl', r: 'ruler', a: 'angle', c: 'cobb', e: 'ellipse', t: 'text', l: 'lens', k: 'calibrate', o: 'arrow'};
     if (keys[e.key] && (CAN_EDIT || ['pan', 'wl', 'lens'].includes(keys[e.key]))) setTool(keys[e.key]);
@@ -338,6 +409,20 @@
       const txt = m ? `${a.label ? a.label + ': ' : ''}${m.value}` : a.text;
       if (txt) { const at = P[a.type === 'angle' ? 1 : P.length - 1]; g.lineWidth = 4 * s; g.strokeStyle = 'rgba(0,0,0,.75)'; g.strokeText(txt, at[0] + 8 * s, at[1] - 8 * s); g.fillText(txt, at[0] + 8 * s, at[1] - 8 * s); g.lineWidth = 2 * s; g.strokeStyle = '#FFD54F'; }
     });
+    if (ai.show && ai.labels.length) {   // Dr. Flow's labels, marked as AI so nobody mistakes them for measurements
+      const col = {urgent: '#FF4D5E', abnormal: '#FF9F43', watch: '#7FDBFF', normal: '#7CE38B'};
+      g.setLineDash([8 * s, 5 * s]);
+      ai.labels.forEach(lb => {
+        g.strokeStyle = g.fillStyle = col[lb.concern] || col.watch; g.lineWidth = 2 * s;
+        let x, y;
+        if (lb.box) { x = lb.box[0] * main.w; y = lb.box[1] * main.h; g.strokeRect(x, y, lb.box[2] * main.w, lb.box[3] * main.h); }
+        else if (lb.point) { x = lb.point[0] * main.w; y = lb.point[1] * main.h; g.beginPath(); g.arc(x, y, 14 * s, 0, Math.PI * 2); g.stroke(); }
+        else return;
+        const txt = `AI ${lb.n}: ${lb.name}`; g.lineWidth = 4 * s; g.strokeStyle = 'rgba(0,0,0,.75)'; g.setLineDash([]);
+        g.strokeText(txt, x + 4 * s, y - 6 * s); g.fillText(txt, x + 4 * s, y - 6 * s); g.setLineDash([8 * s, 5 * s]);
+      });
+      g.setLineDash([]);
+    }
     const a = document.createElement('a'); a.download = `${root.dataset.number}-${cur.id}-annotated.png`; a.href = c.toDataURL('image/png'); a.click();
   }
 
@@ -443,6 +528,51 @@
     corners = ext.map(([, [x, y]]) => [(x + .5) / W, (y + .5) / H]); drawCorners();
     toast('Film edges found. Adjust any corner if needed.', 'success');
   }
+
+  /* ================================================================ API for Dr. Flow (imaging-ai.js) */
+  function centreOn(ix, iy, z) {
+    main.z = Math.min(20, Math.max(1, z));
+    const s = main.scale(), vx = (ix - main.w / 2) * (main.flip ? -s : s), vy = (iy - main.h / 2) * s, a = main.rot * Math.PI / 180;
+    main.px = -(vx * Math.cos(a) - vy * Math.sin(a)); main.py = -(vx * Math.sin(a) + vy * Math.cos(a)); main.apply();
+  }
+  window.ImagingViewer = {
+    root,
+    get current() { return cur ? {id: cur.id, caption: cur.caption, processed: cur.processed} : null; },
+    get canEdit() { return CAN_EDIT; },
+    images: () => DATA.images.map(i => ({id: i.id, caption: i.caption})),
+    selectImage(id) { const img = DATA.images.find(i => i.id === +id); return img ? (img === cur || select(img)) : false; },
+    setLabels(labels, active = -1) { ai.labels = Array.isArray(labels) ? labels : []; ai.active = active; draw(); },
+    showLabels(on) { ai.show = !!on; draw(); },
+    get labelsShown() { return ai.show; },
+    focusLabel(i, zoom = true) {
+      const lb = ai.labels[i]; if (!lb) return;
+      ai.active = i; ai.show = true;
+      if (zoom && main.w) {
+        const r = main.el.getBoundingClientRect();
+        if (lb.box) { const [x, y, w, h] = lb.box; centreOn((x + w / 2) * main.w, (y + h / 2) * main.h, Math.min(r.width / (w * main.w * main.fit), r.height / (h * main.h * main.fit)) * .45); }
+        else if (lb.point) centreOn(lb.point[0] * main.w, lb.point[1] * main.h, Math.max(main.z, 2.5));
+      }
+      draw();
+    },
+    /* turn an AI label into an ordinary annotation (region or arrow + note) the clinician owns and saves */
+    keepLabel(i) {
+      const lb = ai.labels[i]; if (!lb || !CAN_EDIT || !main.w) return false;
+      const name = String(lb.name || 'AI finding').slice(0, 60);
+      if (lb.box) {
+        const [x, y, w, h] = lb.box;
+        change(() => { anns.push({type: 'ellipse', points: [[x * main.w, y * main.h], [(x + w) * main.w, (y + h) * main.h]], text: '', label: name}); selected = anns.length - 1; });
+      } else if (lb.point) {
+        const px = lb.point[0] * main.w, py = lb.point[1] * main.h, off = Math.min(main.w, main.h) * .08;
+        const sx = Math.max(0, px - off), sy = Math.max(0, py - off);
+        change(() => { anns.push({type: 'arrow', points: [[sx, sy], [px, py]], text: name, label: ''}); selected = anns.length - 1; });
+      } else return false;
+      return true;
+    },
+    coverMode(on) { setTool(on ? 'cover' : 'pan'); },
+    get covering() { return tool === 'cover'; },
+    covers(id) { return (covers[id ?? cur?.id] || []).map(b => b.map(v => +v.toFixed(4))); },
+    clearCovers() { if (cur) { covers[cur.id] = []; draw(); emit('iv:cover', {count: 0}); } },
+  };
 
   /* ================================================================ go */
   setTool('pan'); syncSliders();

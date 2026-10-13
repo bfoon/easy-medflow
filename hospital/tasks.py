@@ -40,7 +40,7 @@ def report_assist_task(pk):
     run_assist(pk)
 
 
-@shared_task(ignore_result=True, soft_time_limit=240)
-def drflow_ask_task(pk):
-    from .drflow_ask import run_ask
-    run_ask(pk)
+@shared_task(ignore_result=True, soft_time_limit=300)
+def imaging_ai_task(pk):
+    from .imaging_ai import run
+    run(pk)
