@@ -1,0 +1,25 @@
+/* Dr. Flow on the bed page (bed-summary.js) */
+.bsum .panel-head{display:flex;align-items:center;gap:8px}
+.bsum .panel-head .hint{font-size:.72rem}
+.bsum-quick{list-style:none;padding:0;margin:0 0 10px;display:flex;flex-direction:column;gap:4px}
+.bsum-quick li{display:flex;gap:8px;align-items:flex-start;font-size:.86rem;padding:5px 8px;border-radius:8px;background:var(--surface-2,#F2F5F4);border-left:4px solid #2B8FB3}
+.bsum-quick li i{margin-top:1px;color:#2B8FB3}
+.bsum-quick li.lv-danger{border-left-color:#D7263D;background:#FFF3F4}.bsum-quick li.lv-danger i{color:#D7263D}
+.bsum-quick li.lv-warn{border-left-color:#E07B12;background:#FFF8EE}.bsum-quick li.lv-warn i{color:#E07B12}
+.bsum-summary{border:1px solid var(--line,#DDE4E2);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.bsum-summary:empty{display:none}
+.bsum-text h4{font-size:.84rem;font-weight:800;margin:10px 0 3px;color:var(--ink,#0F2C3F)}
+.bsum-text h4:first-child{margin-top:0}
+.bsum-text p,.bsum-text li{font-size:.86rem;margin-bottom:4px}
+.bsum-text ol,.bsum-text ul{padding-left:18px;margin-bottom:4px}
+.bsum-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:.72rem;color:var(--muted,#5A6F7D);border-top:1px dashed var(--line,#DDE4E2);margin-top:8px;padding-top:6px}
+.bsum-meta .btn{padding:2px 7px}.bsum-meta .btn.on{background:var(--teal,#0F7B78);color:#fff}
+.bsum-busy,.bsum-failed{font-size:.86rem}.bsum-busy .spinner-border{color:var(--teal,#0F7B78);margin-right:4px}
+.bsum-failed{color:#B42335}
+.bsum-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.bsum-privacy{font-size:.7rem;color:var(--muted,#5A6F7D);margin:8px 0 0}
+.bsum-dlg{width:min(860px,96vw);border:0;border-radius:16px;padding:16px 18px;box-shadow:0 30px 80px rgba(0,0,0,.35)}
+.bsum-dlg::backdrop{background:rgba(5,15,25,.6)}
+.bsum-dlg header{display:flex;align-items:center;margin-bottom:4px}.bsum-dlg h2{font-size:1.1rem;margin:0}
+.bsum-dlg pre{font-size:.72rem;background:var(--surface-2,#F2F5F4);border-radius:10px;padding:10px;max-height:66vh;overflow:auto;white-space:pre-wrap;margin:0 0 6px}
+@media print{.bsum-actions,.bsum-meta .btn,.bsum .rd-call{display:none!important}}

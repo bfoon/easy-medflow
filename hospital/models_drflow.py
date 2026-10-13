@@ -31,3 +31,27 @@ class DrFlowAsk(Tracked):
     @property
     def busy(self):
         return self.status in ('queued', 'running') and (timezone.now() - self.created_at).total_seconds() < 600
+
+
+class BedSummary(Tracked):
+    """A Dr. Flow handover summary of the patient in a bed, written from de-identified data only (bed_summary.py)."""
+    STATUS = [('queued', 'Queued'), ('running', 'Thinking'), ('done', 'Ready'), ('failed', 'Failed')]
+    admission = models.ForeignKey('Admission', on_delete=models.CASCADE, related_name='drflow_summaries')
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='+')
+    status = models.CharField(max_length=10, choices=STATUS, default='queued')
+    text = models.TextField(blank=True)
+    model_name = models.CharField(max_length=80, blank=True)
+    context_digest = models.CharField(max_length=64, blank=True, help_text='SHA-256 of the de-identified context that was sent')
+    error = models.CharField(max_length=500, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    helpful = models.BooleanField(null=True, blank=True, help_text="Clinician's rating")
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Bed summary {self.pk} · admission {self.admission_id} · {self.get_status_display()}'
+
+    @property
+    def busy(self):
+        return self.status in ('queued', 'running') and (timezone.now() - self.created_at).total_seconds() < 600

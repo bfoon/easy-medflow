@@ -66,7 +66,11 @@ Rules:
 - Use the bedside section for inpatients: the bed type, devices (oxygen, IV fluids, catheter output, drains) and the
   observations and NEWS2 of the last 24 hours. Rising NEWS2, falling SpO2 or low urine output belong under urgent.
 - If the data are insufficient, say exactly what is missing (history, examination, a repeat test, another test).
-- Be concise and practical. Write in plain English for a doctor.
+- Be concise and practical. Write in plain English for a doctor."""
+
+# Lab-result reviews use a fixed structure; other tasks (Dr. Flow questions, report helpers) give their own format.
+GENERAL_SYSTEM_PROMPT = SYSTEM_PROMPT
+SYSTEM_PROMPT = SYSTEM_PROMPT + """
 
 Answer with exactly these headings, in this order:
 ## Summary
@@ -212,12 +216,12 @@ def _post_json(url, body, headers, timeout):
             raise AIServiceError(exc.code, _error_detail(raw)) from None
 
 
-def ask_anthropic(ctx, task_text):
+def ask_anthropic(ctx, task_text, system=None):
     """Claude Messages API, optionally with the server-side web search tool limited to trusted medical domains.
     Returns (text, sources, searches)."""
     from .evidence import trusted_domains
     web_search = getattr(settings, 'CLINICAL_AI_WEB_SEARCH', True)
-    body = {'model': model_name(), 'max_tokens': int(getattr(settings, 'CLINICAL_AI_MAX_TOKENS', 3000)), 'system': SYSTEM_PROMPT,
+    body = {'model': model_name(), 'max_tokens': int(getattr(settings, 'CLINICAL_AI_MAX_TOKENS', 3000)), 'system': system or SYSTEM_PROMPT,
             'messages': [{'role': 'user', 'content': _user_message(ctx, task_text if web_search else task_text + NO_SEARCH_NOTE)}]}
     if web_search:
         body['tools'] = [{'type': 'web_search_20250305', 'name': 'web_search', 'max_uses': int(getattr(settings, 'CLINICAL_AI_MAX_SEARCHES', 5)),
@@ -268,14 +272,14 @@ def _provided_sources(ctx):
     return out[:20]
 
 
-def ask_openai(ctx, task_text):
+def ask_openai(ctx, task_text, system=None):
     """OpenAI-compatible Chat Completions (Google Gemini, Azure OpenAI, local servers...). Returns (text, sources, searches)."""
     body = {
         'model': model_name(),
         # Reasoning models spend part of this budget thinking, so it is larger than the Claude default.
         'max_tokens': int(getattr(settings, 'CLINICAL_AI_OPENAI_MAX_TOKENS', 8192)),
         'messages': [
-            {'role': 'system', 'content': SYSTEM_PROMPT},
+            {'role': 'system', 'content': system or SYSTEM_PROMPT},
             {'role': 'user', 'content': _user_message(ctx, task_text + NO_SEARCH_NOTE)},
         ],
     }
@@ -303,8 +307,8 @@ def ask_openai(ctx, task_text):
     return text, _provided_sources(ctx), []
 
 
-def ask_endpoint(ctx, task, task_text):
-    body = {'task': task, 'context': ctx, 'instructions': SYSTEM_PROMPT + '\n\n' + task_text}
+def ask_endpoint(ctx, task, task_text, system=None):
+    body = {'task': task, 'context': ctx, 'instructions': (system or SYSTEM_PROMPT) + '\n\n' + task_text}
     headers = {'Authorization': f'Bearer {getattr(settings, "CLINICAL_AI_TOKEN", "")}'}
     data = _post_json(settings.CLINICAL_AI_ENDPOINT, body, headers, timeout=int(getattr(settings, 'CLINICAL_AI_TIMEOUT', 120)))
     text = data.get('text') or data.get('summary') or json.dumps(data, indent=1)
@@ -313,14 +317,14 @@ def ask_endpoint(ctx, task, task_text):
     return text, sources, []
 
 
-def _ask(ctx, task, task_text):
-    """Send to the configured provider. Returns (text, sources, searches)."""
+def _ask(ctx, task, task_text, system=None):
+    """Send to the configured provider. Returns (text, sources, searches). `system` replaces the lab-review prompt."""
     p = provider()
     if p == 'anthropic':
-        return ask_anthropic(ctx, task_text)
+        return ask_anthropic(ctx, task_text, system)
     if p == 'openai':
-        return ask_openai(ctx, task_text)
-    return ask_endpoint(ctx, task, task_text)
+        return ask_openai(ctx, task_text, system)
+    return ask_endpoint(ctx, task, task_text, system)
 
 
 LAB_TASK = ('Laboratory results for this visit have just been reported. Suggest the next steps for the doctor: what to do now, '

@@ -150,6 +150,17 @@ def _devices_summary(dev):
     return out
 
 
+def _news2(o):
+    """The stored NEWS2, or worked out from the readings when the observation was saved some other way."""
+    if o.news2 is not None:
+        return o.news2
+    try:
+        from . import bedside as B
+        return B.news2(o.as_dict()).get('total')
+    except Exception:
+        return None
+
+
 def bedside_context(encounter, now=None):
     if not _on('CLINICAL_AI_SHARE_BEDSIDE'):
         return None
@@ -178,7 +189,7 @@ def bedside_context(encounter, now=None):
         'hours_ago': _hours_ago(o.taken_at, now), 'heart_rate': o.heart_rate,
         'bp': f'{o.systolic}/{o.diastolic}' if o.systolic and o.diastolic else o.systolic,
         'resp_rate': o.resp_rate, 'spo2': o.spo2, 'temperature_c': float(o.temperature_c) if o.temperature_c is not None else None,
-        'consciousness': o.get_consciousness_display(), 'on_oxygen': o.on_oxygen, 'news2': o.news2,
+        'consciousness': o.get_consciousness_display(), 'on_oxygen': o.on_oxygen, 'news2': _news2(o),
     } for o in obs]
     return ctx
 

@@ -178,6 +178,15 @@ class ImagingAIRunAdmin(admin.ModelAdmin):
     has_change_permission = lambda self, request, obj=None: False
 
 
+@admin.register(models.BedSummary)
+class BedSummaryAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'admission', 'requested_by', 'status', 'model_name', 'helpful')
+    list_filter = ('status', 'helpful')
+    readonly_fields = [f.name for f in models.BedSummary._meta.fields if f.name != 'id']
+    has_add_permission = lambda self, request: False
+    has_change_permission = lambda self, request, obj=None: False
+
+
 @admin.register(models.DoctorReport)
 class DoctorReportAdmin(admin.ModelAdmin):
     list_display = ('id', 'encounter', 'lab_request', 'status', 'signed_by', 'signed_at', 'created_at')

@@ -1,6 +1,6 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}Bed {{ b.code }}{% endblock %}
-{% block head %}<link href="{% asset 'hospital/css/care.css' %}" rel="stylesheet">{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/care.css' %}" rel="stylesheet">{% if current and can_assess %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/bed-summary.css' %}" rel="stylesheet">{% endif %}{% endblock %}
 {% block heading %}Bed {{ b.code }}{% endblock %}
 {% block subheading %}<p class="sub">{{ b.ward }} · {{ b.get_kind_display }} · <span class="tag {{ b.state|tone }}">{{ b.get_state_display }}</span></p>{% endblock %}
 {% block actions %}
@@ -36,6 +36,15 @@
       </div>
       {% if bedside.injury %}<a class="inj-strip" href="{{ bedside.injury.url }}"><i class="bi bi-bandaid-fill"></i>{{ bedside.injury.summary }}</a>{% endif %}
     </section>
+    {% if can_assess %}
+    <section class="panel bsum" id="bsum" aria-labelledby="bsum-h"
+             data-panel="{% url 'bed_summary_panel' current.pk %}" data-ask="{% url 'bed_summary_ask' current.pk %}" data-context="{% url 'bed_summary_context' current.pk %}"
+             data-status="{% url 'bed_summary_status' 0 %}" data-rate="{% url 'bed_summary_rate' 0 %}">
+      <div class="panel-head"><h2 id="bsum-h"><i class="bi bi-stars me-1" style="color:var(--teal)"></i>Dr. Flow · patient summary</h2><span class="hint">de-identified</span>
+        <button type="button" class="rd-call ms-auto" data-robodoc-call title="Call Dr. Flow, the AI assistant" aria-label="Call Dr. Flow"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="7" width="22" height="17" rx="6" fill="#0F2C3F"/><circle cx="12.5" cy="15" r="2.4" fill="#3FE0B0"/><circle cx="19.5" cy="15" r="2.4" fill="#3FE0B0"/><path d="M11 20.5h3l1-1.6 1.6 3 1-1.4H21" fill="none" stroke="#3FE0B0" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 7V3.6" stroke="#0F2C3F" stroke-width="1.6"/><circle cx="16" cy="3" r="1.8" fill="#C8323F"/></svg></button></div>
+      <div class="bsum-body"><div class="small muted"><span class="spinner-border spinner-border-sm"></span> Loading…</div></div>
+    </section>
+    {% endif %}
     <section class="panel bedside" aria-labelledby="bs-h">
       <div class="panel-head"><h2 id="bs-h"><i class="bi bi-heart-pulse me-1" style="color:var(--teal)"></i>At the bedside</h2>
         <span class="hint">Everything moves with the values below: drip rate, heart rate, breathing, oxygen flow, urine output.</span></div>
@@ -114,4 +123,4 @@
   </aside>
 </div>
 {% endblock %}
-{% block scripts %}{% if bedside %}<script src="{% asset 'hospital/js/bedside.js' %}"></script><script src="{% asset 'hospital/js/bedside-panel.js' %}"></script>{% endif %}{% endblock %}
+{% block scripts %}{% if bedside %}<script src="{% asset 'hospital/js/bedside.js' %}"></script><script src="{% asset 'hospital/js/bedside-panel.js' %}"></script>{% endif %}{% if current and can_assess %}<script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/bed-summary.js' %}"></script>{% endif %}{% endblock %}

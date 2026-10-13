@@ -50,3 +50,9 @@ def imaging_ai_task(pk):
 def drflow_ask_task(pk):
     from .drflow_ask import run_ask
     run_ask(pk)
+
+
+@shared_task(ignore_result=True, soft_time_limit=300)
+def bed_summary_task(pk):
+    from .bed_summary import run
+    run(pk)

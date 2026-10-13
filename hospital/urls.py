@@ -9,6 +9,7 @@ from . import evidence_views as gv
 from . import report_views as rv
 from . import imaging_ai_views as iav
 from . import drflow_views as dfv
+from . import bed_summary_views as bsv
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -81,6 +82,11 @@ urlpatterns = [
     path('beds/<int:pk>/maintenance/', v.bed_maintenance, name='bed_maintenance'),
     path('beds/admissions/<int:pk>/bedside/', care.bedside_save, name='bedside_save'),
     path('beds/admissions/<int:pk>/observations/', care.observation_save, name='observation_save'),
+    path('beds/admissions/<int:pk>/drflow/', bsv.panel, name='bed_summary_panel'),
+    path('beds/admissions/<int:pk>/drflow/ask/', bsv.ask, name='bed_summary_ask'),
+    path('beds/admissions/<int:pk>/drflow/context/', bsv.context, name='bed_summary_context'),
+    path('beds/drflow/<int:pk>/', bsv.status, name='bed_summary_status'),
+    path('beds/drflow/<int:pk>/rate/', bsv.rate, name='bed_summary_rate'),
     path('encounters/<int:pk>/injuries/', care.injury_assessment, name='injury_assessment'),
     path('referrals/<int:pk>/<str:state>/', v.referral_transition, name='referral_transition'),
 
