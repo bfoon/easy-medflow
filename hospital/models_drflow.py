@@ -55,3 +55,31 @@ class BedSummary(Tracked):
     @property
     def busy(self):
         return self.status in ('queued', 'running') and (timezone.now() - self.created_at).total_seconds() < 600
+
+
+class LabInsightAsk(Tracked):
+    """Dr. Flow on the Lab insights page: a heads-up on all results, or a question about them (lab_insights_ai.py).
+    Written from de-identified data only; kept for audit with a SHA-256 of what was sent."""
+    KINDS = [('headsup', 'Heads-up'), ('question', 'Question')]
+    STATUS = [('queued', 'Queued'), ('running', 'Thinking'), ('done', 'Ready'), ('failed', 'Failed')]
+    patient = models.ForeignKey('Patient', on_delete=models.CASCADE, related_name='lab_insight_asks')
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='+')
+    kind = models.CharField(max_length=10, choices=KINDS, default='question')
+    question = models.CharField(max_length=500, blank=True)
+    status = models.CharField(max_length=10, choices=STATUS, default='queued')
+    text = models.TextField(blank=True)
+    model_name = models.CharField(max_length=80, blank=True)
+    context_digest = models.CharField(max_length=64, blank=True, help_text='SHA-256 of the de-identified context that was sent')
+    error = models.CharField(max_length=500, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    helpful = models.BooleanField(null=True, blank=True, help_text="Clinician's rating")
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.get_kind_display()} · patient {self.patient_id} · {self.get_status_display()}'
+
+    @property
+    def busy(self):
+        return self.status in ('queued', 'running') and (timezone.now() - self.created_at).total_seconds() < 600

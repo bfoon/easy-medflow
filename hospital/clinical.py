@@ -221,15 +221,15 @@ def deidentified_context(encounter):
     care = care_context(encounter)          # pharmacy and bedside, de-identified (see dr_flow_context.py)
     ctx = {
         'patient': {'sex': p.sex, 'age_band': _age_band(p), 'blood_group': p.blood_group or None},
-        'visit': {'department': str(encounter.department or ''), 'status': encounter.status, 'diagnosis': encounter.diagnosis,
+        'visit': {'department': str(encounter.department or ''), 'status': encounter.status, 'diagnosis': scrub(encounter.diagnosis, p, 300),
                   'vitals': encounter.vitals},
         'allergies': [{'substance': a.substance, 'severity': a.severity} for a in p.allergies.filter(status='active')],
-        'conditions': list(p.conditions.filter(status='active').values_list('name', flat=True)),
+        'conditions': [scrub(c, p, 120) for c in p.conditions.filter(status='active').values_list('name', flat=True)],
         'medicines': [{'medicine': str(i.medication), 'directions': scrub(i.directions, p, 300), 'day': rel(i.prescription.created_at)}
                       for i in PrescriptionItem.objects.filter(prescription__encounter__patient=p).exclude(prescription__state='cancelled')
                       .select_related('medication', 'prescription').order_by('-prescription__created_at')[:40]],
         'lab_results': vals,
-        'imaging': [{'study': f'{o.get_modality_display()} {o.region}', 'impression': o.impression, 'abnormal': o.abnormal, 'day': rel(o.reported_at)}
+        'imaging': [{'study': f'{o.get_modality_display()} {scrub(o.region, p, 80)}', 'impression': scrub(o.impression, p, 800), 'abnormal': o.abnormal, 'day': rel(o.reported_at)}
                     for o in ImagingOrder.objects.filter(encounter__patient=p, status='reported')],
         'rule_based_findings': [{'level': f['level'], 'title': f['title']} for f in clinical_review(encounter)],
     }

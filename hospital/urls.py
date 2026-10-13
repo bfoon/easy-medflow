@@ -10,6 +10,7 @@ from . import report_views as rv
 from . import imaging_ai_views as iav
 from . import drflow_views as dfv
 from . import bed_summary_views as bsv
+from . import lab_insights_views as liv
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -130,6 +131,11 @@ urlpatterns = [
     path('labs/requests/<int:pk>/<str:step>/', v.lab_request_action, name='lab_request_action'),
     path('labs/tests/<int:pk>/cancel/', v.lab_order_cancel, name='lab_order_cancel'),
     path('patients/<int:pk>/labs/', v.patient_labs, name='patient_labs'),
+    path('patients/<int:pk>/labs/drflow/', liv.panel, name='lab_insights_panel'),
+    path('patients/<int:pk>/labs/drflow/ask/', liv.ask, name='lab_insights_ask'),
+    path('patients/<int:pk>/labs/drflow/context/', liv.context, name='lab_insights_context'),
+    path('labs/insights/drflow/<int:pk>/', liv.status, name='lab_insights_status'),
+    path('labs/insights/drflow/<int:pk>/rate/', liv.rate, name='lab_insights_rate'),
     path('patients/<int:pk>/story/', v.patient_story, name='patient_story'),
 
     path('pharmacy/', v.pharmacy, name='pharmacy'),

@@ -56,3 +56,9 @@ def drflow_ask_task(pk):
 def bed_summary_task(pk):
     from .bed_summary import run
     run(pk)
+
+
+@shared_task(ignore_result=True, soft_time_limit=300)
+def lab_insight_task(pk):
+    from .lab_insights_ai import run
+    run(pk)

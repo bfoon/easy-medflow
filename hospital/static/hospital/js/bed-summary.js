@@ -114,7 +114,7 @@
     if (b === 'context') return showContext();
     if (b === 'speak' && RD && s) return RD.summon().then(() => RD.speak(plain(s.html)));
     if (b === 'copy' && s) { try { await navigator.clipboard.writeText(s.text); toast('Handover copied.', 'success'); } catch (err) { toast('Could not copy. Select the text instead.', 'warning'); } return; }
-    const r = e.target.closest('[data-rate]');
+    const r = e.target.closest('button[data-rate]');
     if (r && s) {
       try { const d = await api(urlFor(box.dataset.rate, s.id), {helpful: r.dataset.rate}); s.helpful = r.dataset.rate === '1'; render(); toast(d.message, 'success'); }
       catch (err) { toast(err.message, 'danger'); }

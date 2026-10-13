@@ -129,9 +129,9 @@ def quick_facts(admission):
         add('info', 'droplet-half', 'Still in the lab: ' + ', '.join(stay['lab_tests_still_pending'][:4]) + '.')
     if stay['imaging_still_pending']:
         add('info', 'image', 'Imaging pending: ' + ', '.join(stay['imaging_still_pending'][:3]) + '.')
-    add('info', 'calendar3', f"Day {int(stay['days_since_admission']) + 1} of the stay · {stay['bed_type']} bed.")
+    day = {'level': 'info', 'icon': 'calendar3', 'text': f"Day {int(stay['days_since_admission']) + 1} of the stay · {stay['bed_type']} bed."}
     order = {'danger': 0, 'warn': 1, 'info': 2}
-    return sorted(lines, key=lambda x: order[x['level']])[:9]
+    return sorted(lines, key=lambda x: order[x['level']])[:9] + [day]     # the day of the stay always shows, last
 
 
 # ------------------------------------------------------------------ the worker
