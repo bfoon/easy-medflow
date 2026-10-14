@@ -46,10 +46,12 @@ def role_of(user):
 
 
 def authorize(request, role='all'):
+    """Check a capability. Each module key is a capability administrators can give or take away (hospital/access.py)."""
     if request.user.is_superuser:
         return
     p = getattr(request.user, 'hospital_staff', None)
-    if not p or not p.active or p.role not in ROLES[role]:
+    from .access import caps
+    if not p or not p.active or role not in caps(request.user):
         raise PermissionDenied('Your account is not authorized for this module.')
 
 
@@ -184,7 +186,8 @@ def api_search(request):
     q = request.GET.get('q', '').strip()[:60]
     if len(q) < 2:
         return JsonResponse({'results': []})
-    res = search_patients(request.user, q=q, limit=7)
+    from .access import visible_patient_ids
+    res = search_patients(request.user, q=q, limit=7, only=visible_patient_ids(request))
     return JsonResponse({
         'results': [{'name': r['p'].full_name, 'mrn': r['p'].mrn, 'initials': r['p'].initials, 'age': r['p'].age, 'url': reverse('patient_chart', args=[r['p'].pk]),
                      'why': ' · '.join(x for x in r['why'] if x != 'Name')[:80], 'bed': r['bed'].code if r['bed'] else ''} for r in res['results']],
@@ -203,7 +206,10 @@ def search(request):
          'status': [x for x in g.getlist('status') if x in dict(STATUS)], 'age': g.get('age', ''), 'sex': g.get('sex', ''), 'town': g.get('town', '')[:60],
          'days': g.get('days', ''), 'sort': g.get('sort', 'relevance')}
     active = any([f['q'], f['cats'], f['dept'], f['status'], f['age'], f['sex'], f['town'], f['days']])
-    res = search_patients(request.user, limit=int(g.get('limit', 60)) if g.get('limit', '').isdigit() else 60, **f)
+    from .access import visible_patient_ids
+    only = visible_patient_ids(request)
+    res = search_patients(request.user, limit=int(g.get('limit', 60)) if g.get('limit', '').isdigit() else 60, only=only, **f)
+    res['scoped'] = only is not None
     audit(request, 'search', 'patients', {'q': f['q'][:40], 'cats': f['cats'], 'n': res['total']})
     return render(request, 'hospital/search.html', {**res, 'f': f, 'active': active, 'age_bands': AGE_BANDS, 'statuses': STATUS,
                                                     'towns': Location.objects.filter(kind='town', active=True).order_by('name').values_list('name', flat=True),
@@ -221,8 +227,12 @@ def patients(request):
     if q:
         from .phones import is_phone_query, phone_q
         qs = qs.filter(phone_q(q) if is_phone_query(q) else Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(mrn__icontains=q))
+    from .access import filter_patients, visible_patient_ids
+    scoped = visible_patient_ids(request) is not None
+    qs = filter_patients(request, qs)
     admitted = set(Admission.objects.filter(discharged_at__isnull=True).values_list('encounter__patient_id', flat=True))
-    return render(request, 'hospital/patients.html', {'rows': qs[:120], 'q': q, 'admitted': admitted, 'total': Patient.objects.count()})
+    return render(request, 'hospital/patients.html', {'rows': qs[:120], 'q': q, 'admitted': admitted, 'scoped': scoped,
+                                                      'total': qs.count() if scoped else Patient.objects.count()})
 
 
 @login_required
@@ -250,7 +260,11 @@ def patient_chart(request, pk):
         [{'when': x.created_at, 'kind': 'referral', 'title': f'Referral to {x.destination}', 'meta': x.get_status_display()} for x in referrals] +
         [{'when': x.created_at, 'kind': 'imaging', 'title': f'{x.get_modality_display()} · {x.region}', 'meta': f'{x.number} · {x.get_status_display()}', 'flag': x.abnormal, 'url': reverse('imaging_detail', args=[x.pk])}
          for x in ImagingOrder.objects.filter(encounter__patient=p).exclude(status='cancelled')] +
-        [{'when': x.admitted_at, 'kind': 'admission', 'title': f'Admitted to {x.bed}', 'meta': 'Discharged' if x.discharged_at else 'Current'} for x in admissions]
+        [{'when': x.admitted_at, 'kind': 'admission', 'title': f'Admitted to {x.bed}', 'meta': 'Discharged' if x.discharged_at else 'Current'} for x in admissions] +
+        [{'when': x.scheduled_start or x.created_at, 'kind': 'operation', 'title': x.title, 'meta': f'{x.number} · {x.get_status_display()}', 'url': reverse('theatre_case', args=[x.pk])}
+         for x in p.operations.exclude(status='cancelled')] +
+        [{'when': x.created_at, 'kind': 'senses', 'title': 'Eye & ear examination', 'meta': __import__('hospital.senses', fromlist=['summary']).summary(x.computed, x.data),
+          'flag': any(a['level'] == 'high' for a in x.computed.get('alerts', [])), 'url': reverse('sense_exam', args=[x.encounter_id])} for x in p.sense_exams.all()[:10]]
     )
     timeline.sort(key=lambda x: x['when'], reverse=True)
     latest = next((e for e in encounters if e.vitals), None)
@@ -264,10 +278,21 @@ def patient_chart(request, pk):
         'open_encounter': next((e for e in encounters if e.status == 'open'), None),
         'current_admission': next((a for a in admissions if not a.discharged_at), None),
         'imaging': ImagingOrder.objects.filter(encounter__patient=p).exclude(status='cancelled').prefetch_related('images').order_by('-created_at')[:30],
+        'operations': p.operations.select_related('room').order_by('-created_at')[:30],
+        'senses_url': _senses_url(p, encounters),
         **similar_context(p, encounters),
         'billing': billing_context(p, encounters),
         'network_log': AuditEvent.objects.filter(action='network_lookup', target=f'patient:{p.pk}').select_related('actor').order_by('-occurred_at')[:8],
     })
+
+
+def _senses_url(p, encounters):
+    """The eye & ear page to open from the chart: this visit's if one is open, else the latest examination's. None if never examined."""
+    latest = p.sense_exams.order_by('-created_at').first()
+    if not latest:
+        return None
+    op = next((e for e in encounters if e.status == 'open'), None)
+    return reverse('sense_exam', args=[(op or latest.encounter).pk])
 
 
 def billing_context(p, encounters):
@@ -331,6 +356,7 @@ def encounter_detail(request, pk):
         'vitals': [(lbl, unit, e.vitals.get(k)) for k, lbl, unit, _ in VITAL_FIELDS if e.vitals.get(k)],
         'can_sign': role_of(request.user) in ('doctor', 'admin'),
         'imaging': e.imaging.exclude(status='cancelled').prefetch_related('images'), 'outcomes': Encounter.OUTCOMES,
+        'operations': e.operations.all(),
         'review': __import__('hospital.clinical', fromlist=['clinical_review']).clinical_review(e), 'ai_on': __import__('hospital.clinical', fromlist=['ai_enabled']).ai_enabled(),
         **similar_context(e.patient, [e] + list(e.patient.encounters.exclude(pk=e.pk).order_by('-created_at')[:20])),
     })
@@ -729,7 +755,7 @@ def lab_view_pref(request):
 @require_POST
 def set_lab_view(request):
     view = request.POST.get('view')
-    if view not in ('body', 'clean'):
+    if view not in ('body', 'clean', 'anatomy'):
         return HttpResponseBadRequest('Unknown view')
     p = StaffProfile.objects.filter(user=request.user).first()
     if p:
@@ -773,6 +799,10 @@ def patient_lab_data(patient):
     # diagnoses, conditions and the latest vitals: the anatomy layers use them to place findings (e.g. spine level, which hand)
     dx = [e.diagnosis for e in patient.encounters.exclude(status='cancelled').exclude(diagnosis='').order_by('-created_at')[:25]]
     dx += [c.name for c in patient.conditions.filter(status='active')]
+    # recent diagnoses and active conditions: acute problems on the realistic anatomy only use these (anatomy-real.js)
+    since = timezone.now() - timedelta(days=90)
+    dx_recent = [e.diagnosis for e in patient.encounters.exclude(status='cancelled').exclude(diagnosis='').filter(created_at__gte=since).order_by('-created_at')[:15]]
+    dx_recent += [c.name for c in patient.conditions.filter(status='active')]
     last_vitals = dict(next((e.vitals for e in patient.encounters.exclude(vitals={}).order_by('-created_at')[:1]), {}) or {})
     # the newest bedside observation (if under 48 hours old) is more current than the visit's vitals: the 3D heart's
     # beat and blood flow use it, and say which one they used
@@ -785,7 +815,7 @@ def patient_lab_data(patient):
                'bp': f'{obs.systolic}/{obs.diastolic}' if obs.systolic and obs.diastolic else None}
         last_vitals.update({k: v for k, v in bed.items() if v not in (None, '')})
         vitals_meta = {'source': 'bedside', 'hours_ago': round((timezone.now() - obs.taken_at).total_seconds() / 3600, 1), 'on_oxygen': obs.on_oxygen}
-    return {'dx': dx, 'vitals': last_vitals, 'vitals_meta': vitals_meta, 'open_encounter': open_enc.pk if open_enc else None, 'lab_new_url': reverse('lab_new'), 'imaging': imaging,
+    return {'dx': dx, 'dx_recent': dx_recent, 'today': timezone.localdate().isoformat(), 'vitals': last_vitals, 'vitals_meta': vitals_meta, 'open_encounter': open_enc.pk if open_enc else None, 'lab_new_url': reverse('lab_new'), 'imaging': imaging,
             'guidance_url': reverse('lab_request_detail', args=[0]), 'patient': {'name': patient.full_name, 'sex': patient.sex, 'age': patient.age, 'mrn': patient.mrn},
             'systems': dict(BODY_SYSTEMS), 'params': list(params.values()), 'orders': list(reversed(order_list))}
 
@@ -796,8 +826,11 @@ def patient_labs(request, pk):
     p = get_object_or_404(Patient, pk=pk)
     audit(request, 'view_chart', f'patient_labs:{p.pk}')
     pending = LabOrder.objects.filter(encounter__patient=p, status__in=['ordered', 'collected', 'processing']).select_related('test')
+    ops = list(p.operations.exclude(status='cancelled').order_by('-created_at')[:30])
     return render(request, 'hospital/lab_insights.html', {'p': p, 'data': patient_lab_data(p), 'view': lab_view_pref(request),
-                                                          'pending': pending, 'open_encounter': p.encounters.filter(status='open').first()})
+                                                          'pending': pending, 'open_encounter': p.encounters.filter(status='open').first(),
+                                                          'senses_url': _senses_url(p, list(p.encounters.order_by('-created_at')[:50])),
+                                                          'operations': ops})
 
 
 @login_required
@@ -818,22 +851,39 @@ def lab_ack(request, pk):
 
 @login_required
 def pharmacy(request):
-    authorize(request)
+    """Dispensing board and stock on hand. People without dispensing or clinical rights see only what is in stock."""
+    from .access import filter_patients, has
+    authorize(request, 'pharmacy_view')
     stock = []
     for m in Medication.objects.filter(active=True).order_by('name')[:200]:
         qty = availability(m)
         stock.append({'m': m, 'qty': qty, 'pct': min(100, round(qty * 100 / max(m.reorder_level * 3, 1))),
                       'level': 'out' if qty == 0 else 'low' if qty <= m.reorder_level else 'ok'})
-    rx = list(Prescription.objects.select_related('encounter__patient', 'signed_by').prefetch_related('items__medication').order_by('-created_at')[:150])
-    lanes = [('draft', 'Drafts awaiting prescriber', [x for x in rx if x.state == 'draft']),
-             ('signed', 'Signed · ready to dispense', [x for x in rx if x.state in ('signed', 'partial')]),
-             ('dispensed', 'Dispensed', [x for x in rx if x.state == 'dispensed'][:12])]
+    show_rx = has(request.user, 'pharmacy') or has(request.user, 'clinical')
+    lanes = []
+    if show_rx:
+        qs = Prescription.objects.select_related('encounter__patient', 'signed_by').prefetch_related('items__medication').order_by('-created_at')
+        if not has(request.user, 'pharmacy'):           # prescribers see their patients in care, not everybody's
+            qs = filter_patients(request, qs, 'encounter__patient_id')
+        rx = list(qs[:150])
+        lanes = [('draft', 'Drafts awaiting prescriber', [x for x in rx if x.state == 'draft']),
+                 ('signed', 'Signed · ready to dispense', [x for x in rx if x.state in ('signed', 'partial')]),
+                 ('dispensed', 'Dispensed', [x for x in rx if x.state == 'dispensed'][:12])]
     from .pharmacy_views import nav, witnesses
-    return render(request, 'hospital/pharmacy.html', {**nav('dispense'), 'stock': stock, 'lanes': lanes, 'witnesses': witnesses(request.user),
-                                                      'can_sign': role_of(request.user) in ('doctor', 'admin'),
-                                                      'can_dispense': role_of(request.user) in ('pharmacy', 'admin'),
-                                                      'supplier': StockRequest.objects.select_related('medication', 'prescription_item__prescription', 'requested_by').exclude(status__in=['received', 'cancelled'])[:50],
-                                                      'supplier_done': StockRequest.objects.select_related('medication').filter(status__in=['received', 'cancelled'])[:10]})
+    out = [s_['m'].name for s_ in stock if s_['level'] == 'out']
+    low = [s_['m'].name for s_ in stock if s_['level'] == 'low']
+    lines = ([{'level': 'danger', 'text': f'Out of stock: {", ".join(out[:5])}{"…" if len(out) > 5 else ""}.'}] if out else []) + \
+            ([{'level': 'warn', 'text': f'Running low: {", ".join(low[:5])}{"…" if len(low) > 5 else ""}.'}] if low else [])
+    ready = len(lanes[1][2]) if lanes else 0
+    if ready and has(request.user, 'pharmacy'):
+        lines.append({'level': 'info', 'text': f'{ready} prescription{"s" if ready != 1 else ""} signed and waiting to be dispensed.'})
+    return render(request, 'hospital/pharmacy.html', {**nav('dispense'), 'stock': stock, 'lanes': lanes, 'show_rx': show_rx, 'witnesses': witnesses(request.user),
+                                                      'can_sign': role_of(request.user) in ('doctor', 'admin') and has(request.user, 'clinical'),
+                                                      'can_dispense': has(request.user, 'pharmacy'), 'can_revise': has(request.user, 'pharmacy_revise'),
+                                                      'can_prescribe': has(request.user, 'clinical'), 'drflow': has(request.user, 'drflow'), 'df_lines_json': json.dumps(lines),
+                                                      'can_stock': has(request.user, 'pharmacy_stock'),
+                                                      'supplier': StockRequest.objects.select_related('medication', 'prescription_item__prescription', 'requested_by').exclude(status__in=['received', 'cancelled'])[:50] if show_rx else [],
+                                                      'supplier_done': StockRequest.objects.select_related('medication').filter(status__in=['received', 'cancelled'])[:10] if show_rx else []})
 
 
 @login_required
@@ -1127,9 +1177,7 @@ def prescription_edit(request, pk):
 @require_POST
 def rx_item_availability(request, pk, action):
     """When a medicine is out of stock: order it from the supplier, or record that the patient was told to get it elsewhere."""
-    authorize(request)
-    if role_of(request.user) not in ('pharmacy', 'doctor', 'admin'):
-        raise PermissionDenied('Pharmacy or prescriber role required')
+    authorize(request, 'pharmacy_revise')
     with transaction.atomic():
         item = get_object_or_404(PrescriptionItem.objects.select_for_update().select_related('prescription', 'medication'), pk=pk)
         if item.prescription.state in ('dispensed', 'cancelled') or item.is_dispensed:
@@ -1160,7 +1208,7 @@ def rx_item_availability(request, pk, action):
 @login_required
 @require_POST
 def stock_request_new(request, med_pk):
-    authorize(request, 'pharmacy')
+    authorize(request, 'pharmacy_revise')
     m = get_object_or_404(Medication, pk=med_pk)
     qty = int(request.POST.get('quantity') or m.reorder_level * 3)
     StockRequest.objects.create(medication=m, quantity=max(1, qty), requested_by=request.user, reason='Reorder (stock low)')
@@ -1171,7 +1219,9 @@ def stock_request_new(request, med_pk):
 @login_required
 @require_POST
 def stock_request_action(request, pk, action):
-    authorize(request, 'pharmacy')
+    authorize(request, 'pharmacy_revise')
+    if action == 'receive':
+        authorize(request, 'pharmacy_stock')          # booking a delivery into stock is a stock change
     sr = get_object_or_404(StockRequest, pk=pk)
     if action == 'ordered' and sr.status == 'requested':
         sr.status = 'ordered'; sr.save(update_fields=['status', 'updated_at']); messages.success(request, f'Marked as ordered: {sr.medication}.')

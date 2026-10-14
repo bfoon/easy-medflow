@@ -325,14 +325,22 @@
     $$('.seg button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
     $$('[data-pane-view]').forEach(p => p.classList.toggle('on', p.dataset.paneView === v));
     if (v === 'clean') renderClean();
+    if (v === 'anatomy') startAnatomy();
     if (save) fetch(root.dataset.viewUrl, {method: 'POST', credentials: 'same-origin', headers: {'X-CSRFToken': csrf()}, body: new URLSearchParams({view: v})}).catch(() => {});
   }
   $$('.seg button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view, true)));
 
   renderMarkers(); seedDroplets(); renderOverview(); renderReview(false);
-  setView(root.dataset.initialView === 'clean' ? 'clean' : 'body', false);
+  /* the realistic anatomy is drawn the first time it is opened (anatomy-real.js) */
+  let anatomy = null;
+  function startAnatomy() {
+    const host = document.getElementById('anatomy-real');
+    if (anatomy || !host || !window.MFAnatomy || !window.MFAnatomy.mount) return;
+    try { anatomy = window.MFAnatomy.mount(host, DATA); } catch (e) { host.innerHTML = '<div class="empty">The anatomy view could not be drawn in this browser.</div>'; console.error(e); }
+  }
+  setView(['clean', 'anatomy'].includes(root.dataset.initialView) ? root.dataset.initialView : 'body', false);
   const firstCrit = Object.values(SYS).find(s => SEVERITY[s.worst] === 4 && s.open);
-  if (firstCrit && root.dataset.initialView !== 'clean') {   // fly to the most urgent finding, unless the doctor has already chosen something
+  if (firstCrit && root.dataset.initialView === 'body') {   // fly to the most urgent finding, unless the doctor has already chosen something
     const auto = setTimeout(() => { if (!current) focusSystem(firstCrit.key); }, reduceMotion ? 0 : 900);
     ['pointerdown', 'keydown'].forEach(ev => root.addEventListener(ev, () => clearTimeout(auto), {once: true}));
   }

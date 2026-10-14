@@ -32,8 +32,9 @@ class Command(BaseCommand):
                 Medication.objects.create(name=name, generic_name=generic, form=form, strength=strength)
         self.load_locations()
         self.load_prices()   # after medicines and tests exist, so their prices are filled in
+        self.load_theatre()
         if kwargs.get('verbosity', 1):
-            self.stdout.write(self.style.SUCCESS('Seeded departments, standard lab catalogue, WHO reference values, 4 wards / 26 beds, and a medication catalog.'))
+            self.stdout.write(self.style.SUCCESS('Seeded departments, standard lab catalogue, WHO reference values, 4 wards / 26 beds, 5 theatres with a procedure catalogue, and a medication catalog.'))
 
     def load_lab_catalog(self):
         """Add any missing standard categories, tests and parameters. Never overwrites local edits (e.g. your own ranges)."""
@@ -65,7 +66,11 @@ class Command(BaseCommand):
              ('bed-general', 'General ward bed', 'bed', 800), ('bed-maternity', 'Maternity bed', 'bed', 900), ('bed-pediatric', 'Paediatric bed', 'bed', 700),
              ('bed-icu', 'ICU bed', 'bed', 4500), ('bed-isolation', 'Isolation bed', 'bed', 1500),
              ('dressing', 'Wound dressing', 'procedure', 250), ('suturing', 'Suturing', 'procedure', 600), ('iv-cannula', 'IV cannulation', 'procedure', 200),
-             ('medical-report', 'Medical report', 'other', 500)]
+             ('medical-report', 'Medical report', 'other', 500),
+             ('anaesthesia-general', 'General anaesthetic', 'procedure', 2500), ('anaesthesia-spinal', 'Spinal anaesthetic', 'procedure', 1500),
+             ('anaesthesia-epidural', 'Epidural anaesthetic', 'procedure', 1800), ('anaesthesia-regional', 'Regional nerve block', 'procedure', 1200),
+             ('anaesthesia-local', 'Local anaesthetic', 'procedure', 300), ('anaesthesia-sedation', 'Procedural sedation', 'procedure', 800),
+             ('theatre-hour', 'Theatre time (per hour)', 'procedure', 1500)]
         for code, name, cat, amt in T:
             Tariff.objects.get_or_create(code=code, defaults={'name': name, 'category': cat, 'amount': Decimal(amt)})
         lab = {'CBC': 450, 'HB': 150, 'ESR': 150, 'MAL': 200, 'MPS': 250, 'BGRP': 200, 'GLU': 150, 'HBA1C': 900, 'LFT': 900, 'RFT': 850, 'PANC': 1000,
@@ -77,6 +82,46 @@ class Command(BaseCommand):
                 'Ibuprofen': '3.00', 'Ferrous sulfate': '1.50', 'Ceftriaxone': '120.00', 'Zinc sulfate': '2.50'}
         for name, price in meds.items():
             Medication.objects.filter(name=name, unit_price=0).update(unit_price=Decimal(price))
+
+    def load_theatre(self):
+        """Standard operating rooms and procedure catalogue. Adds missing entries only; never overwrites your edits."""
+        from decimal import Decimal
+        from datetime import time
+        from hospital.models import OperatingRoom, ProcedureType
+        rooms = [('Main Theatre 1', 'main', 0, time(8), time(17)), ('Main Theatre 2', 'main', 1, time(8), time(17)),
+                 ('Obstetric Theatre', 'obstetric', 2, time(0), time(23, 59)), ('Eye & ENT Theatre', 'eye_ent', 3, time(8), time(14)),
+                 ('Minor Procedures Room', 'minor', 4, time(8), time(16))]
+        for name, kind, order, a, b in rooms:
+            OperatingRoom.objects.get_or_create(name=name, defaults={'kind': kind, 'sort_order': order, 'session_start': a, 'session_end': b})
+        # code, name, specialty, minutes, anaesthetic, needs side, minor, price (dalasi, illustrative)
+        P = [('appendicectomy', 'Appendicectomy', 'general', 60, 'general', False, False, 6000),
+             ('hernia-inguinal', 'Inguinal hernia repair', 'general', 60, 'spinal', True, False, 5000),
+             ('laparotomy', 'Exploratory laparotomy', 'general', 120, 'general', False, False, 12000),
+             ('cholecystectomy', 'Cholecystectomy', 'general', 90, 'general', False, False, 12000),
+             ('thyroidectomy', 'Thyroidectomy', 'general', 120, 'general', False, False, 14000),
+             ('incision-drainage', 'Incision and drainage of abscess', 'general', 20, 'local', False, True, 1200),
+             ('debridement', 'Wound debridement', 'general', 45, 'general', False, False, 3000),
+             ('circumcision', 'Circumcision', 'urology', 30, 'local', False, True, 1500),
+             ('turp', 'Transurethral resection of the prostate (TURP)', 'urology', 90, 'spinal', False, False, 15000),
+             ('caesarean', 'Caesarean section', 'obgyn', 60, 'spinal', False, False, 8000),
+             ('evacuation', 'Evacuation of the uterus (MVA / D&C)', 'obgyn', 30, 'sedation', False, True, 2500),
+             ('hysterectomy', 'Abdominal hysterectomy', 'obgyn', 150, 'general', False, False, 15000),
+             ('orif-femur', 'Fixation of femur fracture (ORIF / nail)', 'orthopaedic', 150, 'spinal', True, False, 18000),
+             ('orif-forearm', 'Fixation of forearm fracture (ORIF)', 'orthopaedic', 90, 'regional', True, False, 10000),
+             ('amputation-bka', 'Below-knee amputation', 'orthopaedic', 90, 'spinal', True, False, 10000),
+             ('skin-graft', 'Split-skin graft', 'plastic', 90, 'general', False, False, 9000),
+             ('escharotomy', 'Escharotomy (burns)', 'plastic', 45, 'general', False, False, 4000),
+             ('cataract', 'Cataract surgery (SICS / phaco) with lens implant', 'eye', 30, 'local', True, False, 4500),
+             ('trabeculectomy', 'Trabeculectomy (glaucoma)', 'eye', 60, 'local', True, False, 6000),
+             ('pterygium', 'Pterygium excision with graft', 'eye', 30, 'local', True, True, 2500),
+             ('ear-microsuction', 'Ear microsuction (wax / foreign body removal)', 'ent', 15, 'local', True, True, 300),
+             ('grommet', 'Myringotomy and grommet insertion', 'ent', 20, 'general', True, False, 3000),
+             ('tympanoplasty', 'Tympanoplasty (repair of the ear drum)', 'ent', 120, 'general', True, False, 9000),
+             ('mastoidectomy', 'Mastoidectomy (cholesteatoma)', 'ent', 150, 'general', True, False, 14000),
+             ('tonsillectomy', 'Tonsillectomy', 'ent', 45, 'general', False, False, 5000)]
+        for code, name, spec, mins, an, side, minor, price in P:
+            ProcedureType.objects.get_or_create(code=code, defaults={'name': name, 'specialty': spec, 'default_minutes': mins, 'default_anaesthesia': an,
+                                                                       'needs_side': side, 'minor': minor, 'price': Decimal(price)})
 
     def load_locations(self):
         """Add any missing standard Gambian towns and areas, then link patients to a location from their address.

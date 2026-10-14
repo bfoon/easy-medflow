@@ -8,6 +8,8 @@
   <button class="btn btn-ghost" data-drawer="{% url 'prescription_new' %}?encounter={{ e.pk }}" data-title="New prescription"><i class="bi bi-capsule"></i>Prescribe</button>
   <button class="btn btn-ghost" data-drawer="{% url 'imaging_new' %}?encounter={{ e.pk }}" data-title="Imaging request"><i class="bi bi-radioactive"></i>Imaging</button>
   <a class="btn btn-ghost" href="{% url 'injury_assessment' e.pk %}"><i class="bi bi-bandaid"></i>Injuries &amp; burns</a>
+  <a class="btn btn-ghost" href="{% url 'sense_exam' e.pk %}"><i class="bi bi-eye"></i>Eyes &amp; ears</a>
+  <button class="btn btn-ghost" data-drawer="{% url 'theatre_new' %}?encounter={{ e.pk }}" data-title="Book an operation"><i class="bi bi-scissors"></i>Operation</button>
   <a class="btn btn-ghost" href="{% url 'invoice_for_encounter' e.pk %}"><i class="bi bi-receipt"></i>Bill</a>
   <a class="btn btn-ghost" href="{% url 'network_specialists' %}?encounter={{ e.pk }}"><i class="bi bi-person-badge"></i>Specialist</a>
   <button class="btn btn-ghost" data-drawer="{% url 'referral_new' %}?encounter={{ e.pk }}" data-title="Referral"><i class="bi bi-signpost-split"></i>Refer</button>
@@ -70,6 +72,10 @@
         {% for l in r.orders.all %}<div class="small mb-1"><b>{{ l.test.name }}</b> <span class="muted">· {{ l.get_status_display }}</span>{% if l.values.all %}<div>{% for v in l.values.all %}<span class="vchip {% if v.is_critical %}crit{% elif v.is_abnormal %}abn{% endif %}">{{ v.parameter.name }} <b>{{ v.display }}</b> {{ v.parameter.unit }}</span>{% endfor %}</div>{% endif %}</div>{% endfor %}</div>
       {% empty %}<p class="muted small mb-0">None ordered.</p>{% endfor %}
     </section>
+    {% if operations %}<section class="panel">
+      <div class="panel-head"><h2>Operations &amp; procedures</h2><a class="more" href="{% url 'theatre' %}">Theatre</a></div>
+      <ul class="plain ruled">{% for o in operations %}<li class="d-flex gap-2 align-items-center"><a href="{% url 'theatre_case' o.pk %}"><b>{{ o.title }}</b></a><span class="small muted">{% if o.scheduled_start %}{{ o.scheduled_start|date:'j M H:i' }}{% else %}waiting list{% endif %}</span><span class="tag {% if o.status == 'completed' %}teal{% elif o.status == 'cancelled' %}red{% else %}indigo{% endif %} ms-auto">{{ o.get_status_display }}</span></li>{% endfor %}</ul>
+    </section>{% endif %}
     <section class="panel">
       <div class="panel-head"><h2>Imaging</h2></div>
       <ul class="plain ruled">{% for o in imaging %}<li class="d-flex gap-2 align-items-center"><a href="{% url 'imaging_detail' o.pk %}"><span class="mod mod-{{ o.modality }}">{{ o.get_modality_display }}</span> {{ o.region }}</a>{% if o.abnormal %}<span class="tag red">Abnormal</span>{% endif %}<span class="tag ms-auto">{{ o.get_status_display }}</span></li>{% empty %}<li class="muted small">None requested.</li>{% endfor %}</ul>

@@ -1,9 +1,9 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}{{ p.number }}{% endblock %}
 {% block heading %}Prescription {{ p.number }}{% endblock %}
-{% block subheading %}<p class="sub"><a href="{% url 'patient_chart' patient.pk %}">{{ patient.full_name }}</a> · {{ patient.mrn }} · written {{ p.created_at|date:'j M Y H:i' }} · <span class="tag {{ p.state|tone }}">{{ p.get_state_display }}</span></p>{% endblock %}
+{% block subheading %}<p class="sub">{% if 'patient_records' in caps %}<a href="{% url 'patient_chart' patient.pk %}">{{ patient.full_name }}</a>{% else %}{{ patient.full_name }}{% endif %} · {{ patient.mrn }} · written {{ p.created_at|date:'j M Y H:i' }} · <span class="tag {{ p.state|tone }}">{{ p.get_state_display }}</span></p>{% endblock %}
 {% block actions %}
-  <a class="btn btn-ghost" href="{% url 'patient_chart' patient.pk %}#meds"><i class="bi bi-arrow-left"></i>Patient</a>
+  {% if 'patient_records' in caps %}<a class="btn btn-ghost" href="{% url 'patient_chart' patient.pk %}#meds"><i class="bi bi-arrow-left"></i>Patient</a>{% else %}<a class="btn btn-ghost" href="{% url 'pharmacy' %}"><i class="bi bi-arrow-left"></i>Pharmacy</a>{% endif %}
   {% if can_edit %}<a class="btn btn-ghost" href="{% url 'prescription_edit' p.pk %}"><i class="bi bi-pencil"></i>Edit medicines</a>{% endif %}
   {% if p.state == 'draft' and can_sign %}<form method="post" action="{% url 'prescription_sign' p.pk %}" data-confirm="Sign {{ p.number }}?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="btn btn-ink"><i class="bi bi-pen"></i>Sign</button></form>{% endif %}
   {% if p.state == 'signed' or p.state == 'partial' %}{% if can_dispense %}<form method="post" action="{% url 'prescription_dispense' p.pk %}" data-confirm="Dispense every medicine that is in stock?">{% csrf_token %}<button class="btn btn-primary"><i class="bi bi-bag-check"></i>{% if p.state == 'partial' %}Dispense remaining{% else %}Dispense{% endif %}</button></form>{% endif %}{% endif %}

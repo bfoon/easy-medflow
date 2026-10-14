@@ -96,6 +96,8 @@
       if (busy) watch(busy.id);
     } catch (err) { box.querySelector('.lidf-body').innerHTML = `<p class="small text-danger mb-0">${esc(err.message)}</p>`; }
   }
+  // other views on this page (the realistic anatomy) can send a question here
+  window.LabInsightsAsk = q => { box.scrollIntoView({behavior: 'smooth', block: 'center'}); return ask('question', String(q).slice(0, 500)); };
   async function ask(kind, question = '') {
     engaged = true;
     if (RD) RD.summon().then(() => RD.think(THINK[kind]));

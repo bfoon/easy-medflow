@@ -1,0 +1,75 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ c.number }} · {{ c.title }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/theatre.css' %}" rel="stylesheet">{% if drflow %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endif %}{% endblock %}
+{% block heading %}{{ c.title }}{% endblock %}
+{% block subheading %}<p class="sub"><b>{{ c.number }}</b> · <a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }}{% if p.age is not None %} · {{ p.age }} yrs{% endif %} · {{ c.get_specialty_display }}
+  <span class="tag {% if c.urgency == 'immediate' %}red{% elif c.urgency == 'urgent' %}amber{% endif %} ms-1">{{ c.get_urgency_display }}</span></p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="{% url 'theatre' %}{% if c.scheduled_start %}?date={{ c.scheduled_start|date:'Y-m-d' }}{% endif %}"><i class="bi bi-calendar3"></i>Board</a>
+  <a class="btn btn-ghost" href="{% url 'encounter_detail' e.pk %}"><i class="bi bi-clipboard2-pulse"></i>Visit</a>
+  <a class="btn btn-ghost" href="{{ bill_url }}"><i class="bi bi-receipt"></i>Bill</a>
+  {% if drflow %}<button type="button" class="btn btn-ghost" data-drflow-ask><i class="bi bi-robot"></i>Ask Dr. Flow</button>{% endif %}
+  <button class="btn btn-ghost" id="th-edit" data-drawer="{% url 'theatre_edit' c.pk %}" data-title="Change booking" hidden><i class="bi bi-pencil"></i>Change booking</button>
+{% endblock %}
+{% block content %}{% csrf_token %}
+<section class="panel th-journey-panel">
+  <div id="th-journey"></div>
+  <div id="th-clocks" class="th-clocks" aria-live="off"></div>
+</section>
+<div class="grid g-main mt-3">
+  <div class="stack">
+    <section class="panel" id="th-now"></section>
+    <section class="panel" id="note">
+      <div class="panel-head"><h2><i class="bi bi-journal-medical"></i> Operation note</h2>{% if c.note_at %}<span class="hint">by {{ c.note_by|display_name }} · {{ c.note_at|date:'j M H:i' }}</span>{% endif %}</div>
+      {% if can_note %}
+      <form method="post" action="{% url 'theatre_note' c.pk %}" class="th-note">{% csrf_token %}
+        <label class="span-2">Procedure performed<input class="form-control" name="procedure_performed" maxlength="300" value="{{ c.procedure_performed|default:c.title }}" required></label>
+        <label class="span-2">Findings<textarea class="form-control" name="findings" rows="3">{{ c.findings }}</textarea></label>
+        <label>Blood loss (mL)<input class="form-control" type="number" min="0" max="20000" name="blood_loss_ml" value="{{ c.blood_loss_ml|default_if_none:'' }}"></label>
+        <label>Wound class<select class="form-select" name="wound_class">{% for k, l in wounds %}<option value="{{ k }}" {% if c.wound_class == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></label>
+        <label>Specimens sent<input class="form-control" name="specimens" maxlength="300" value="{{ c.specimens }}"></label>
+        <label>Implants<input class="form-control" name="implants" maxlength="300" value="{{ c.implants }}"></label>
+        <label>Drains<input class="form-control" name="drains" maxlength="200" value="{{ c.drains }}"></label>
+        <label>Closure<input class="form-control" name="closure" maxlength="200" value="{{ c.closure }}"></label>
+        <label class="span-2">Complications<textarea class="form-control" name="complications" rows="2">{{ c.complications }}</textarea></label>
+        <label class="span-2">Post-operative instructions<textarea class="form-control" name="post_op_plan" rows="3" placeholder="Observations, analgesia, antibiotics, drains, diet, mobilisation, follow-up">{{ c.post_op_plan }}</textarea></label>
+        <div class="span-2"><button class="btn btn-ink"><i class="bi bi-check2"></i>{% if c.note_at %}Save changes to the note{% else %}Save operation note{% endif %}</button></div>
+      </form>
+      {% elif c.note_at %}
+      <div class="ruled small">
+        <div><div class="label-sm">Procedure performed</div><b>{{ c.procedure_performed }}</b></div>
+        {% if c.findings %}<div><div class="label-sm">Findings</div>{{ c.findings|linebreaksbr }}</div>{% endif %}
+        <div><div class="label-sm">Blood loss · wound</div>{{ c.blood_loss_ml|default_if_none:'—' }} mL · {{ c.get_wound_class_display|default:'—' }}</div>
+        {% if c.complications %}<div><div class="label-sm">Complications</div>{{ c.complications|linebreaksbr }}</div>{% endif %}
+        {% if c.post_op_plan %}<div><div class="label-sm">Post-operative instructions</div>{{ c.post_op_plan|linebreaksbr }}</div>{% endif %}
+      </div>
+      {% else %}<p class="muted small mb-0">The surgeon writes the note once the operation has started.</p>{% endif %}
+    </section>
+    <section class="panel" id="th-recovery-panel" hidden><div id="th-recovery"></div></section>
+  </div>
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Booking</h2></div>
+      <dl class="th-dl">
+        <dt>Theatre</dt><dd>{{ c.room|default:'Not scheduled' }}</dd>
+        <dt>Start</dt><dd>{% if c.scheduled_start %}{{ c.scheduled_start|date:'D j M, H:i' }} · {{ c.est_minutes }} min{% else %}—{% endif %}</dd>
+        <dt>Side / site</dt><dd>{{ c.get_side_display|default:'—' }}{% if c.site %} · {{ c.site }}{% endif %}</dd>
+        <dt>Anaesthetic</dt><dd>{{ c.get_anaesthesia_display }}{% if c.asa %} · ASA {{ c.asa }}{% endif %}</dd>
+        <dt>Surgeon</dt><dd>{% if c.surgeon %}{{ c.surgeon|display_name }}{% else %}—{% endif %}{% if c.assistant %} · assist {{ c.assistant|display_name }}{% endif %}</dd>
+        <dt>Anaesthetist</dt><dd>{% if c.anaesthetist %}{{ c.anaesthetist|display_name }}{% else %}—{% endif %}</dd>
+        <dt>Scrub nurse</dt><dd>{% if c.scrub_nurse %}{{ c.scrub_nurse|display_name }}{% else %}—{% endif %}</dd>
+        <dt>Blood</dt><dd>{% if c.blood_units %}{{ c.blood_units }} unit{{ c.blood_units|pluralize }} cross-matched{% else %}None requested{% endif %}</dd>
+        {% if c.indication %}<dt>Indication</dt><dd>{{ c.indication|linebreaksbr }}</dd>{% endif %}
+      </dl>
+    </section>
+    <section class="panel" id="th-ready"></section>
+    <section class="panel"><div class="panel-head"><h2>Timeline</h2></div><ol class="th-times" id="th-times"></ol></section>
+  </div>
+</div>
+<div id="th-toast" class="th-toast" role="status" aria-live="polite"></div>
+{{ boot|json_script:'theatre-case' }}
+{% if drflow %}<div hidden data-drflow-page data-title="{{ c.title }}" data-focus=".th-journey-panel" data-encounter="{{ e.pk }}" data-topic="{{ c.procedure }}"
+  data-greeting="I am with the team for {{ p.first_name }}'s {{ c.procedure|lower }}."
+  data-suggest='["What are the main complications after {{ c.procedure|lower|escapejs }}?","What post-operative care does {{ c.procedure|lower|escapejs }} need?","Is antibiotic prophylaxis recommended for {{ c.procedure|lower|escapejs }}?"]'></div>{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/theatre.js' %}"></script>{% if drflow %}<script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/drflow.js' %}"></script><script src="{% asset 'hospital/js/drflow-page.js' %}"></script>{% endif %}{% endblock %}

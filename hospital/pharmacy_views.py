@@ -23,18 +23,20 @@ from .models import (MED_CATEGORIES, Medication, PurchaseOrder, PurchaseOrderLin
                      StockBatch, StockCount, StockCountLine, StockLocation, StockMovement, Supplier)
 from .views import audit, authorize, finish, role_of
 
-STOCK_ROLES = {'pharmacy', 'admin'}                 # receive, issue, adjust, write off, count
+STOCK_ROLES = {'pharmacy', 'admin'}                 # standard roles with 'pharmacy_stock' (see hospital/access.py)
 REQUEST_ROLES = {'nurse', 'doctor', 'pharmacy', 'admin'}   # raise a ward requisition
 
 
 def can_stock(user):
-    return role_of(user) in STOCK_ROLES
+    """Receive, issue, adjust, write off, count and edit medicines: the 'pharmacy_stock' capability."""
+    from .access import has
+    return has(user, 'pharmacy_stock')
 
 
 def need_stock(request):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     if not can_stock(request.user):
-        raise PermissionDenied('Pharmacy staff only.')
+        raise PermissionDenied('Your access does not include changing stock. Ask your hospital administrator.')
 
 
 def nav(active):
@@ -79,7 +81,7 @@ def bars_svg(series, w=640, h=120, colour='#0F7B78'):
 
 @login_required
 def overview(request):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     today = timezone.localdate()
     rows = ph.stock_overview()
     batches = StockBatch.objects.filter(quantity__gt=0)
@@ -114,7 +116,7 @@ def overview(request):
 
 @login_required
 def stock(request):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     loc = StockLocation.objects.filter(pk=request.GET.get('location')).first()
     rows = ph.stock_overview(loc)
     q, cat, level = request.GET.get('q', '').strip().lower(), request.GET.get('cat', ''), request.GET.get('level', '')
@@ -141,7 +143,7 @@ def stock(request):
 
 @login_required
 def stock_card(request, pk):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     m = get_object_or_404(Medication, pk=pk)
     loc = StockLocation.objects.filter(pk=request.GET.get('location')).first()
     batches = m.batches.select_related('store', 'supplier').filter(Q(quantity__gt=0) | Q(movements__created_at__gte=timezone.now() - timedelta(days=30))).distinct().order_by('store__name', 'expiry')
@@ -186,7 +188,7 @@ def batch_action(request, pk, action):
 
 @login_required
 def requisitions(request):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     status = request.GET.get('status', 'open')
     qs = Requisition.objects.select_related('deliver_to', 'supply_from', 'requested_by').annotate(n=Count('lines'))
     qs = qs.filter(status__in=['submitted', 'approved', 'partial']) if status == 'open' else qs.filter(status=status) if status != 'all' else qs
@@ -214,7 +216,7 @@ def _lines_from_post(request, allow_cost=False):
 
 @login_required
 def requisition_new(request):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     if role_of(request.user) not in REQUEST_ROLES:
         raise PermissionDenied('Only clinical or pharmacy staff can raise requisitions.')
     wards = StockLocation.objects.filter(active=True).exclude(is_dispensing=True).exclude(kind__in=['store', 'quarantine'])
@@ -246,7 +248,7 @@ def requisition_new(request):
 
 @login_required
 def requisition_detail(request, pk):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     r = get_object_or_404(Requisition.objects.select_related('deliver_to', 'supply_from', 'requested_by', 'approved_by', 'issued_by'), pk=pk)
     lines = list(r.lines.select_related('medication'))
     for l in lines:
@@ -260,7 +262,7 @@ def requisition_detail(request, pk):
 @login_required
 @require_POST
 def requisition_action(request, pk, action):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     r = get_object_or_404(Requisition, pk=pk)
     mine = r.requested_by_id == request.user.pk
     try:
@@ -298,7 +300,7 @@ def requisition_action(request, pk, action):
 
 @login_required
 def orders(request):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     status = request.GET.get('status', 'open')
     qs = PurchaseOrder.objects.select_related('supplier').prefetch_related('lines')
     qs = qs.filter(status__in=['draft', 'sent', 'partial']) if status == 'open' else qs.filter(status=status) if status != 'all' else qs
@@ -342,7 +344,7 @@ def _last_cost(m):
 
 @login_required
 def order_detail(request, pk):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     po = get_object_or_404(PurchaseOrder.objects.select_related('supplier', 'deliver_to', 'created_by'), pk=pk)
     return render(request, 'hospital/pharmacy/order_detail.html', {**nav('po'), 'po': po, 'lines': po.lines.select_related('medication'),
                                                                     'receipts': StockMovement.objects.filter(reference=po.number).select_related('medication', 'batch', 'actor'),
@@ -384,7 +386,7 @@ def order_action(request, pk, action):
 
 @login_required
 def counts(request):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     if request.method == 'POST':
         need_stock(request)
         loc = get_object_or_404(StockLocation, pk=request.POST.get('location'))
@@ -400,7 +402,7 @@ def counts(request):
 
 @login_required
 def count_detail(request, pk):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     c = get_object_or_404(StockCount.objects.select_related('location'), pk=pk)
     if request.method == 'POST':
         need_stock(request)
@@ -433,7 +435,7 @@ def count_detail(request, pk):
 
 @login_required
 def expiry(request):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     today = timezone.localdate()
     if request.method == 'POST' and request.POST.get('action') == 'writeoff_all':
         need_stock(request)
@@ -470,7 +472,7 @@ def expiry(request):
 
 @login_required
 def controlled(request):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     meds = Medication.objects.filter(controlled=True).order_by('name')
     m = meds.filter(pk=request.GET.get('med')).first() or meds.first()
     loc = StockLocation.objects.filter(pk=request.GET.get('location')).first()
@@ -487,7 +489,7 @@ def controlled(request):
 
 @login_required
 def reports(request):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     days = 90 if request.GET.get('days') == '90' else 30
     use = ph.consumption(days)
     meds = {m.pk: m for m in Medication.objects.all()}
@@ -533,7 +535,7 @@ class LocationForm(forms.ModelForm):
 
 @login_required
 def suppliers(request):
-    authorize(request)
+    authorize(request, 'pharmacy_view')
     rows = Supplier.objects.annotate(n_orders=Count('orders'), n_meds=Count('medications', distinct=True)).order_by('-active', 'name')
     spend = dict(PurchaseOrderLine.objects.filter(order__status__in=['partial', 'received'], order__created_at__gte=timezone.now() - timedelta(days=365))
                  .values('order__supplier').annotate(t=Sum('unit_cost')).values_list('order__supplier', 't'))

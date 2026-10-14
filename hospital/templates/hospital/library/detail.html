@@ -1,0 +1,61 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ d.title }} · Library{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/library.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}{{ d.title }}{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'library' %}">Clinical library</a>{% if catinfo %} · <a href="{% url 'library' %}?cat={{ catinfo.key }}">{{ catinfo.label }}</a>{% endif %} · {{ d.n }} case{{ d.n|pluralize }} at this hospital</p>{% endblock %}
+{% block actions %}<button type="button" class="btn btn-primary" data-drflow-ask><i class="bi bi-robot"></i>Ask Dr. Flow about {{ d.title|lower }}</button>{% endblock %}
+{% block content %}
+<div class="grid g-main">
+  <div class="stack">
+    {% if d.notes %}
+    <section class="panel lib-notes">
+      <div class="panel-head"><h2><i class="bi bi-book"></i> About {{ d.title|lower }}</h2></div>
+      <p class="lead-sm">{{ d.notes.summary }}</p>
+      <dl><dt><i class="bi bi-search-heart"></i>Recognise</dt><dd>{{ d.notes.recognise }}</dd>
+        <dt><i class="bi bi-capsule"></i>Manage</dt><dd>{{ d.notes.manage }}</dd>
+        <dt><i class="bi bi-signpost-split"></i>Refer</dt><dd>{{ d.notes.refer }}</dd>
+        {% if d.notes.prevent and d.notes.prevent != '—' %}<dt><i class="bi bi-shield-check"></i>Prevent</dt><dd>{{ d.notes.prevent }}</dd>{% endif %}</dl>
+      <p class="small muted mb-0">Source: {{ d.source }}. A short orientation without doses: follow the national guideline and senior advice.</p>
+    </section>
+    {% else %}
+    <section class="panel"><p class="mb-0">There are no general notes for this diagnosis yet. <button type="button" class="linklike fw-semibold" data-drflow-ask>Ask Dr. Flow</button> for an explanation from trusted sources.</p></section>
+    {% endif %}
+    {% if d.enough %}
+    <section class="panel">
+      <div class="panel-head"><h2>Anonymous case log</h2><span class="hint">The latest {{ d.log|length }} cases: what was done and how it ended</span></div>
+      <div class="table-responsive"><table class="mini-table lib-log"><thead><tr><th>Month</th><th>Age</th><th>Sex</th><th>Department</th><th>Treatment</th><th>Outcome</th></tr></thead><tbody>
+      {% for c in d.log %}<tr><td>{{ c.month }}</td><td>{{ c.age }}</td><td>{{ c.sex }}</td><td>{{ c.dept|default:'—' }}{% if c.admitted %} <span class="tag">admitted</span>{% endif %}</td>
+        <td>{% for m in c.treatment %}<span class="vchip">{{ m }}</span>{% endfor %}{% for o in c.ops %}<span class="vchip op"><i class="bi bi-scissors"></i>{{ o }}</span>{% endfor %}{% if not c.treatment and not c.ops %}<span class="muted">—</span>{% endif %}</td>
+        <td><span class="tag {% if c.outcome == 'Resolved' or c.outcome == 'Improved' %}teal{% elif c.outcome == 'Worsened' %}red{% endif %}">{{ c.outcome }}</span></td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+    {% endif %}
+  </div>
+  <div class="stack">
+    {% if d.enough %}
+    <section class="panel">
+      <div class="panel-head"><h2>This hospital</h2></div>
+      <div class="lib-kpis"><div><b>{{ d.n }}</b><span>cases</span></div><div><b>{{ d.admitted }}</b><span>admitted</span></div><div><b>{{ d.stay_days|default:'—' }}</b><span>median days in hospital</span></div></div>
+      <h3 class="lib-h">Cases per month</h3>
+      <div class="lib-trend">{% for t in d.trend %}<i style="--h:{% widthratio t.n d.peak 100 %}%" title="{{ t.label }}: {{ t.n }}"><span>{{ t.n|default:'' }}</span></i>{% endfor %}</div>
+      <div class="lib-trend-l"><span>{{ d.trend.0.label }}</span><span>{{ d.trend.11.label }}</span></div>
+      {% if d.outcomes %}<h3 class="lib-h">Outcomes</h3><div class="lib-bars">{% for o in d.outcomes %}<div><span>{{ o.label }}</span><i style="--w:{{ o.pct }}%" class="o-{{ o.label|slugify }}"></i><b>{{ o.pct }}%</b></div>{% endfor %}</div>{% endif %}
+      <h3 class="lib-h">Who</h3>
+      <div class="lib-bars">{% for a in d.ages %}<div><span>{{ a.label }}</span><i style="--w:{% widthratio a.n d.n 100 %}%"></i><b>{{ a.n }}</b></div>{% endfor %}</div>
+      <p class="small muted">Women {{ d.sex.F }} · men {{ d.sex.M }}</p>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>What was used</h2></div>
+      <h3 class="lib-h">Medicines prescribed</h3><ul class="plain lib-list">{% for m in d.meds %}<li><span>{{ m.name }}</span><b>{{ m.n }}</b></li>{% empty %}<li class="muted small">None recorded.</li>{% endfor %}</ul>
+      <h3 class="lib-h">Tests ordered</h3><ul class="plain lib-list">{% for t in d.tests %}<li><span>{{ t.name }}</span><b>{{ t.n }}</b></li>{% empty %}<li class="muted small">None recorded.</li>{% endfor %}</ul>
+      {% if d.operations %}<h3 class="lib-h">Operations</h3><ul class="plain lib-list">{% for o in d.operations %}<li><span>{{ o.name }}</span><b>{{ o.n }}</b></li>{% endfor %}</ul>{% endif %}
+    </section>
+    {% else %}
+    <section class="panel"><p class="mb-0 small"><i class="bi bi-shield-lock"></i> {% if d.n %}Only {{ d.n }} case{{ d.n|pluralize }} so far.{% else %}No cases recorded here yet.{% endif %} Figures appear from {{ d.min }} cases, so that no patient can be recognised.</p></section>
+    {% endif %}
+  </div>
+</div>
+<div hidden data-drflow-page data-title="{{ d.title }}" data-greeting="Want to know more about {{ d.title|lower }}? Ask me." data-topic="{{ d.title }}"
+     data-suggest='["How is {{ d.title|lower|escapejs }} diagnosed?","What is the first-line treatment of {{ d.title|lower|escapejs }}?","When should {{ d.title|lower|escapejs }} be referred?"]'></div>
+{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/drflow.js' %}"></script><script src="{% asset 'hospital/js/drflow-page.js' %}"></script>{% endblock %}

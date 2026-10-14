@@ -60,3 +60,20 @@ class InjuryAssessment(Tracked):
 
     def __str__(self):
         return f'Injury assessment · {self.patient.mrn} · {self.created_at:%d %b %Y}'
+
+
+class SenseExam(Tracked):
+    """Eye and ear examination: acuity, pressure, lens, fundus, otoscopy and the audiogram for both sides.
+    The numbers that drive the animations (vision simulation, ear sound path, audiogram) are computed by
+    hospital/senses.py from the values entered, and recomputed on every save."""
+    encounter = models.ForeignKey(Encounter, on_delete=models.PROTECT, related_name='sense_exams')
+    patient = models.ForeignKey(Patient, on_delete=models.PROTECT, related_name='sense_exams')
+    data = models.JSONField(default=dict, help_text='Cleaned by hospital.senses.clean_exam')
+    computed = models.JSONField(default=dict, editable=False)
+    examined_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Eye & ear exam · {self.patient.mrn} · {self.created_at:%d %b %Y}'

@@ -1,0 +1,5 @@
+<div class="ac-caps">{% for section, items in sections.items %}
+  <fieldset><legend>{{ section }}</legend>
+  {% for c in items %}<label class="ac-cap" title="{{ c.help }}"><input type="checkbox" name="cap" value="{{ c.key }}" {% if chosen is None and c.key == 'all' %}checked{% elif c.key in chosen %}checked{% endif %} {% if c.key == 'all' %}disabled{% endif %}><span><b>{{ c.label }}</b><small>{{ c.help }}</small></span></label>{% endfor %}
+  </fieldset>{% endfor %}
+</div>

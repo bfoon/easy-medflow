@@ -264,6 +264,10 @@ def capture_charges(invoice):
             for ch in chunks:
                 q = sum(by_id[i].quantity for i in ch)
                 add('pharmacy', f'{med} × {q}', q, med.unit_price, 'dispense:' + ','.join(ch))
+    from .theatre import billing_lines
+    for case in enc.operations.select_related('procedure_type', 'room'):
+        for cat, desc, qty, price, source in billing_lines(case):
+            add(cat, desc, qty, price, source)
     now = timezone.now()
     for a in enc.admissions.select_related('bed'):
         t = _tariff(f'bed-{a.bed.kind}') or _tariff('bed-general')

@@ -285,7 +285,7 @@ ul.plain{list-style:none;margin:0;padding:0}
 .timeline::before{content:"";position:absolute;left:8px;top:6px;bottom:6px;width:2px;background:var(--line)}
 .tl-item{position:relative;padding:0 0 18px}
 .tl-item::before{content:"";position:absolute;left:-23px;top:5px;width:12px;height:12px;border-radius:50%;background:#fff;border:3px solid var(--k,var(--teal))}
-.tl-item.visit{--k:var(--teal)}.tl-item.rx{--k:var(--amber)}.tl-item.lab{--k:var(--indigo)}.tl-item.referral{--k:var(--plum)}.tl-item.admission{--k:var(--red)}
+.tl-item.visit{--k:var(--teal)}.tl-item.rx{--k:var(--amber)}.tl-item.lab{--k:var(--indigo)}.tl-item.referral{--k:var(--plum)}.tl-item.admission{--k:var(--red)}.tl-item.operation{--k:#B4541A}.tl-item.senses{--k:#0369A1}
 .tl-item .t{font-weight:600;color:var(--ink)}
 .tl-item .t a{color:inherit}
 .tl-item .m{font-size:.82rem;color:var(--muted)}

@@ -1,0 +1,61 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Eyes & ears · {{ p.full_name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/care.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/senses.css' %}" rel="stylesheet">{% if drflow %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endif %}{% endblock %}
+{% block heading %}Eyes &amp; ears{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }}{% if p.age is not None %} · {{ p.age }} yrs{% endif %} · visit {{ e.created_at|date:'j M Y' }}</p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="{% url 'encounter_detail' e.pk %}"><i class="bi bi-arrow-left"></i>Visit</a>
+  {% if drflow %}<button type="button" class="btn btn-ghost" data-drflow-ask><i class="bi bi-robot"></i>Ask Dr. Flow</button>{% endif %}
+  <span id="ss-dirty" class="small muted" hidden>Unsaved changes</span>
+  <button class="btn btn-primary" id="ss-save" disabled><i class="bi bi-check2"></i>Save examination</button>
+{% endblock %}
+{% block content %}{% csrf_token %}
+{% if carried %}<div class="alert-mf mb-3"><i class="bi bi-info-circle-fill"></i><div>Showing the last examination from {{ current.created_at|date:'j M Y' }}. Change what is different today and save: it is stored with this visit.</div></div>{% endif %}
+<div class="ss-modes" role="tablist" aria-label="Eyes or ears">
+  <button type="button" role="tab" data-mode="eyes"><i class="bi bi-eye"></i>Eyes</button>
+  <button type="button" role="tab" data-mode="ears"><i class="bi bi-ear"></i>Ears &amp; hearing</button>
+</div>
+<div class="inj-layout ss-layout">
+  <section class="panel ss-stage">
+    <div data-show="eyes">
+      <div class="panel-head"><h2>Both eyes</h2><span class="hint">Click an eye to look closer. The torch swings between the eyes to test the pupils.</span></div>
+      <div id="ss-eyes"></div>
+      <div class="ss-subnav">
+        <div class="seg" role="group" aria-label="Which eye"><button type="button" data-eye="right">Right eye</button><button type="button" data-eye="left">Left eye</button><button type="button" data-eye="both">Both eyes</button></div>
+        <div class="seg" role="group" aria-label="View"><button type="button" data-view="vision"><i class="bi bi-image"></i>What they see</button><button type="button" data-view="section"><i class="bi bi-droplet"></i>Pressure &amp; lens</button><button type="button" data-view="fundus"><i class="bi bi-circle-half"></i>Back of the eye</button></div>
+      </div>
+      <div id="ss-view" class="ss-view"></div>
+      <label class="ss-compare small"><input type="checkbox" id="ss-normal"> Compare with normal vision</label>
+    </div>
+    <div data-show="ears" hidden>
+      <div class="panel-head"><h2>Audiogram</h2>
+        <div class="seg ms-auto" role="group" aria-label="Enter thresholds for"><button type="button" data-entry="right.ac">Right air</button><button type="button" data-entry="right.bc">Right bone</button><button type="button" data-entry="left.ac">Left air</button><button type="button" data-entry="left.bc">Left bone</button></div>
+      </div>
+      <div id="ss-aud"></div>
+      <div class="ss-subnav">
+        <div class="seg" role="group" aria-label="Which ear"><button type="button" data-ear="right">Right ear</button><button type="button" data-ear="left">Left ear</button></div>
+        <div class="ss-hear"><span class="small muted">Hear it:</span><button type="button" class="btn btn-sm btn-ghost" data-play="normal"><i class="bi bi-volume-up"></i>Normal</button><button type="button" class="btn btn-sm btn-ghost" data-play="patient"><i class="bi bi-ear"></i>As this ear hears</button><button type="button" class="btn btn-sm btn-ghost" data-play="stop" aria-label="Stop sound"><i class="bi bi-stop-fill"></i></button></div>
+      </div>
+      <div class="ss-ear-grid"><div id="ss-ear"></div><div id="ss-oto"></div></div>
+    </div>
+  </section>
+  <div class="stack">
+    <section class="panel"><div id="ss-summary" class="ss-summary" aria-live="polite"></div></section>
+    <section class="panel"><div id="ss-inputs" class="ss-inputs"></div></section>
+    <section class="panel"><div class="panel-head"><h2>Earlier examinations</h2><span class="hint">Each save keeps a copy.</span></div>
+      <ul class="plain ruled inj-history" id="ss-history">{% for h in history %}<li><b>{{ h.created_at|date:'j M Y H:i' }}</b><span>{{ h.examined_by|display_name }}{% if h.computed.vision %} · {{ h.computed.vision.label }}{% endif %}{% if h.computed.hearing %} · {{ h.computed.hearing.label }} ({{ h.computed.hearing.better_pta }} dB){% endif %}</span></li>{% empty %}<li class="muted small">Not saved yet.</li>{% endfor %}</ul>
+    </section>
+    <p class="small muted">Vision uses the WHO categories for the better eye; hearing uses the WHO grades (average of 0.5, 1, 2 and 4 kHz in the better ear). The pictures and sounds are drawn from the values entered, for explanation and teaching; they do not replace a specialist examination.</p>
+  </div>
+</div>
+<div id="ss-toast" class="inj-toast" role="status" aria-live="polite"></div>
+{{ boot|json_script:'senses-boot' }}
+{% if drflow %}<div hidden data-drflow-page data-title="eyes and ears" data-focus=".ss-stage" data-encounter="{{ e.pk }}"
+  data-greeting="I am watching the findings for {{ p.first_name }}. I will speak up if something serious appears."
+  data-suggest='["When is cataract surgery indicated?","How often should a person with diabetes have eye screening?"]'></div>{% endif %}
+{% endblock %}
+{% block scripts %}
+<script src="{% asset 'hospital/js/senses-figure.js' %}"></script>
+<script src="{% asset 'hospital/js/senses-editor.js' %}"></script>
+{% if drflow %}<script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/drflow.js' %}"></script><script src="{% asset 'hospital/js/drflow-page.js' %}"></script>{% endif %}
+{% endblock %}

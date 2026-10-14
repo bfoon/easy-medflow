@@ -14,7 +14,8 @@ from django.views.decorators.http import require_POST
 
 from . import bedside as B
 from . import injury as I
-from .models import Admission, BedsideObservation, BedsideState, Encounter, InjuryAssessment
+from . import senses as S
+from .models import Admission, BedsideObservation, BedsideState, Encounter, InjuryAssessment, SenseExam
 from .views import ROLES, audit, authorize
 
 ROLES['bedside'] = {'nurse', 'doctor', 'admin'}
@@ -167,4 +168,74 @@ def injury_assessment(request, pk):
                  'bed_url': f'/beds/{adm.bed_id}/' if adm else None,
                  'bedside': {'devices': bedside_payload(adm)['devices']} if adm else None,
                  'bedside_url': f'/beds/admissions/{adm.pk}/bedside/' if adm else None},
+    })
+
+
+# ------------------------------------------------------------------ eyes & ears
+def sense_context(e):
+    """What the chart already knows that changes how eye and ear findings are read: age, diabetes, HbA1c, blood pressure."""
+    from .models import LabResultValue
+    p = e.patient
+    adm = e.admissions.filter(discharged_at__isnull=True).first()
+    v = latest_vitals(adm)[0] if adm else encounter_vitals(e)
+    diabetic = (p.conditions.filter(status='active', name__icontains='diabet').exists()
+                or 'diabet' in (e.diagnosis or '').lower())
+    a1c = (LabResultValue.objects.filter(order__encounter__patient=p, parameter__code='A1C', value_number__isnull=False)
+           .order_by('-created_at').values_list('value_number', flat=True).first())
+    return {'age': p.age, 'diabetic': diabetic, 'hba1c': float(a1c) if a1c is not None else None,
+            'systolic': v.get('systolic'), 'diastolic': v.get('diastolic')}
+
+
+def procedure_links(procs, encounter):
+    """Turn the procedures suggested by the findings into booking links for the theatre (when the catalogue has them)."""
+    from .models import ProcedureType
+    types = {t.code: t for t in ProcedureType.objects.filter(code__in={p['code'] for p in procs}, active=True)}
+    out = []
+    for p in procs:
+        t = types.get(p['code'])
+        if t:
+            from urllib.parse import urlencode
+            q = urlencode({'encounter': encounter.pk, 'procedure_type': t.pk, 'side': p['side'], 'indication': p['reason'],
+                           'specialty': t.specialty, 'est_minutes': t.default_minutes, 'anaesthesia': t.default_anaesthesia})
+            out.append(dict(p, name=t.name, url=f'/theatre/new/?{q}'))
+    return out
+
+
+def latest_senses(patient, encounter=None):
+    qs = SenseExam.objects.filter(patient=patient)
+    if encounter is not None:
+        qs = qs.filter(encounter=encounter)
+    return qs.first()
+
+
+@login_required
+def sense_exam(request, pk):
+    """GET: the eye & ear examination with its animations. POST (JSON): save a new version."""
+    authorize(request, 'clinical')
+    e = get_object_or_404(Encounter.objects.select_related('patient'), pk=pk)
+    p = e.patient
+    ctx = sense_context(e)
+    from .views import role_of
+    can_book = role_of(request.user) in {'doctor', 'nurse', 'admin'} and e.status == 'open'
+    if request.method == 'POST':
+        data = _json(request)
+        if data is None:
+            return _bad('The data sent was not valid JSON.')
+        clean = S.clean_exam(data.get('exam'))
+        computed = S.compute(clean, ctx)
+        x = SenseExam.objects.create(encounter=e, patient=p, data=clean, computed=computed, examined_by=request.user)
+        audit(request, 'sense_exam', f'encounter:{e.pk}', {'exam': x.pk, 'urgent': sum(1 for a in computed['alerts'] if a['level'] == 'high')})
+        return JsonResponse({'ok': True, 'id': x.pk, 'exam': clean, 'computed': computed, 'summary': S.summary(computed, clean),
+                             'procedures': procedure_links(computed['procedures'], e) if can_book else [], 'saved_at': x.created_at.isoformat()})
+    current = latest_senses(p, e) or latest_senses(p)
+    exam = current.data if current else S.clean_exam({})
+    history = SenseExam.objects.filter(patient=p).select_related('examined_by', 'encounter')[:20]
+    from .models import ProcedureType
+    return render(request, 'hospital/senses.html', {
+        'e': e, 'p': p, 'history': history, 'current': current, 'carried': bool(current and current.encounter_id != e.pk),
+        'drflow': __import__('hospital.access', fromlist=['has']).has(request.user, 'drflow'),
+        'boot': {'exam': exam, 'ctx': ctx, 'catalogue': S.catalogue(), 'save_url': request.path, 'can_book': can_book,
+                 'procedure_types': {t.code: {'id': t.pk, 'name': t.name, 'specialty': t.specialty, 'minutes': t.default_minutes, 'anaesthesia': t.default_anaesthesia}
+                                     for t in ProcedureType.objects.filter(code__in=list(S.PROCEDURES), active=True)} if can_book else {},
+                 'encounter': e.pk, 'sex': p.sex},
     })

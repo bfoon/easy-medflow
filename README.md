@@ -135,6 +135,119 @@ earliest-expiring stock first, and nothing is dispensed if any line is short.
 
 Port 8000 already in use? Start with `MEDFLOW_PORT=8080 docker compose up -d` (PowerShell: `$env:MEDFLOW_PORT=8080; docker compose up -d`).
 
+## Operating theatre
+
+**Theatre** in the menu shows the day's schedule: one lane per operating room, a red line for the current time, and bars
+that fill while an operation runs (red when it runs over). The waiting list puts emergencies first. Rooms and the
+procedure catalogue (25 common operations with usual duration, anaesthetic, side and price) are under Configuration.
+
+- **Booking** (visit page → *Operation*, chart → *Book an operation*, or the board): choose a procedure, side, urgency,
+  theatre, start time and team. Bookings that clash on room (including 15 minutes' turnover), surgeon, anaesthetist or
+  patient are refused. Without a time the case goes on the waiting list.
+- **Case page:** an animated journey (ward → pre-op → theatre → recovery → back to ward) with live timers. Each step is
+  enforced on the server: ward pre-op checks and fasting → WHO *Sign in* → *Time out* → *Sign out* (each signed with
+  name and time) → operation note (doctors only) → recovery observations → discharge from recovery.
+- **Real values:** the latest haemoglobin, potassium, platelets, INR and glucose raise warnings before theatre (e.g. a
+  spinal is unsafe with a high INR). The recovery (modified Aldrete) score works out circulation from the blood pressure
+  against the pre-operative value and oxygen from the SpO₂; leaving recovery needs 9 or more, or a written reason.
+- **Billing:** the procedure fee, anaesthetic and theatre hours are added to the visit bill once.
+
+## Eyes & ears
+
+Visit page → *Eyes & ears*. Enter vision, pressure, cup-to-disc ratio, pupils, lens, front of the eye and retina for each
+eye, and the audiogram (click the chart or type), otoscopy, tympanogram and tuning-fork tests for each ear. Every value
+redraws the animations immediately:
+
+- **Eyes:** both eyes with a swinging-torch pupil test (an afferent defect makes the pupils widen); a cross-section with
+  fluid flowing to the drain, pressure building when it is blocked and the optic cup deepening; the back of the eye
+  (diabetic and hypertensive changes, swollen disc, detachment, macular degeneration); and **what the patient sees** —
+  blur from the acuity, cataract haze, glaucoma tunnel vision, central blind spot, bleeding spots, floaters, detachment
+  curtain. Tick *Compare with normal vision* to see the difference.
+- **Ears:** the audiogram; the sound path through wax or fluid, the ear drum and bones to the cochlea, where damaged hair
+  cells grey out at the right pitch and nerve signals thin; the otoscope view; and **Hear it** — tones and speech sounds
+  played as this ear hears them.
+- **Findings:** WHO vision categories (better eye) and hearing grades (average of 0.5–4 kHz, better ear); conductive vs
+  sensorineural loss from the air–bone gap; alerts such as acute angle-closure glaucoma, sudden hearing loss and
+  asymmetric loss needing an MRI. The chart's HbA1c, diabetes and blood pressure are taken into account. Findings that
+  need an operation (cataract, trabeculectomy, pterygium, ear microsuction, grommets, tympanoplasty, mastoidectomy) get a
+  **Book** button that opens a pre-filled theatre booking.
+
+The browser and server use the same calculations (`hospital/senses.py` and `senses-figure.js`, checked against each
+other by the tests). These are teaching and documentation aids, not a replacement for specialist examination.
+
+Demo: patient **Kaddy Touray** (cataract and diabetic eye disease, booked for cataract surgery) and **Fatou Sanneh**
+(glue ear, on the waiting list for grommets); the board has a live appendicectomy and a caesarean in recovery.
+Existing databases get the theatres and catalogue on the next start; add the demo cases with
+`docker compose exec web python manage.py seed_demo_extras`.
+
+## Access & roles
+
+**Access & roles** (in the menu for hospital administrators and superusers) decides who may do what.
+
+- **Capabilities:** every part of the system is a capability that can be switched on or off: open patient records, see
+  every patient, emergency access, clinical care, bedside, beds, theatre, operation notes, laboratory, imaging, see
+  medicines and stock, dispense, **update stock**, **revise issuance**, billing, finance approvals, forms, e-sign, the
+  clinical library, Dr. Flow, and managing access.
+- **Groups:** a group is a set of capabilities. *Create the standard groups* makes Doctors, Nurses, Pharmacists, Pharmacy
+  assistants (view only), Reception, Laboratory, Radiology, Finance, Management and Hospital administrators, each
+  starting from today's access for that role; edit them, or make your own (e.g. *Theatre nurses* with operation notes).
+- **Staff:** set each person's role, whether they are active, and their groups. Someone in one or more groups gets
+  exactly those groups' capabilities; someone in no group keeps the standard access of their role, so nothing changes
+  until you start using groups. Administrators cannot remove their own access to this page, and only a superuser can
+  change a superuser.
+- **Patients in care:** without *See every patient*, records open only for patients with an open visit, a current
+  admission or an operation in progress, plus 12 hours after the visit ends to finish notes
+  (`MEDFLOW_ACCESS_GRACE_HOURS`). Patient lists and search show only those patients. Doctors and nurses work this way by
+  default; reception, laboratory, radiology, finance and management see every patient.
+- **Emergency access:** for a patient outside their care, a doctor or nurse can write a reason and open the record for 4
+  hours. It is logged, shown on the *Emergency access & changes* tab, and the administrators are notified.
+- **Pharmacy:** pharmacists dispense, update stock and revise issuance, but do not open patient charts. A *view only*
+  group sees which medicines are available and nothing else; changing stock, receiving deliveries, stock takes,
+  requisitions and editing medicines need *Update stock*.
+
+## Clinical library
+
+**Clinical library** in the menu: short notes on 22 common diseases (recognise, manage, refer, prevent; no doses, with
+the source named), joined with what this hospital has seen and done — cases per month, outcomes, ages, medicines
+prescribed, tests ordered, operations, median stay and an anonymous case log. No names, patient numbers or birth
+dates are shown; ages are in bands and dates are months, and no figures appear for diagnoses with fewer than 3 cases.
+Diagnoses without notes are listed from the hospital's own records. Dr. Flow answers questions on every page.
+
+## Dr. Flow everywhere
+
+Dr. Flow is on the patient chart, Lab insights, the eyes & ears examination (he follows the findings as they are
+entered and speaks up about serious ones), the operation page (pre-op warnings, allergies, the next WHO checklist step,
+recovery alerts), the pharmacy (stock problems and prescriptions waiting) and the library. Pharmacists can ask him about
+medicines. His answers only take a patient into account when the person asking may see that patient.
+
+## Anatomy: peel the body layer by layer
+
+**Lab insights → Anatomy** (next to *Body map* and *Charts & lists*; each clinician's choice is remembered) shows a lit,
+realistic human figure in five layers — **skin → muscles → blood vessels → organs → skeleton** — drawn from the
+patient's own results, vital signs, diagnoses and imaging.
+
+- **Peel:** click the body and the outer layer peels away from that spot. **Window:** cut a small window through one
+  layer (click again in the same place to go deeper). **X-ray lens:** move over the body to see through to the depth you
+  choose. **Depth** slider and **Dissect** take the layers off one by one; the eye button hides a single layer.
+- **Callouts** point from each finding to the right place; clicking one dissects down to it, zooms in and opens the
+  related results with their trends. **Ask Dr. Flow** sends the structure and its findings to the page's Dr. Flow panel.
+  Hovering names what is under the pointer.
+- **Alive:** the heart beats at the recorded heart rate and the lungs breathe at the recorded breathing rate; a pulse
+  wave runs along the arteries and blood cells flow through the vessels.
+- **Drawn from the values:** pale skin (haemoglobin), yellow skin and eyes (bilirubin), blue lips and nails (oxygen),
+  a fever glow, swollen ankles (albumin or BNP), bleeding spots (platelets or INR); twitching or wasted muscles
+  (potassium, calcium, albumin); tense or thin arteries (blood pressure), cholesterol plaques (LDL, total cholesterol),
+  malaria parasites, white cells, sickled cells and sugar in the blood, leg clots; a damaged heart wall (troponin), an
+  enlarged heart (BNP or imaging), pneumonia and fluid in the lungs, an inflamed or yellow liver, failing kidneys, an
+  inflamed pancreas, an enlarged spleen with malaria, thyroid and brain changes; fractures on the correct side from
+  imaging, porous bones, gout crystals, inflamed joints and a stressed bone marrow.
+- Acute problems (pneumonia, infections, fractures, clots) only use the last 90 days of diagnoses and 6 months of
+  imaging, so an old illness is not drawn as if it were happening now. Long-term conditions use the whole record.
+
+The rules are in `static/hospital/js/anatomy-real.js` (`MFAnatomy.findings`, tested in `test_anatomy.py`). Each layer's
+lit drawing is painted once into a picture so peeling and the animations stay smooth. An explanation aid: it does not
+replace the results, the images or examining the patient.
+
 ## Laboratory management
 
 The **Laboratory** pages share a bar: Work board, **Command centre**, **Specimens**, **Quality control**,

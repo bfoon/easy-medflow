@@ -33,17 +33,19 @@
       {% else %}
       <div class="nav-group">
         <a class="nav-link {% nav_active '/' %}" href="{% url 'dashboard' %}"><i class="bi bi-activity"></i>Overview</a>
-        <a class="nav-link {% nav_active '/search/' %}" href="{% url 'search' %}"><i class="bi bi-search"></i>Find patients</a>
+        {% if 'patient_records' in caps %}<a class="nav-link {% nav_active '/search/' %}" href="{% url 'search' %}"><i class="bi bi-search"></i>Find patients</a>{% endif %}
         <a class="nav-link {% nav_active '/health/' %}" href="{% url 'health' %}"><i class="bi bi-graph-up-arrow"></i>Health intelligence</a>
-        <a class="nav-link {% nav_active '/checkin/' %}" href="{% url 'checkin' %}"><i class="bi bi-upc-scan"></i>Check in</a>
-        <a class="nav-link {% nav_active '/patients/' '/encounters/' %}" href="{% url 'patients' %}"><i class="bi bi-person-vcard"></i>Patients</a>
+        {% if 'reception' in caps %}<a class="nav-link {% nav_active '/checkin/' %}" href="{% url 'checkin' %}"><i class="bi bi-upc-scan"></i>Check in</a>{% endif %}
+        {% if 'patient_records' in caps %}<a class="nav-link {% nav_active '/patients/' '/encounters/' %}" href="{% url 'patients' %}"><i class="bi bi-person-vcard"></i>Patients</a>{% endif %}
         <a class="nav-link {% nav_active '/queue/' %}" href="{% url 'queue' %}"><i class="bi bi-people"></i>Queue{% if nav_counts.queue %}<span class="badge-count">{{ nav_counts.queue }}</span>{% endif %}</a>
       </div>
       <div class="nav-group"><span>Clinical services</span>
         <a class="nav-link {% nav_active '/labs/' %}" href="{% url 'labs' %}"><i class="bi bi-droplet-half"></i>Laboratory{% if nav_counts.labs %}<span class="badge-count">{{ nav_counts.labs }}</span>{% endif %}</a>
         <a class="nav-link {% nav_active '/pharmacy/' '/prescriptions/' %}" href="{% url 'pharmacy' %}"><i class="bi bi-capsule"></i>Pharmacy{% if nav_counts.pharmacy %}<span class="badge-count">{{ nav_counts.pharmacy }}</span>{% endif %}</a>
         <a class="nav-link {% nav_active '/beds/' '/admissions/' %}" href="{% url 'beds' %}"><i class="bi bi-hospital"></i>Beds &amp; wards</a>
+        {% if 'theatre_view' in caps %}<a class="nav-link {% nav_active '/theatre/' %}" href="{% url 'theatre' %}"><i class="bi bi-scissors"></i>Theatre{% if nav_counts.theatre %}<span class="badge-count">{{ nav_counts.theatre }}</span>{% endif %}</a>{% endif %}
         <a class="nav-link {% nav_active '/imaging/' %}" href="{% url 'imaging' %}"><i class="bi bi-radioactive"></i>Imaging{% if nav_counts.imaging %}<span class="badge-count">{{ nav_counts.imaging }}</span>{% endif %}</a>
+        {% if 'library' in caps %}<a class="nav-link {% nav_active '/library/' %}" href="{% url 'library' %}"><i class="bi bi-book"></i>Clinical library</a>{% endif %}
         <a class="nav-link {% nav_active '/network/' %}" href="{% url 'network_specialists' %}"><i class="bi bi-person-badge"></i>Specialist network</a>
         <a class="nav-link {% nav_active '/referrals/' %}" href="{% url 'referrals' %}"><i class="bi bi-signpost-split"></i>Referrals{% if nav_counts.referrals %}<span class="badge-count">{{ nav_counts.referrals }}</span>{% endif %}</a>
       </div>
@@ -52,6 +54,7 @@
         <a class="nav-link {% nav_active '/esign/' %}" href="{% url 'esign' %}"><i class="bi bi-pen"></i>E-sign{% if nav_counts.esign %}<span class="badge-count">{{ nav_counts.esign }}</span>{% endif %}</a>
         <a class="nav-link {% nav_active '/finance/' %}" href="{% url 'finance' %}"><i class="bi bi-cash-stack"></i>Finance{% if nav_counts.bills %}<span class="badge-count">{{ nav_counts.bills }}</span>{% endif %}</a>
         <a class="nav-link {% nav_active '/attendance/' %}" href="{% url 'attendance' %}"><i class="bi bi-clock-history"></i>Attendance</a>
+        {% if 'access_admin' in caps %}<a class="nav-link {% nav_active '/access/' %}" href="{% url 'access' %}"><i class="bi bi-shield-lock"></i>Access &amp; roles</a>{% endif %}
         {% if request.user.is_staff %}<a class="nav-link" href="{% url 'admin:index' %}"><i class="bi bi-sliders"></i>Configuration</a>{% endif %}
       </div>
       {% endif %}

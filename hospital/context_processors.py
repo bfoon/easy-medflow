@@ -13,6 +13,7 @@ def medflow(request):
     return {
         'embed': embed,
         'nav_role': role_of(request.user) or 'unassigned',
+        'caps': __import__('hospital.access', fromlist=['caps']).caps(request.user),
         'nav_counts': {
             'queue': QueueTicket.objects.filter(status='waiting').count(),
             'labs': LabRequest.objects.filter(orders__status__in=['ordered', 'collected', 'processing', 'resulted']).distinct().count(),
@@ -22,5 +23,6 @@ def medflow(request):
             'esign': Envelope.objects.filter(status='sent', recipients__user=request.user, recipients__status__in=['sent', 'viewed']).distinct().count(),
             'imaging': ImagingOrder.objects.filter(status__in=['requested', 'acquired']).count(),
             'bills': Invoice.objects.filter(status='draft').count(),
+            'theatre': __import__('hospital.theatre', fromlist=['active_count']).active_count(),
         },
     }

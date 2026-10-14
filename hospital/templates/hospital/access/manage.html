@@ -1,0 +1,74 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Access & roles{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/access.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}Access &amp; roles{% endblock %}
+{% block subheading %}<p class="sub">Decide what each group of staff may do, and who is in each group. Staff in no group keep the standard access of their role.</p>{% endblock %}
+{% block content %}
+<div class="tabs ac-tabs" role="tablist">
+  <a role="tab" href="?tab=groups" class="{% if tab == 'groups' %}on{% endif %}"><i class="bi bi-people"></i>Groups<span class="n">{{ groups|length }}</span></a>
+  <a role="tab" href="?tab=staff" class="{% if tab == 'staff' %}on{% endif %}"><i class="bi bi-person-badge"></i>Staff<span class="n">{{ rows|length }}</span></a>
+  <a role="tab" href="?tab=log" class="{% if tab == 'log' %}on{% endif %}"><i class="bi bi-journal-text"></i>Emergency access &amp; changes</a>
+</div>
+
+{% if tab == 'groups' %}
+<div class="ac-intro">
+  {% if missing_standard %}<form method="post" action="{% url 'access_standard' %}">{% csrf_token %}<button class="btn btn-primary"><i class="bi bi-magic"></i>Create the standard groups ({{ missing_standard|length }})</button></form>
+  <span class="small muted">Doctors, Nurses, Pharmacists, Pharmacy assistants (view only), Reception… each starting from today's standard access. Edit them after.</span>{% endif %}
+</div>
+<div class="ac-groups">
+  {% for g in groups %}
+  <form class="panel ac-group" id="g{{ g.pk }}" method="post" action="{% url 'access_group' g.pk %}">{% csrf_token %}
+    <div class="ac-ghead"><input class="form-control ac-name" name="name" value="{{ g.name }}" maxlength="80" aria-label="Group name"><span class="tag">{{ g.n }} member{{ g.n|pluralize }}</span></div>
+    <input class="form-control form-control-sm mb-2" name="description" value="{{ g.description }}" maxlength="240" placeholder="What is this group for?">
+    <div class="ac-sum">{% for c in g.capabilities %}{% if c != 'all' %}<span>{{ labels|get_item:c|default:c }}</span>{% endif %}{% empty %}<em class="muted small">Only sign-in.</em>{% endfor %}</div>
+    <details class="ac-edit"><summary><i class="bi bi-sliders"></i>Change what this group can do</summary>{% include 'hospital/access/_caps.html' with chosen=g.capabilities %}</details>
+    {% if g.members.all %}<p class="small muted mb-2">Members: {% for m in g.members.all %}{{ m|display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+    <div class="d-flex gap-2"><button class="btn btn-ink btn-sm"><i class="bi bi-check2"></i>Save group</button>
+      <button class="btn btn-ghost btn-sm text-danger ms-auto" formaction="{% url 'access_group_delete' g.pk %}" data-confirm="Delete the group “{{ g.name }}”? Its members fall back to their other groups or their role."><i class="bi bi-trash"></i>Delete</button></div>
+  </form>
+  {% endfor %}
+  <form class="panel ac-group ac-new" method="post" action="{% url 'access_group_new' %}">{% csrf_token %}
+    <div class="ac-ghead"><input class="form-control ac-name" name="name" maxlength="80" placeholder="New group, e.g. Theatre nurses" required></div>
+    <input class="form-control form-control-sm mb-2" name="description" maxlength="240" placeholder="What is this group for?">
+    {% include 'hospital/access/_caps.html' with chosen=None %}
+    <button class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i>Create group</button>
+  </form>
+</div>
+
+{% elif tab == 'staff' %}
+<section class="panel flush">
+  <table class="mini-table ac-staff">
+    <thead><tr><th colspan="5" class="p-0"><div class="ac-row ac-head"><span>Staff member</span><span>Role</span><span>Groups</span><span>Access now</span><span></span></div></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr id="u{{ r.u.pk }}"><td colspan="5" class="p-0">
+      <form method="post" action="{% url 'access_member' r.u.pk %}" class="ac-row">{% csrf_token %}
+        <div class="ac-who"><span class="avatar">{{ r.u|display_name|slice:':1' }}</span><div><b>{{ r.u|display_name }}</b><small>{{ r.u.username }}{% if r.super %} · superuser{% endif %}</small></div></div>
+        <div>{% if r.super %}<span class="tag ink">Superuser</span>{% else %}<select name="role" class="form-select form-select-sm">{% for k, l in roles %}<option value="{{ k }}" {% if k == r.role %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+          <label class="small d-flex gap-1 align-items-center mt-1"><input type="checkbox" name="active" {% if r.active %}checked{% endif %} {% if r.u == request.user %}disabled{% endif %}> Active</label>{% endif %}</div>
+        <div class="ac-chips">{% for g in groups %}<label class="ac-chip {% if g.pk in r.group_ids %}on{% endif %}"><input type="checkbox" name="groups" value="{{ g.pk }}" {% if g.pk in r.group_ids %}checked{% endif %} {% if r.super %}disabled{% endif %}>{{ g.name }}</label>{% empty %}<span class="small muted">No groups yet.</span>{% endfor %}</div>
+        <div class="small"><b>{{ r.summary }}</b><div class="muted">{{ r.scope }}</div></div>
+        <div>{% if not r.super or request.user.is_superuser %}<button class="btn btn-sm btn-ghost"><i class="bi bi-check2"></i>Save</button>{% endif %}</div>
+      </form>
+    </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+<p class="small muted mt-2">Create staff accounts under Configuration → Users, then give them a role and groups here.</p>
+
+{% else %}
+<section class="panel">
+  <div class="panel-head"><h2>Emergency access and access changes</h2><span class="hint">Newest first</span></div>
+  <ul class="plain ruled ac-log">
+  {% for ev in log %}
+    <li class="{% if ev.action == 'break_glass' %}glass{% endif %}"><b>{{ ev.occurred_at|date:'j M H:i' }}</b>
+      <span>{% if ev.action == 'break_glass' %}<i class="bi bi-unlock-fill"></i> <b>{{ ev.actor|display_name }}</b> opened {% if ev.patient %}<a href="{% url 'patient_chart' ev.patient.pk %}">{{ ev.patient.full_name }}</a> ({{ ev.patient.mrn }}){% else %}a record{% endif %} in an emergency: “{{ ev.details.reason }}”
+      {% elif ev.action == 'access_group' %}<i class="bi bi-people"></i> {{ ev.actor|display_name }} changed group {{ ev.details.name|default:ev.details.deleted|default:'' }}{% if ev.details.added %} · added {% for c in ev.details.added %}{{ labels|get_item:c|default:c }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}{% if ev.details.removed %} · removed {% for c in ev.details.removed %}{{ labels|get_item:c|default:c }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}{% if ev.details.deleted %} · deleted{% endif %}{% if ev.details.created %} · created {{ ev.details.created }} standard groups{% endif %}
+      {% else %}<i class="bi bi-person-gear"></i> {{ ev.actor|display_name }} changed {{ ev.target }}: role {{ ev.details.before.role }} → {{ ev.details.after.role }}, groups {{ ev.details.after.groups|join:', '|default:'none' }}{% endif %}</span></li>
+  {% empty %}<li class="muted small">Nothing yet.</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script>document.addEventListener('change',e=>{const c=e.target.closest('.ac-chip input');if(c)c.parentNode.classList.toggle('on',c.checked)})</script>{% endblock %}

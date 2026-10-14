@@ -65,9 +65,10 @@ def _token_matches(tok):
     return hits
 
 
-def search_patients(user, q='', cats=(), dept='', status=(), age='', sex='', town='', days='', sort='relevance', limit=60):
+def search_patients(user, q='', cats=(), dept='', status=(), age='', sex='', town='', days='', sort='relevance', limit=60, only=None):
+    """only: the patient ids this user may see (None = everyone); see hospital/access.py."""
     from .models import Admission, Department, Encounter, LabResultValue, Patient, QueueTicket
-    qs = Patient.objects.all()
+    qs = Patient.objects.all() if only is None else Patient.objects.filter(pk__in=only)
     reasons = {}
     # a phone number typed with spaces ("+220 341 5919") is one thing to look for, not three words
     tokens = [q.strip()] if is_phone_query(q) else [t for t in re.split(r'\s+', (q or '').strip()) if t][:6]

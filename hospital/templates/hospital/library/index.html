@@ -1,0 +1,20 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Clinical library{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/library.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}Clinical library{% endblock %}
+{% block subheading %}<p class="sub">General notes on common diseases, and what this hospital has seen and done — anonymous, no names or patient numbers.</p>{% endblock %}
+{% block actions %}<button type="button" class="btn btn-ghost" data-drflow-ask><i class="bi bi-robot"></i>Ask Dr. Flow</button>{% endblock %}
+{% block content %}
+<form class="lib-search" method="get"><i class="bi bi-search"></i><input class="form-control" name="q" value="{{ q }}" placeholder="Search a disease, e.g. malaria, cataract, hypertension" autofocus>{% if cat %}<input type="hidden" name="cat" value="{{ cat }}">{% endif %}</form>
+<div class="lib-cats"><a href="?q={{ q|urlencode }}" class="{% if not cat %}on{% endif %}">All</a>{% for c in cats %}<a href="?cat={{ c.key }}&q={{ q|urlencode }}" class="{% if cat == c.key %}on{% endif %}" style="--c:{{ c.color }}"><i class="bi {{ c.icon }}"></i>{{ c.label }}<span>{{ c.n }}</span></a>{% endfor %}</div>
+<div class="lib-grid">
+  {% for r in rows %}
+  <a class="lib-card" href="{% url 'library_detail' r.slug %}">
+    <div><b>{{ r.title }}</b>{% if r.curated %}<span class="tag teal">Notes</span>{% endif %}</div>
+    <div class="lib-n"><b>{{ r.n }}</b> case{{ r.n|pluralize }} here{% if r.recent %} · <em>{{ r.recent }} in the last 90 days</em>{% endif %}</div>
+  </a>
+  {% empty %}<div class="empty"><i class="bi bi-journal-x"></i>Nothing found. Ask Dr. Flow instead.</div>{% endfor %}
+</div>
+<div hidden data-drflow-page data-title="Clinical library" data-greeting="Ask me about any disease: how to recognise it, treat it, or when to refer." data-suggest='["First-line treatment of uncomplicated malaria in pregnancy?","How do I recognise severe pneumonia in a child?","When should hypertension be treated as an emergency?"]'></div>
+{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/drflow.js' %}"></script><script src="{% asset 'hospital/js/drflow-page.js' %}"></script>{% endblock %}

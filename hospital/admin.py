@@ -203,3 +203,34 @@ class DoctorReportAdmin(admin.ModelAdmin):
     readonly_fields = [f.name for f in models.DoctorReport._meta.fields if f.name != 'id']
     has_add_permission = lambda self, request: False
     has_change_permission = lambda self, request, obj=None: False
+
+
+@admin.register(models.OperatingRoom)
+class OperatingRoomAdmin(admin.ModelAdmin):
+    list_display = ('name', 'kind', 'session_start', 'session_end', 'active', 'sort_order')
+    list_editable = ('active', 'sort_order')
+
+
+@admin.register(models.ProcedureType)
+class ProcedureTypeAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'specialty', 'default_minutes', 'default_anaesthesia', 'needs_side', 'price', 'active')
+    list_filter = ('specialty', 'minor', 'active')
+    search_fields = ('name', 'code')
+    list_editable = ('price', 'active')
+
+
+@admin.register(models.SurgicalCase)
+class SurgicalCaseAdmin(admin.ModelAdmin):
+    list_display = ('__str__', 'status', 'urgency', 'room', 'scheduled_start', 'surgeon')
+    list_filter = ('status', 'urgency', 'room', 'specialty')
+    search_fields = ('procedure', 'patient__first_name', 'patient__last_name', 'patient__mrn')
+    raw_id_fields = ('encounter',)
+    readonly_fields = ('checklist', 'preop', 'recovery')
+
+
+@admin.register(models.SenseExam)
+class SenseExamAdmin(admin.ModelAdmin):
+    list_display = ('__str__', 'examined_by', 'created_at')
+    search_fields = ('patient__first_name', 'patient__last_name', 'patient__mrn')
+    raw_id_fields = ('encounter', 'patient')
+    readonly_fields = ('data', 'computed')

@@ -68,8 +68,10 @@ def api_lab(request):
 @login_required
 @require_POST
 def ask(request):
-    """Ask about a test, a medicine or anything. Returns the hospital's facts now; the AI answer and pictures follow."""
-    authorize(request, 'clinical')
+    """Ask about a test, a medicine or anything. Returns the hospital's facts now; the AI answer and pictures follow.
+    Open to everyone with the Dr. Flow right (doctors, nurses and pharmacists by default); an answer only considers a
+    patient the asker is allowed to see."""
+    authorize(request, 'drflow')
     from .evidence_views import _dispatch
     from .tasks import drflow_ask_task
     kind = request.POST.get('kind', 'free')
@@ -83,6 +85,9 @@ def ask(request):
     if kind == 'free' and len(question) < 3:
         return JsonResponse({'error': 'Type a question first.'}, status=400)
     e = _encounter(request)
+    from .access import can_see
+    if e and not can_see(request, e.patient_id):
+        e = None
     personal = e if e and request.POST.get('personal', '1') == '1' else None
     f = drflow_ask.facts(kind, obj, e)
     key = '' if personal else drflow_ask.cache_key(kind, tid, name, question if kind != 'free' else question)
@@ -102,8 +107,12 @@ def ask(request):
 
 @login_required
 def ask_status(request, pk):
-    authorize(request, 'clinical')
+    authorize(request, 'drflow')
     a = get_object_or_404(DrFlowAsk, pk=pk)
+    if a.requested_by_id != request.user.pk and a.encounter_id:
+        from .access import can_see
+        if not can_see(request, a.encounter.patient_id):
+            raise Http404
     from .templatetags.evidence_tags import simple_md
     running = a.busy
     return JsonResponse({'id': a.pk, 'status': 'running' if running else ('done' if a.status == 'done' else 'failed'),

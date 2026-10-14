@@ -206,6 +206,8 @@ def run_all():
     res['patients placed on map'] = link_patient_locations()
     from .demo_care import run as care_demo
     res['bedside, injury and form demos'] = care_demo(doctor, nurse)
+    from .demo_theatre import run as theatre_demo
+    res['theatre and eye & ear demos'] = theatre_demo(doctor, nurse)
     return res
 
 

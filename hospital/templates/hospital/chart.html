@@ -1,7 +1,7 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}{{ p.full_name }}{% endblock %}
 {% block topbar %}{% endblock %}
-{% block head %}{% if nav_role == 'doctor' or nav_role == 'nurse' or nav_role == 'admin' %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endif %}{% endblock %}
+{% block head %}{% if 'drflow' in caps %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endif %}{% endblock %}
 {% block content %}
 {% with active_allergies=allergies %}
 <section class="wristband {% if p.medical_alerts or allergies %}alerting{% endif %}">
@@ -26,8 +26,10 @@
     {% else %}
       <button class="btn btn-primary" data-drawer="{% url 'encounter_new' %}?patient={{ p.pk }}" data-title="Start encounter"><i class="bi bi-clipboard2-plus"></i>Start encounter</button>
     {% endif %}
-    {% if nav_role == 'doctor' or nav_role == 'nurse' or nav_role == 'admin' %}<button type="button" class="btn btn-ghost" data-drflow-ask title="Ask Dr. Flow about a medicine, a test or this patient"><i class="bi bi-robot"></i>Ask Dr. Flow</button>{% endif %}
+    {% if 'drflow' in caps %}<button type="button" class="btn btn-ghost" data-drflow-ask title="Ask Dr. Flow about a medicine, a test or this patient"><i class="bi bi-robot"></i>Ask Dr. Flow</button>{% endif %}
     <a class="btn btn-ghost" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-activity"></i>Lab insights</a>
+    {% if senses_url %}<a class="btn btn-ghost" href="{{ senses_url }}"><i class="bi bi-eye"></i>Eyes &amp; ears</a>{% endif %}
+    {% if operations %}{% with n=operations|length %}{% if n == 1 %}<a class="btn btn-ghost" href="{% url 'theatre_case' operations.0.pk %}"><i class="bi bi-scissors"></i>Operation</a>{% else %}<a class="btn btn-ghost" href="#operations" onclick="document.querySelector('[data-tab=operations]').click()"><i class="bi bi-scissors"></i>Operations <span class="n">{{ n }}</span></a>{% endif %}{% endwith %}{% endif %}
     <a class="btn btn-ghost" href="{% url 'patient_story' p.pk %}"><i class="bi bi-play-circle"></i>Play history</a>
     <div class="dropdown">
       <button class="btn btn-ghost" aria-expanded="false" aria-label="More actions" onclick="this.nextElementSibling.classList.toggle('show')"><i class="bi bi-three-dots"></i></button>
@@ -41,6 +43,8 @@
         <li><button class="dropdown-item" data-drawer="{% url 'referral_new' %}?encounter={{ open_encounter.pk }}" data-title="Referral">Refer</button></li>
         <li><button class="dropdown-item" data-drawer="{% url 'admission_new' %}?encounter={{ open_encounter.pk }}" data-title="Admit patient">Admit</button></li>
         <li><a class="dropdown-item" href="{% url 'injury_assessment' open_encounter.pk %}">Injuries &amp; burns</a></li>
+        <li><a class="dropdown-item" href="{% url 'sense_exam' open_encounter.pk %}">Eyes &amp; ears</a></li>
+        <li><button class="dropdown-item" data-drawer="{% url 'theatre_new' %}?encounter={{ open_encounter.pk }}" data-title="Book an operation">Book an operation</button></li>
         {% endif %}
       </ul>
     </div>
@@ -64,12 +68,13 @@
       <button data-tab="meds" role="tab">Prescriptions<span class="n">{{ prescriptions|length }}</span></button>
       <button data-tab="labs" role="tab">Lab requests<span class="n">{{ lab_reqs|length }}</span></button>
       <button data-tab="imaging" role="tab">Imaging<span class="n">{{ imaging|length }}</span></button>
+      <button data-tab="operations" role="tab">Operations<span class="n">{{ operations|length }}</span></button>
       <button data-tab="care" role="tab">Referrals &amp; stays</button>
       <button data-tab="forms" role="tab">Forms<span class="n">{{ submissions|length }}</span></button>
     </div>
 
     <div class="tab-pane" data-pane="timeline">
-      <div class="tl-legend"><span style="--k:#0E7490">Imaging</span><span style="--k:var(--teal)">Visit</span><span style="--k:var(--amber)">Prescription</span><span style="--k:var(--indigo)">Lab</span><span style="--k:var(--plum)">Referral</span><span style="--k:var(--red)">Admission</span></div>
+      <div class="tl-legend"><span style="--k:#0E7490">Imaging</span><span style="--k:var(--teal)">Visit</span><span style="--k:var(--amber)">Prescription</span><span style="--k:var(--indigo)">Lab</span><span style="--k:var(--plum)">Referral</span><span style="--k:var(--red)">Admission</span><span style="--k:#B4541A">Operation</span><span style="--k:#0369A1">Eyes &amp; ears</span></div>
       {% if timeline %}
       <ul class="timeline scroll-y">
         {% for t in timeline %}
@@ -119,6 +124,13 @@
       </div>
     </div>
 
+    <div class="tab-pane" data-pane="operations">
+      {% if open_encounter %}<button class="btn btn-sm btn-ghost mb-2" data-drawer="{% url 'theatre_new' %}?encounter={{ open_encounter.pk }}" data-title="Book an operation"><i class="bi bi-scissors"></i>Book an operation or procedure</button>{% endif %}
+      <ul class="plain ruled">{% for o in operations %}<li class="d-flex gap-2 align-items-center flex-wrap"><a href="{% url 'theatre_case' o.pk %}"><b>{{ o.number }}</b> · {{ o.title }}</a>
+        <span class="small muted">{% if o.scheduled_start %}{{ o.scheduled_start|date:'j M Y, H:i' }}{% if o.room %} · {{ o.room }}{% endif %}{% else %}waiting list{% endif %}</span>
+        <span class="tag {% if o.status == 'completed' %}teal{% elif o.status == 'cancelled' %}red{% elif o.status == 'operating' or o.status == 'in_theatre' %}amber{% else %}indigo{% endif %} ms-auto">{{ o.get_status_display }}</span></li>
+      {% empty %}<li class="empty">No operations or procedures.</li>{% endfor %}</ul>
+    </div>
     <div class="tab-pane" data-pane="care">
       <h3 class="h6 mb-2">Referrals</h3>
       <ul class="plain ruled mb-4">
@@ -195,5 +207,5 @@
 <template id="qr-tpl"><div class="qr-card print-area"><div class="wrist"><div>{% patient_qr p 5 %}</div><div class="text-start"><b class="display" style="font-size:1.3rem">{{ p.full_name }}</b><div>{{ p.mrn }}</div><div class="small">{{ p.get_sex_display }} · born {{ p.dob|date:'j M Y' }}{% if p.blood_group %} · {{ p.blood_group }}{% endif %}</div>{% if allergies %}<div class="small text-danger fw-bold mt-1">ALLERGIES: {% for a in allergies %}{% if a.status == 'active' %}{{ a.substance }} {% endif %}{% endfor %}</div>{% endif %}</div></div>
   <p class="small muted mt-2 mb-2">Scanning opens this record after staff sign-in. It contains only a link, no medical details.</p><button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i>Print wristband / card</button></div></template>
 {% endblock %}
-{% block scripts %}{% if nav_role == 'doctor' or nav_role == 'nurse' or nav_role == 'admin' %}<div hidden data-drflow-chart data-brief="{% url 'drflow_brief' p.pk %}" data-encounter="{{ open_encounter.pk|default:'' }}"></div>
+{% block scripts %}{% if 'drflow' in caps %}<div hidden data-drflow-chart data-brief="{% url 'drflow_brief' p.pk %}" data-encounter="{{ open_encounter.pk|default:'' }}"></div>
 <script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/drflow.js' %}"></script>{% endif %}<script>document.addEventListener('click',e=>{if(!e.target.closest('.dropdown'))document.querySelectorAll('.dropdown-menu.show').forEach(m=>m.classList.remove('show'))})</script>{% endblock %}

@@ -1,0 +1,18 @@
+{% extends 'hospital/form.html' %}{% load medflow %}
+{% block head %}<link href="{% asset 'hospital/css/theatre.css' %}" rel="stylesheet">{% endblock %}
+{% block scripts %}
+<script>
+/* Fill in the usual duration, anaesthetic and specialty from the catalogue, and ask for the side when needed. */
+(() => {
+  const pt = document.getElementById('id_procedure_type'); if (!pt) return;
+  const info = JSON.parse(pt.dataset.procedures || '{}');
+  const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+  pt.addEventListener('change', () => {
+    const d = info[pt.value]; if (!d) return;
+    set('id_est_minutes', d.minutes); set('id_anaesthesia', d.anaesthesia); set('id_specialty', d.specialty);
+    const side = document.getElementById('id_side'); if (side) side.required = !!d.side;
+    if (d.side && side && !side.value) side.focus();
+  });
+})();
+</script>
+{% endblock %}

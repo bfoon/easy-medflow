@@ -1,0 +1,28 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Theatre{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/theatre.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}Operating theatre{% endblock %}
+{% block subheading %}<p class="sub">Operations and procedures for {{ day|date:'l j F Y' }} · the board refreshes every 30 seconds</p>{% endblock %}
+{% block actions %}
+  <form class="th-day" method="get"><a class="btn btn-ghost" href="?date={{ prev|date:'Y-m-d' }}" aria-label="Previous day"><i class="bi bi-chevron-left"></i></a>
+    <input type="date" name="date" value="{{ boot.date }}" class="form-control" onchange="this.form.submit()" aria-label="Day">
+    <a class="btn btn-ghost" href="?date={{ next|date:'Y-m-d' }}" aria-label="Next day"><i class="bi bi-chevron-right"></i></a>
+    <a class="btn btn-ghost" href="{% url 'theatre' %}">Today</a></form>
+  {% if can_book %}<button class="btn btn-primary" data-drawer="{% url 'theatre_new' %}" data-title="Book an operation"><i class="bi bi-calendar-plus"></i>Book operation</button>{% endif %}
+{% endblock %}
+{% block content %}
+<div class="th-kpis" id="th-kpis"></div>
+<div class="grid th-grid">
+  <section class="panel flush">
+    <div class="panel-head"><h2>Theatre schedule</h2><span class="hint">Bars fill as the operation runs; red when it runs over.</span></div>
+    <div id="th-gantt" class="th-gantt"></div>
+    <div class="th-legend">{% for k, l in legend %}<span class="st-{{ k }}"><i></i>{{ l }}</span>{% endfor %}</div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>Waiting list</h2><span class="hint">Emergencies first</span></div>
+    <ul class="plain th-wait" id="th-wait"></ul>
+  </section>
+</div>
+{{ boot|json_script:'theatre-board' }}
+{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/theatre.js' %}"></script>{% endblock %}

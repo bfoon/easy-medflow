@@ -11,6 +11,9 @@ from . import imaging_ai_views as iav
 from . import drflow_views as dfv
 from . import bed_summary_views as bsv
 from . import lab_insights_views as liv
+from . import theatre_views as tv
+from . import access_views as av
+from . import library_views as libv
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -89,6 +92,26 @@ urlpatterns = [
     path('beds/drflow/<int:pk>/', bsv.status, name='bed_summary_status'),
     path('beds/drflow/<int:pk>/rate/', bsv.rate, name='bed_summary_rate'),
     path('encounters/<int:pk>/injuries/', care.injury_assessment, name='injury_assessment'),
+    path('encounters/<int:pk>/eyes-ears/', care.sense_exam, name='sense_exam'),
+    path('theatre/', tv.board, name='theatre'),
+    path('access/', av.manage, name='access'),
+    path('access/groups/new/', av.group_save, name='access_group_new'),
+    path('access/groups/<int:pk>/', av.group_save, name='access_group'),
+    path('access/groups/<int:pk>/delete/', av.group_delete, name='access_group_delete'),
+    path('access/groups/standard/', av.standard_groups, name='access_standard'),
+    path('access/staff/<int:user_pk>/', av.member_save, name='access_member'),
+    path('access/emergency/<int:pk>/', av.emergency, name='access_emergency'),
+    path('library/', libv.index, name='library'),
+    path('library/<slug:slug>/', libv.detail, name='library_detail'),
+    path('theatre/api/board/', tv.api_board, name='theatre_api_board'),
+    path('theatre/new/', tv.case_new, name='theatre_new'),
+    path('theatre/cases/<int:pk>/', tv.case_detail, name='theatre_case'),
+    path('theatre/cases/<int:pk>/edit/', tv.case_edit, name='theatre_edit'),
+    path('theatre/cases/<int:pk>/action/', tv.case_action, name='theatre_action'),
+    path('theatre/cases/<int:pk>/preop/', tv.case_preop, name='theatre_preop'),
+    path('theatre/cases/<int:pk>/checklist/<str:phase>/', tv.case_checklist, name='theatre_checklist'),
+    path('theatre/cases/<int:pk>/recovery/', tv.case_recovery, name='theatre_recovery'),
+    path('theatre/cases/<int:pk>/note/', tv.case_note, name='theatre_note'),
     path('referrals/<int:pk>/<str:state>/', v.referral_transition, name='referral_transition'),
 
     path('labs/', v.labs, name='labs'),

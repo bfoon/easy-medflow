@@ -655,6 +655,7 @@ class CheckinQueueTests(Base):
 
     def test_qr_link_opens_record_only_when_signed_in(self):
         self.assertEqual(self.client.get(f'/p/{self.patient.mrn}/').status_code, 302)
+        self.encounter()                                   # a visiting patient, so the nurse may open the record
         self.assertRedirects(self.as_('nurse').get(f'/p/{self.patient.mrn}/'), f'/patients/{self.patient.pk}/')
 
 
@@ -958,6 +959,7 @@ class NetworkLookupTests(Base):
         self.assertContains(r, self.patient.last_name)
         self.assertTrue(AuditEvent.objects.filter(action='network_lookup', target=f'patient:{self.patient.pk}').exists())
         self.client.logout()
+        self.encounter()                                   # doctors open records of patients who are visiting (hospital/access.py)
         self.assertContains(self.as_('doctor').get(f'/patients/{self.patient.pk}/'), 'Kotu Clinic')     # shown on the record
 
     def test_opted_out_patients_are_not_found(self):
@@ -992,6 +994,7 @@ class IdentityBeforeAcceptanceTests(SpecialistPortalTests):
 
 class Heart3DTests(Base):
     def test_insights_page_loads_the_3d_heart(self):
+        self.encounter()                                   # the patient is visiting, so the doctor may open the record
         html = self.as_('doctor').get(f'/patients/{self.patient.pk}/labs/').content.decode()
         self.assertIn('<script type="importmap">', html)                         # three.js helpers import 'three' by name
         self.assertIn('window.MF_THREE', html)
@@ -1023,6 +1026,7 @@ class AnatomyLayerTests(Base):
 
 class PregnancyAnatomyTests(Base):
     def test_page_loads_reproductive_views_in_order(self):
+        self.encounter()                                   # the patient is visiting, so the doctor may open the record
         html = self.as_('doctor').get(f'/patients/{self.patient.pk}/labs/').content.decode()
         order = [html.index(x) for x in ('organs-anatomy.js', 'organs-womb3d.js', 'organs-repro.js', 'anatomy-layers.js', 'insights.js')]
         self.assertEqual(order, sorted(order))      # the tabs wrap the existing cycle/prostate views; the womb is drawn before the markers

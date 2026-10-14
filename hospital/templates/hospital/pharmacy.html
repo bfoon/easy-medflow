@@ -2,19 +2,20 @@
 {% block title %}Pharmacy · Dispensing{% endblock %}
 {% block heading %}Pharmacy{% endblock %}
 {% block subheading %}<p class="sub">Prescriptions flow from draft to signed to dispensed. Stock is drawn from the earliest-expiring batch.</p>{% endblock %}
-{% block actions %}<a class="btn btn-primary" href="{% url 'prescription_new' %}"><i class="bi bi-capsule"></i>Write prescription</a>{% endblock %}
-{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% endblock %}
+{% block actions %}{% if drflow %}<button type="button" class="btn btn-ghost" data-drflow-ask><i class="bi bi-robot"></i>Ask Dr. Flow</button>{% endif %}{% if can_prescribe %}<a class="btn btn-primary" href="{% url 'prescription_new' %}"><i class="bi bi-capsule"></i>Write prescription</a>{% endif %}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/pharmacy.css' %}" rel="stylesheet">{% if drflow %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endif %}{% endblock %}
 {% block content %}
 {% include 'hospital/pharmacy/_nav.html' %}
 <div class="alert-mf warn mb-4"><i class="bi bi-exclamation-triangle-fill"></i><div>Allergy checks cover medicine names and common drug classes, and the safety review flags some kidney, blood-pressure and pregnancy risks. Interactions and doses are <b>not</b> fully checked. A pharmacist must review every prescription.</div></div>
+{% if not show_rx %}<div class="alert-mf mb-3"><i class="bi bi-eye"></i><div>You can see which medicines are available. Dispensing and stock changes need more access: ask your hospital administrator.</div></div>{% endif %}
 <div class="grid g-main">
-  <div class="board" style="grid-template-columns:repeat(3,minmax(240px,1fr))">
+  {% if show_rx %}<div class="board" style="grid-template-columns:repeat(3,minmax(240px,1fr))">
     {% for key, label, items in lanes %}
     <section class="lane" style="min-height:360px">
       <div class="lane-head">{{ label }}<span class="count">{{ items|length }}</span></div>
       {% for x in items %}
       <article class="rx-card">
-        <div class="d-flex align-items-baseline gap-2"><a href="{% url 'prescription_detail' x.pk %}"><b>{{ x.number }}</b></a>{% if x.state == 'partial' %}<span class="tag amber">Partly dispensed</span>{% endif %}<a class="small ms-auto" href="{% url 'patient_chart' x.encounter.patient_id %}">{{ x.encounter.patient.full_name }}</a></div>
+        <div class="d-flex align-items-baseline gap-2"><a href="{% url 'prescription_detail' x.pk %}"><b>{{ x.number }}</b></a>{% if x.state == 'partial' %}<span class="tag amber">Partly dispensed</span>{% endif %}{% if 'patient_records' in caps %}<a class="small ms-auto" href="{% url 'patient_chart' x.encounter.patient_id %}">{{ x.encounter.patient.full_name }}</a>{% else %}<span class="small ms-auto">{{ x.encounter.patient.full_name }}</span>{% endif %}</div>
         <ol class="rx-items">{% for i in x.items.all %}<li><span class="med">{{ i.medication|med_icon:i.route }}{{ i.medication }}</span><span class="dir">{{ i.directions }}</span><span class="qty">× {{ i.quantity }}</span>{% if i.availability == 'unavailable' %} <span class="tag red">Not available</span>{% elif i.availability == 'ordered' %} <span class="tag indigo">Ordered</span>{% endif %}</li>{% endfor %}</ol>
         <a class="small" href="{% url 'prescription_detail' x.pk %}">Open details <i class="bi bi-arrow-right"></i></a>
         {% if x.notes %}<div class="small muted"><i class="bi bi-chat-left-text"></i> {{ x.notes|truncatechars:80 }}</div>{% endif %}
@@ -28,14 +29,14 @@
       {% empty %}<div class="empty">Nothing here.</div>{% endfor %}
     </section>
     {% endfor %}
-  </div>
+  </div>{% else %}<div></div>{% endif %}
   <section class="panel align-self-start">
     <div class="panel-head"><h2>Stock on hand</h2><input class="form-control form-control-sm ms-auto" style="max-width:150px" placeholder="Filter" data-filter=".stock-row" aria-label="Filter stock"></div>
     {% for s in stock %}
     <div class="stock-row">
       <div><b>{{ s.m.name }}</b><div class="small muted">{{ s.m.strength }} {{ s.m.form }}</div></div>
       <div class="meter {% if s.level == 'out' %}red{% elif s.level == 'low' %}amber{% endif %}" title="Reorder at {{ s.m.reorder_level }}"><i style="--w:{{ s.pct }}%"></i></div>
-      <div class="qty">{{ s.qty }}{% if s.level != 'ok' and can_dispense %}<form method="post" action="{% url 'stock_request_new' s.m.pk %}" class="d-inline">{% csrf_token %}<button class="icon-btn" title="Order more from supplier" aria-label="Order more {{ s.m.name }}"><i class="bi bi-truck"></i></button></form>{% endif %}</div>
+      <div class="qty">{{ s.qty }}{% if s.level != 'ok' and can_revise %}<form method="post" action="{% url 'stock_request_new' s.m.pk %}" class="d-inline">{% csrf_token %}<button class="icon-btn" title="Order more from supplier" aria-label="Order more {{ s.m.name }}"><i class="bi bi-truck"></i></button></form>{% endif %}</div>
     </div>
     {% empty %}<div class="empty">Add medications and stock batches in Configuration.</div>{% endfor %}
   </section>
@@ -47,17 +48,20 @@
     <td><b>{{ r.medication }}</b><div class="small muted">{{ r.reason }} · {{ r.requested_by|display_name }} · {{ r.created_at|date:'j M' }}</div></td><td>{{ r.quantity }}</td>
     <td>{% if r.prescription_item %}<a href="{% url 'prescription_detail' r.prescription_item.prescription_id %}">{{ r.prescription_item.prescription.number }}</a>{% else %}<span class="muted">Restock</span>{% endif %}</td>
     <td><span class="tag {% if r.status == 'ordered' %}indigo{% else %}amber{% endif %}">{{ r.get_status_display }}</span></td>
-    <td class="text-nowrap">{% if can_dispense %}
+    <td class="text-nowrap">{% if can_revise %}
       {% if r.status == 'requested' %}<form method="post" action="{% url 'stock_request_action' r.pk 'ordered' %}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-ghost">Mark ordered</button></form>{% endif %}
-      <details class="d-inline-block inform"><summary class="btn btn-sm btn-ink">Receive</summary>
+      {% if can_stock %}<details class="d-inline-block inform"><summary class="btn btn-sm btn-ink">Receive</summary>
         <form method="post" action="{% url 'stock_request_action' r.pk 'receive' %}" class="pop-card">{% csrf_token %}
           <input class="form-control form-control-sm mb-1" name="batch_number" placeholder="Batch number" required>
           <label class="small">Expiry <input type="date" class="form-control form-control-sm mb-1" name="expiry" required></label>
           <input class="form-control form-control-sm mb-2" type="number" name="quantity" value="{{ r.quantity }}" min="1">
-          <button class="btn btn-sm btn-primary w-100">Book into stock</button></form></details>
+          <button class="btn btn-sm btn-primary w-100">Book into stock</button></form></details>{% endif %}
       <form method="post" action="{% url 'stock_request_action' r.pk 'cancel' %}" class="d-inline" data-confirm="Cancel this supplier order?">{% csrf_token %}<button class="icon-btn" aria-label="Cancel order"><i class="bi bi-x-lg"></i></button></form>
     {% endif %}</td></tr>
   {% empty %}<tr><td colspan="5" class="empty">No open supplier orders.</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
+{% if drflow %}<div hidden data-drflow-page data-title="the pharmacy" data-focus=".topbar h1" data-greeting="I can help with any medicine: uses, interactions, pregnancy, storage."
+  data-lines='{{ df_lines_json }}' data-suggest='["Which antibiotics are safe in pregnancy?","What interacts with artemether-lumefantrine?","How should controlled drugs be stored and recorded?"]'></div>{% endif %}
 {% endblock %}
+{% block scripts %}{% if drflow %}<script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/drflow.js' %}"></script><script src="{% asset 'hospital/js/drflow-page.js' %}"></script>{% endif %}{% endblock %}
