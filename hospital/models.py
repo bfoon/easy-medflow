@@ -123,6 +123,8 @@ class Encounter(Tracked):
     OUTCOMES=[('resolved','Resolved'),('improved','Improved'),('no_change','No change'),('worsened','Worsened'),('referred','Referred on')]
     outcome=models.CharField(max_length=12,choices=OUTCOMES,blank=True,help_text='How the patient was at the end of this visit or course')
     outcome_notes=models.CharField(max_length=300,blank=True)
+    nursing_notes=models.TextField(blank=True,help_text='Written by the attending nurse; shown under the clinical notes')
+    attending_nurse=models.ForeignKey(settings.AUTH_USER_MODEL,null=True,blank=True,on_delete=models.SET_NULL,related_name='nursed_encounters')
     category=models.CharField(max_length=20,blank=True,db_index=True,editable=False,help_text='Disease category, filed automatically from the diagnosis')
     def save(self,*a,**kw):
         from .categories import classify
@@ -1015,3 +1017,4 @@ from .models_evidence import ReferenceRange, ParameterGuidance, EvidenceItem, Ev
 from .models_reports import DoctorReport, ReportAttachment, ReportAssist  # noqa: E402,F401
 from .models_imaging_ai import ImagingAIRun  # noqa: E402,F401
 from .models_drflow import DrFlowAsk, BedSummary, LabInsightAsk  # noqa: E402,F401
+from .models_notes import NoteRevision, ClinicalNoteAsk  # noqa: E402,F401

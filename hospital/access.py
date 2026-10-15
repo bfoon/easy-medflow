@@ -207,6 +207,8 @@ PATIENT_PAGES = {
     'patient_labs': lambda kw: kw.get('pk'), 'patient_story': lambda kw: kw.get('pk'), 'drflow_brief': lambda kw: kw.get('pk'),
     'patient_network_toggle': lambda kw: kw.get('pk'),   # the QR link (/p/<mrn>/) only redirects to the chart, which is checked
     'encounter_detail': _p('Encounter'), 'encounter_complete': _p('Encounter'), 'ai_context_preview': _p('Encounter'),
+    'notes_save': _p('Encounter'), 'notes_ai_ask': _p('Encounter'), 'notes_ai_context': _p('Encounter'),
+    'notes_ai_status': _p('ClinicalNoteAsk', ENC), 'notes_ai_rate': _p('ClinicalNoteAsk', ENC),
     'injury_assessment': _p('Encounter'), 'sense_exam': _p('Encounter'), 'invoice_for_encounter': _p('Encounter'),
     'lab_request_detail': _p('LabRequest', ENC), 'prescription_detail': _p('Prescription', ENC), 'prescription_edit': _p('Prescription', ENC),
     'imaging_detail': _p('ImagingOrder', ENC), 'imaging_file': _p('ImagingImage', 'order__encounter__patient_id'),

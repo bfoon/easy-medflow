@@ -345,7 +345,7 @@ def encounter_new(request):
 @login_required
 def encounter_detail(request, pk):
     authorize(request, 'clinical')
-    e = get_object_or_404(Encounter.objects.select_related('patient', 'clinician', 'department'), pk=pk)
+    e = get_object_or_404(Encounter.objects.select_related('patient', 'clinician', 'department', 'attending_nurse'), pk=pk)
     audit(request, 'view_chart', f'encounter:{e.pk}')
     rx = e.prescriptions.prefetch_related('items__medication').select_related('signed_by')
     return render(request, 'hospital/encounter.html', {
@@ -359,6 +359,7 @@ def encounter_detail(request, pk):
         'operations': e.operations.all(),
         'review': __import__('hospital.clinical', fromlist=['clinical_review']).clinical_review(e), 'ai_on': __import__('hospital.clinical', fromlist=['ai_enabled']).ai_enabled(),
         **similar_context(e.patient, [e] + list(e.patient.encounters.exclude(pk=e.pk).order_by('-created_at')[:20])),
+        **__import__('hospital.notes_views', fromlist=['page_context']).page_context(request, e),
     })
 
 

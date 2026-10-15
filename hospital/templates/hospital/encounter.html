@@ -1,5 +1,6 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}Visit · {{ p.full_name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/notes.css' %}" rel="stylesheet">{% endblock %}
 {% block heading %}{{ e.reason }}{% endblock %}
 {% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }} · {{ e.department|default:'No department' }} · {{ e.created_at|date:'j M Y, H:i' }} · {{ e.clinician|display_name }} <span class="tag {{ e.status|tone }} ms-1">{{ e.get_status_display }}</span></p>{% endblock %}
 {% block actions %}
@@ -32,15 +33,7 @@
 </div>
 <div class="grid g-main">
   <div class="stack">
-    <section class="panel">
-      <div class="panel-head"><h2>Clinical notes</h2></div>
-      <div class="ruled">
-        <div><div class="label-sm">Symptoms</div>{{ e.symptoms|default:'—'|linebreaksbr }}</div>
-        <div><div class="label-sm">Assessment</div>{{ e.assessment|default:'—'|linebreaksbr }}</div>
-        <div><div class="label-sm">Diagnosis</div><b>{{ e.diagnosis|default:'Not yet recorded'|linebreaksbr }}</b></div>
-        <div><div class="label-sm">Plan</div>{{ e.plan|default:'—'|linebreaksbr }}</div>
-      </div>
-    </section>
+    {% include 'hospital/_notes.html' %}
     <section class="panel">
       <div class="panel-head"><h2>Prescriptions</h2><a class="more" href="{% url 'pharmacy' %}">Pharmacy</a></div>
       {% for x, chk in prescriptions %}
@@ -92,3 +85,4 @@
   </div>
 </div>
 {% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/notes-ai.js' %}"></script>{% endblock %}

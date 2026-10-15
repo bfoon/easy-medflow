@@ -1,0 +1,47 @@
+/* Clinical and nursing notes on the visit page (notes-ai.js) */
+.notes-panel .panel-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.notes-who{font-size:.8rem;color:var(--muted);display:inline-flex;gap:5px;align-items:center}
+.notes-panel.nursing{border-left:4px solid #d9707e}
+.notes-panel.nursing h2 i{color:#c4515f}
+.notes-view{white-space:normal}
+.notes-form{display:flex;flex-direction:column;gap:12px}
+.notes-field .form-label{font-weight:600;font-size:.85rem;margin-bottom:4px}
+.notes-field textarea{font-size:.92rem;line-height:1.45;resize:vertical}
+.notes-field textarea.ns-used{box-shadow:0 0 0 3px var(--teal-wash);border-color:var(--teal);transition:box-shadow .3s}
+.notes-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.notes-aibar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:var(--paper);border:1px dashed var(--line-2);border-radius:12px;padding:6px 8px}
+.notes-aibar-l{font-size:.78rem;font-weight:700;color:var(--teal-2);display:inline-flex;gap:5px;align-items:center;margin-right:4px}
+.notes-aistate{font-size:.8rem;color:var(--muted)}
+.notes-suggestion{border:1px solid var(--teal);background:#f6fbf9;border-radius:14px;padding:12px 14px}
+.ns-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+.ns-head b{color:var(--teal-2)}
+.ns-x{margin-left:auto;border:0;background:none;font-size:1.3rem;line-height:1;color:var(--muted)}
+.ns-changes{margin:0 0 8px;padding-left:18px;font-size:.82rem;color:var(--muted)}
+.ns-warn{background:var(--amber-wash);border-left:4px solid var(--amber);border-radius:8px;padding:6px 10px;font-size:.82rem;margin-bottom:8px}
+.ns-field{border-top:1px solid var(--line);padding:8px 0}
+.ns-fh{display:flex;align-items:center;gap:8px;margin-bottom:4px}.ns-fh b{font-size:.85rem}.ns-fh .btn{margin-left:auto}
+.ns-diff{font-size:.9rem;line-height:1.5;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.ns-diff ins{background:#d6f2e4;color:#0b5f3d;text-decoration:none;border-radius:3px;padding:0 2px}
+.ns-diff del{background:#fbe3e5;color:#9b1c28;border-radius:3px;padding:0 2px}
+.ns-acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.ns-rate{margin-left:auto;font-size:.78rem;color:var(--muted);display:inline-flex;gap:4px;align-items:center}
+.ns-rate button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:1px 7px;color:var(--muted)}
+.ns-rate button:hover{color:var(--teal-2);border-color:var(--teal)}
+.notes-assist .notes-ask{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.notes-q{display:flex;gap:6px;flex:1;min-width:260px}
+.notes-answers{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.notes-answer{border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:#fff}
+.notes-answer header{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+.notes-answer header b{font-size:.9rem}.notes-answer header .muted{margin-left:auto}
+.notes-answer footer{display:flex;gap:8px;align-items:center;border-top:1px solid var(--line);margin-top:8px;padding-top:6px}
+.notes-md{font-size:.9rem;line-height:1.5}
+.notes-md h2,.notes-md h3,.notes-md h4{font-size:.92rem;font-weight:700;margin:10px 0 4px;color:var(--teal-2)}
+.notes-md p{margin-bottom:6px}
+.notes-md ul,.notes-md ol{padding-left:20px;margin-bottom:6px}
+.notes-history summary{cursor:pointer;font-weight:600}
+.notes-history ul{margin-top:8px}
+.notes-rev summary{font-size:.8rem;color:var(--teal-2);cursor:pointer;margin-top:4px}
+.notes-rev-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:.82rem;margin-top:4px}
+.notes-rev-grid>div{background:var(--paper);border-radius:8px;padding:6px 8px}
+.notes-rev-grid .label-sm{display:block;margin-bottom:2px}
+@media (max-width:700px){.notes-rev-grid{grid-template-columns:1fr}}

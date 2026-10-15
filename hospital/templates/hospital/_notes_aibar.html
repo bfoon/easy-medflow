@@ -1,0 +1,7 @@
+{% if notes_ai %}<div class="notes-aibar">
+  <span class="notes-aibar-l"><i class="bi bi-robot"></i>Dr. Flow</span>
+  <button type="button" class="btn btn-sm btn-ghost" data-rewrite="improve" title="Clearer, professional wording; keeps every fact"><i class="bi bi-magic"></i>Improve wording</button>
+  <button type="button" class="btn btn-sm btn-ghost" data-rewrite="correct" title="Spelling, grammar and medical terms only"><i class="bi bi-spellcheck"></i>Fix spelling only</button>
+  <span class="notes-aistate" aria-live="polite"></span>
+</div>
+<div class="notes-suggestion" hidden></div>{% endif %}

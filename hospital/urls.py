@@ -11,6 +11,7 @@ from . import imaging_ai_views as iav
 from . import drflow_views as dfv
 from . import bed_summary_views as bsv
 from . import lab_insights_views as liv
+from . import notes_views as nv
 from . import theatre_views as tv
 from . import access_views as av
 from . import library_views as libv
@@ -154,6 +155,11 @@ urlpatterns = [
     path('labs/requests/<int:pk>/<str:step>/', v.lab_request_action, name='lab_request_action'),
     path('labs/tests/<int:pk>/cancel/', v.lab_order_cancel, name='lab_order_cancel'),
     path('patients/<int:pk>/labs/', v.patient_labs, name='patient_labs'),
+    path('encounters/<int:pk>/notes/', nv.save, name='notes_save'),
+    path('encounters/<int:pk>/notes/ai/', nv.ask, name='notes_ai_ask'),
+    path('encounters/<int:pk>/notes/ai/context/', nv.context, name='notes_ai_context'),
+    path('notes/ai/<int:pk>/', nv.status, name='notes_ai_status'),
+    path('notes/ai/<int:pk>/rate/', nv.rate, name='notes_ai_rate'),
     path('patients/<int:pk>/labs/drflow/', liv.panel, name='lab_insights_panel'),
     path('patients/<int:pk>/labs/drflow/ask/', liv.ask, name='lab_insights_ask'),
     path('patients/<int:pk>/labs/drflow/context/', liv.context, name='lab_insights_context'),

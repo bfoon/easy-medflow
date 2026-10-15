@@ -59,6 +59,12 @@ def bed_summary_task(pk):
 
 
 @shared_task(ignore_result=True, soft_time_limit=300)
+def notes_ai_task(pk):
+    from .notes_ai import run
+    run(pk)
+
+
+@shared_task(ignore_result=True, soft_time_limit=300)
 def lab_insight_task(pk):
     from .lab_insights_ai import run
     run(pk)

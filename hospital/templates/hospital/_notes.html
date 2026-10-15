@@ -1,0 +1,82 @@
+{% load medflow %}
+{# Clinical notes, nursing notes, Dr. Flow on the notes, and the change history. Behaviour: notes-ai.js; rules: notes_ai.py #}
+<div class="notes-root" data-ask-url="{% url 'notes_ai_ask' e.pk %}" data-status-url="{% url 'notes_ai_status' 0 %}" data-rate-url="{% url 'notes_ai_rate' 0 %}"
+     data-ai="{% if notes_ai %}1{% else %}0{% endif %}">
+  <section class="panel notes-panel" id="notes-clinical">
+    <div class="panel-head">
+      <h2>Clinical notes</h2>
+      <span class="notes-who"><i class="bi bi-person-badge"></i>{% if e.clinician %}{{ e.clinician|display_name }}{% else %}No attending doctor yet{% endif %}</span>
+      {% if can_edit_clinical %}<button type="button" class="btn btn-sm btn-ghost ms-auto" data-notes-edit="clinical"><i class="bi bi-pencil"></i>Edit</button>
+      {% elif e.status != 'open' %}<span class="tag ms-auto"><i class="bi bi-lock"></i> Visit closed</span>{% endif %}
+    </div>
+    <div class="ruled notes-view" data-view="clinical">
+      {% for k, label, val in notes_fields %}
+      <div><div class="label-sm">{{ label }}</div>{% if k == 'diagnosis' %}<b>{{ val|default:'Not yet recorded'|linebreaksbr }}</b>{% else %}{{ val|default:'—'|linebreaksbr }}{% endif %}</div>
+      {% endfor %}
+    </div>
+    {% if can_edit_clinical %}
+    <form class="notes-form" method="post" action="{% url 'notes_save' e.pk %}" data-section="clinical" hidden>{% csrf_token %}
+      <input type="hidden" name="section" value="clinical"><input type="hidden" name="ai_assisted" value="0">
+      {% for k, label, val in notes_fields %}
+      <div class="notes-field" data-field="{{ k }}">
+        <label class="form-label" for="nf-{{ k }}">{{ label }}</label>
+        <textarea class="form-control" id="nf-{{ k }}" name="{{ k }}" rows="{% if k == 'diagnosis' %}2{% else %}4{% endif %}" maxlength="6000">{{ val }}</textarea>
+      </div>
+      {% endfor %}
+      {% include 'hospital/_notes_aibar.html' %}
+      <div class="notes-actions"><button class="btn btn-primary"><i class="bi bi-check2"></i>Save notes</button><button type="button" class="btn btn-ghost" data-notes-cancel>Cancel</button>
+        <span class="form-text">Every change is kept with your name and the time.</span></div>
+    </form>
+    {% endif %}
+  </section>
+
+  <section class="panel notes-panel nursing" id="notes-nursing">
+    <div class="panel-head">
+      <h2><i class="bi bi-heart-pulse me-1"></i>Nursing notes</h2>
+      <span class="notes-who"><i class="bi bi-person-heart"></i>{% if e.attending_nurse %}{{ e.attending_nurse|display_name }}{% else %}No attending nurse yet{% endif %}</span>
+      {% if can_edit_nursing %}<button type="button" class="btn btn-sm btn-ghost ms-auto" data-notes-edit="nursing"><i class="bi bi-pencil"></i>{% if e.nursing_notes %}Edit{% else %}Write{% endif %}</button>{% endif %}
+    </div>
+    <div class="notes-view" data-view="nursing">{% if e.nursing_notes %}{{ e.nursing_notes|linebreaksbr }}{% else %}<span class="muted">No nursing notes yet.</span>{% endif %}</div>
+    {% if can_edit_nursing %}
+    <form class="notes-form" method="post" action="{% url 'notes_save' e.pk %}" data-section="nursing" hidden>{% csrf_token %}
+      <input type="hidden" name="section" value="nursing"><input type="hidden" name="ai_assisted" value="0">
+      {% if can_pick_nurse %}
+      <div class="notes-field"><label class="form-label" for="nf-nurse">Attending nurse</label>
+        <select class="form-select" id="nf-nurse" name="attending_nurse"><option value="">— None —</option>{% for n in nurses %}<option value="{{ n.pk }}" {% if n.pk == e.attending_nurse_id %}selected{% endif %}>{{ n|display_name }}</option>{% endfor %}</select></div>
+      {% endif %}
+      <div class="notes-field" data-field="nursing_notes">
+        <label class="form-label" for="nf-nursing_notes">Nursing notes</label>
+        <textarea class="form-control" id="nf-nursing_notes" name="nursing_notes" rows="5" maxlength="6000" placeholder="Observations, care given, how the patient is, handover points…">{{ e.nursing_notes }}</textarea>
+      </div>
+      {% include 'hospital/_notes_aibar.html' %}
+      <div class="notes-actions"><button class="btn btn-primary"><i class="bi bi-check2"></i>Save nursing notes</button><button type="button" class="btn btn-ghost" data-notes-cancel>Cancel</button></div>
+    </form>
+    {% endif %}
+  </section>
+
+  {% if notes_ai %}
+  <section class="panel notes-assist" id="notes-assist">
+    <div class="panel-head"><h2><i class="bi bi-robot me-1"></i>Ask Dr. Flow about these notes</h2><a class="more" href="{% url 'notes_ai_context' e.pk %}" target="_blank" rel="noopener">What the AI sees</a></div>
+    <div class="notes-ask">
+      <button type="button" class="btn btn-ink" data-ask-kind="suggest"><i class="bi bi-clipboard2-pulse"></i>Suggest tests &amp; next steps</button>
+      <form class="notes-q" data-ask-form><input class="form-control" name="question" maxlength="500" placeholder="Ask a question about the notes, e.g. “What else could explain the fever?”" autocomplete="off">
+        <button class="btn btn-ghost"><i class="bi bi-send"></i>Ask</button></form>
+    </div>
+    <p class="form-text"><i class="bi bi-shield-lock"></i> Dr. Flow reads the notes and the visit data <b>without the patient's name</b>, record number, phone, address or dates. Advisory only: you decide.</p>
+    <div class="notes-answers" data-answers></div>
+    <script type="application/json" class="notes-asks-data">{{ notes_asks_json|safe }}</script>
+  </section>
+  {% endif %}
+
+  {% if note_revisions %}
+  <details class="panel notes-history">
+    <summary><i class="bi bi-clock-history"></i> Change history <span class="muted">({{ note_revisions|length }})</span></summary>
+    <ul class="plain ruled">
+      {% for r in note_revisions %}
+      <li><div class="d-flex gap-2 align-items-center flex-wrap"><b>{{ r.get_section_display }}</b><span class="muted small">{{ r.edited_by|display_name }} · {{ r.created_at|date:'j M Y, H:i' }}</span>{% if r.ai_assisted %}<span class="tag indigo"><i class="bi bi-robot"></i> AI-assisted</span>{% endif %}</div>
+        {% for k, before, after in r.changed %}<details class="notes-rev"><summary>{{ k }}</summary><div class="notes-rev-grid"><div><span class="label-sm">Before</span>{{ before|default:'(empty)'|linebreaksbr }}</div><div><span class="label-sm">After</span>{{ after|default:'(empty)'|linebreaksbr }}</div></div></details>{% endfor %}</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</div>
