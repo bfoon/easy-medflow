@@ -110,3 +110,8 @@
 .ar-heavy .ar-glow,.ar-heavy .ar-fever{animation:none;opacity:.85}
 .ar-still *{animation-play-state:paused!important}
 .ar-raster{pointer-events:none}
+/* muscle relief under the skin: the group blends with the skin below it (a blend on the image alone would stay inside the clipped group) */
+.ar-relief-g{mix-blend-mode:soft-light;opacity:.45}.ar-relief-g.soft{opacity:.32}
+.ar-relief{filter:grayscale(1) contrast(1.2) blur(1.2px)}
+.ar-svg.ar-zoomed{cursor:grab}.ar-svg.ar-panning{cursor:grabbing!important}
+.ar-zb{padding:6px 9px}.ar-zb:disabled{opacity:.35}

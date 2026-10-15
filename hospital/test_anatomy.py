@@ -98,3 +98,30 @@ class AnatomyPageTests(Base):
         self.assertNotIn('Pneumonia', d['dx_recent'])
         self.assertIn('Uncomplicated malaria', d['dx_recent'])
         self.assertEqual(d['today'], timezone.localdate().isoformat())
+
+
+@unittest.skipUnless(NODE, 'node not installed')
+class AnatomyScriptTests(TestCase):
+    def test_scripts_parse(self):
+        import subprocess
+        for name in ('anatomy-real.js', 'organs3d.js', 'insights.js'):
+            out = subprocess.run([NODE, '--check', str(JS / name)], capture_output=True, text=True)
+            self.assertEqual(out.returncode, 0, f'{name}: {out.stderr}')
+
+    def test_zoom_can_always_be_undone(self):
+        src = (JS / 'anatomy-real.js').read_text()
+        # one cancellable camera; zooming out cancels zooms still waiting (the "stuck big" bug)
+        self.assertIn('cancelAnimationFrame(vbAnim)', src)
+        self.assertIn('gen === zoomGen', src)
+        self.assertIn("ev.key === 'Escape'", src)
+        o3 = (JS / 'organs3d.js').read_text()
+        self.assertIn('controls.minDistance', o3)          # the 3D viewer's zoom is limited both ways
+        self.assertIn('controls.maxDistance', o3)
+
+
+class OrgansThreeDPageTests(Base):
+    def test_page_loads_the_3d_organ_viewer_before_the_anatomy(self):
+        self.encounter()
+        html = self.as_('doctor').get(f'/patients/{self.patient.pk}/labs/').content.decode()
+        self.assertIn('organs3d.css', html)
+        self.assertLess(html.index('js/organs3d.js'), html.index('js/anatomy-real.js'))   # script tags, not the comment that names the file

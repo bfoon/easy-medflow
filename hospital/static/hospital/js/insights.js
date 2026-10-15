@@ -341,7 +341,11 @@
   setView(['clean', 'anatomy'].includes(root.dataset.initialView) ? root.dataset.initialView : 'body', false);
   const firstCrit = Object.values(SYS).find(s => SEVERITY[s.worst] === 4 && s.open);
   if (firstCrit && root.dataset.initialView === 'body') {   // fly to the most urgent finding, unless the doctor has already chosen something
-    const auto = setTimeout(() => { if (!current) focusSystem(firstCrit.key); }, reduceMotion ? 0 : 900);
+    // only if the doctor has not touched anything yet and is still looking at the body map
+    let touched = false;
+    root.addEventListener('pointerdown', () => { touched = true; }, {once: true, capture: true});
+    root.addEventListener('keydown', () => { touched = true; }, {once: true, capture: true});
+    const auto = setTimeout(() => { if (!current && !touched && $('.view-body') && $('.view-body').offsetParent !== null) focusSystem(firstCrit.key); }, reduceMotion ? 0 : 900);
     ['pointerdown', 'keydown'].forEach(ev => root.addEventListener(ev, () => clearTimeout(auto), {once: true}));
   }
 })();

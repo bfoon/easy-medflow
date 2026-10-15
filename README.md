@@ -248,6 +248,18 @@ The rules are in `static/hospital/js/anatomy-real.js` (`MFAnatomy.findings`, tes
 lit drawing is painted once into a picture so peeling and the animations stay smooth. An explanation aid: it does not
 replace the results, the images or examining the patient.
 
+On the solid skin, the muscles show faintly through (chest, belly, shoulders, thighs, calves) the way they do on a real body — softer on the female body — taken from the muscle layer itself, so it always matches. The female body wears a sports top with straps and shorts; the male body wears shorts.
+
+**Zoom:** click a finding to fly to it; **Whole body**, **Esc** or **Reset** always bring the whole body back (and cancel a zoom
+that is still on its way). Ctrl + scroll (or a trackpad pinch) zooms around the pointer, + / − buttons zoom in steps, and
+dragging moves the view while zoomed in. A plain click still peels.
+
+**3D organs:** the **3D organs** button, or **View in 3D** on an organ, opens rotatable organs built in code (no downloads)
+with wet-tissue materials: heart, lungs, liver, kidneys, brain, stomach and spleen, changed by the same results (a damaged
+heart wall, pneumonia, an inflamed or yellow liver, failing kidneys, a swollen brain, an enlarged spleen) with glowing pins
+on the findings. Drag to turn, scroll to zoom (limited both ways), **Cut open** to slice through, **Esc** to close. The heart
+beats and the lungs breathe at the recorded rates. On computers without a graphics card it switches to lighter graphics.
+
 ## Laboratory management
 
 The **Laboratory** pages share a bar: Work board, **Command centre**, **Specimens**, **Quality control**,

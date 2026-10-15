@@ -347,7 +347,11 @@
   }
 
   /* ================================================================== 3 · materials */
-  const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const hex = h => {                                       // '#abc' or '#aabbcc' → [r, g, b]
+    const v = String(h).replace('#', '');
+    const full = v.length === 3 ? v.split('').map(c => c + c).join('') : v;
+    return [0, 2, 4].map(i => parseInt(full.slice(i, i + 2), 16) || 0);
+  };
   const mix = (a, b, t) => '#' + hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * clamp(t, 0, 1)).toString(16).padStart(2, '0')).join('');
   function lightFilter(id, blur, scale, spec, exp, k1 = 1.25, noise = 0) {
     return `<filter id="${id}" x="-4%" y="-4%" width="108%" height="108%" color-interpolation-filters="sRGB">
@@ -382,7 +386,9 @@
   function defs(F) {
     const angles = [...new Set(muscleList(F).map(m => Math.round(m[2] / 10) * 10))];
     const OUT = `M-200,-200H${W + 200}V${H + 200}H-200Z`;
+    const C = clothes(F);
     return `<defs>
+      <clipPath id="ar-relief-clip" clipPathUnits="userSpaceOnUse"><path clip-rule="evenodd" d="M0,232H${W}V${H}H0Z ${C.shorts} ${C.top} ${C.straps.join(' ')}"/></clipPath>
       ${lightFilter('ar-f-skin', 9, 7, .32, 16, 1.2, 1.6)}
       ${lightFilter('ar-f-muscle', 2.4, 4, .75, 26, 1.3, 0)}
       ${lightFilter('ar-f-organ', 4, 5, .85, 30, 1.25, 0)}
@@ -437,6 +443,15 @@
   const TONES = [['Light', '#d8aa86'], ['Medium light', '#c08e66'], ['Medium', '#a2714a'], ['Brown', '#8a5a3c'], ['Dark', '#5e3a25']];
 
   /* ================================================================== 4 · the nine systems */
+  /* clothing: shorts, and a sports top with straps on a female body */
+  function clothes(F) {
+    const female = F.sex === 'F';
+    return {
+      shorts: sym([[0, 604], [94, 598], [110, 648], [117, 712], [114, 770], [70, 782], [24, 762], [6, 748], [0, 745]]),
+      top: female ? sym([[0, 374], [22, 360], [52, 354], [86, 364], [98, 386], [94, 412], [70, 426], [36, 424], [0, 414]]) : '',
+      straps: female ? [-1, 1].map(s => tube(side([[48, 358], [56, 314], [66, 280]], s), [4, 3.4, 3])) : [],
+    };
+  }
   function skinColour(F, base) {
     let c = base || '#8a5a3c';
     c = mix(c, '#c9ab95', F.skin.pallor * .55);
@@ -452,8 +467,9 @@
     const hair = `<path d="${sym([[0, 30], [40, 34], [62, 66], [67, 104], [60, 96], [54, 78], [30, 64], [0, 62]])}" fill="#1c1410"/>`;
     // long hair falls behind the head and shoulders, so it is drawn before the body
     const longHair = female ? `<path d="${sym([[0, 24], [46, 28], [72, 64], [80, 120], [80, 190], [76, 246], [62, 268], [48, 262], [50, 200], [0, 196]])}" fill="#1c1410"/>` : '';
-    const shorts = `<path d="${sym([[0, 604], [94, 598], [110, 648], [117, 712], [114, 770], [70, 782], [24, 762], [6, 748], [0, 745]])}" fill="#4a5f74"/>`;
-    const top = female ? `<path d="${sym([[0, 352], [30, 350], [70, 352], [92, 372], [94, 418], [80, 432], [40, 434], [0, 426]])}" fill="#4a5f74"/>` : '';
+    const C = clothes(F);
+    const shorts = `<path d="${C.shorts}" fill="#4a5f74"/>`;
+    const top = female ? `<path d="${C.top}" fill="#4a5f74"/>` + C.straps.map(d2 => `<path d="${d2}" fill="#4a5f74"/>`).join('') : '';
     let d = `<g filter="url(#ar-f-skin)" fill="${skin}" stroke="${skin}" stroke-width="2.2" stroke-linejoin="round" data-name="Skin" data-target="skin">${longHair ? `<g stroke="#1c1410">${longHair}</g>` : ''}<g>${bodyParts(F)}</g><g stroke="#1c1410">${hair}</g><g stroke="#4a5f74">${shorts}${top}</g></g>`;
     // the face and details, drawn crisp on top of the lit skin
     d += '<g class="ar-face" pointer-events="none">';
@@ -871,6 +887,9 @@
           <label class="ar-depth"><span>Depth</span><input type="range" min="0" max="${LAST}" step="1" value="0" aria-label="How deep to dissect"><b>Skin</b></label>
           <button type="button" class="ar-btn" data-act="dissect"><i class="bi bi-play-fill"></i>Dissect</button>
           <button type="button" class="ar-btn" data-act="reset"><i class="bi bi-arrow-counterclockwise"></i>Reset</button>
+          <button type="button" class="ar-btn" data-act="organs3d" title="Rotatable 3D organs built from these results"><i class="bi bi-badge-3d"></i>3D organs</button>
+          <button type="button" class="ar-btn ar-zb" data-act="zoomin" title="Zoom in (Ctrl + scroll)" aria-label="Zoom in"><i class="bi bi-zoom-in"></i></button>
+          <button type="button" class="ar-btn ar-zb" data-act="zoomout" title="Zoom out" aria-label="Zoom out" disabled><i class="bi bi-zoom-out"></i></button>
           <button type="button" class="ar-btn" data-act="whole" hidden><i class="bi bi-zoom-out"></i>Whole body</button>
         </div>
         <div class="ar-look">
@@ -885,7 +904,7 @@
           ${defs(G)}
           <ellipse cx="${CX}" cy="1282" rx="150" ry="16" fill="#000" opacity=".35" filter="url(#ar-blur14)"/>
           <g class="ar-layers">${LAYERS.slice().reverse().map(l => `<g class="ar-layer" data-layer="${l.key}" clip-path="url(#ar-l-${l.key})"><g clip-path="url(#ar-h-${l.key})"><g clip-path="url(#ar-s-${l.key})"><g ${l.key === 'skin' ? '' : 'clip-path="url(#ar-body-clip)"'}>
-            ${modes(l.key).map(([m, c]) => `<g class="ar-mode" data-mode="${m}"><image class="ar-raster" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none"/><g class="ar-vec">${c.stat}</g></g>`).join('')}
+            ${modes(l.key).map(([m, c]) => `<g class="ar-mode" data-mode="${m}"><image class="ar-raster" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none"/>${l.key === 'skin' && m === 'solid' ? `<g class="ar-relief-g ${F.sex === 'F' ? 'soft' : ''}" clip-path="url(#ar-body-clip)" pointer-events="none"><image class="ar-relief" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none" clip-path="url(#ar-relief-clip)"/></g>` : ''}<g class="ar-vec">${c.stat}</g></g>`).join('')}
             <g class="ar-live">${content[l.key].live}</g><g class="ar-hotspots">${hot(l.key)}</g></g></g></g></g>`).join('')}</g>
           <g class="ar-peelfx" clip-path="url(#ar-body-clip)" pointer-events="none"></g>
           <g class="ar-splitfx"></g>
@@ -924,6 +943,8 @@
           const g = svg.querySelector(`.ar-layer[data-layer="${j.k}"] .ar-mode[data-mode="${j.m}"]`);
           g.querySelector('.ar-raster').setAttribute('href', href);
           g.querySelector('.ar-vec').classList.add('ar-hit');          // shapes stay for hit-testing, painted by the image
+          // the muscles show faintly through the skin (chest, belly, arms, legs), as on a real body
+          if (j.k === 'muscle' && j.m === 'solid') { const r = svg.querySelector('.ar-relief'); if (r) r.setAttribute('href', href); }
         };
         try {
           c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
@@ -1178,6 +1199,7 @@
         ${fs.length ? fs.map(f => `<div class="ar-find lv${f.level}"><b>${esc(f.title)}</b><span>${esc(f.text)}</span></div>`).join('') : '<p class="ar-ok"><i class="bi bi-check-circle"></i>Nothing abnormal recorded here.</p>'}
         ${rel.length ? `<div class="ar-vals">${rel.map(p => `<div class="ar-val f-${esc(p.latest.flag || 'N')}"><span>${esc(p.name)}</span><b>${esc(p.latest.display)} <small>${esc(p.unit || '')}</small></b>${spark(p)}<small>ref ${esc(p.range || '—')}</small></div>`).join('')}</div>` : ''}
         <div class="ar-card-a">${zoom !== false ? '<button type="button" class="ar-btn" data-act="zoomsel"><i class="bi bi-zoom-in"></i>Look closer</button>' : ''}
+          ${organ3d(info.target) ? `<button type="button" class="ar-btn" data-act="view3d" data-organ="${organ3d(info.target)}"><i class="bi bi-badge-3d"></i>View in 3D</button>` : ''}
           ${window.LabInsightsAsk || (window.DrFlow && window.DrFlow.ask) ? '<button type="button" class="ar-btn" data-act="askflow"><i class="bi bi-robot"></i>Ask Dr. Flow</button>' : ''}</div></div>`;
       // outline the structure
       const els = [...layerEl(info.layer).querySelectorAll(`.ar-vec [data-target="${CSS.escape(info.target)}"], .ar-live [data-target="${CSS.escape(info.target)}"]`)].filter(e => !info.name || e.dataset.name === info.name || fs.length);
@@ -1195,7 +1217,9 @@
     function openFinding(f) {
       setDepth(idx(f.sys));
       const name = (layerEl(f.sys).querySelector(`.ar-vec [data-target="${CSS.escape(f.target)}"], .ar-live [data-target="${CSS.escape(f.target)}"]`) || {dataset: {}}).dataset.name || f.title;
-      setTimeout(() => select({layer: f.sys, target: f.target, name, side: f.side}, true), reduce ? 0 : 700);
+      const gen = ++zoomGen;
+      root.querySelector('[data-act="whole"]').hidden = false;     // the way back is there before the zoom starts
+      setTimeout(() => { if (alive && gen === zoomGen) select({layer: f.sys, target: f.target, name, side: f.side}, true); }, reduce ? 0 : 700);
     }
 
     /* ---- labels: the results like an atlas callout, or the names of what can be seen */
@@ -1279,18 +1303,58 @@
     addEventListener('resize', onScroll, {passive: true});
 
     /* ---- zoom */
+    // One camera for every zoom: a new move cancels the running one, and zooming out cancels any zoom still waiting
+    // (a finding clicked a moment ago must not pull the view back in after "Whole body").
+    let vbAnim = 0, zoomGen = 0;
+    const MINW = 150;
+    const isZoomed = () => S.vb[2] < W - 1;
+    function fitVB(x, y, w) {                                  // keep the camera's shape and keep the body in view
+      w = clamp(w, MINW, W);
+      const h = w * H / W;
+      if (w >= W - 1) return [0, 0, W, H];
+      return [clamp(x, -60, W - w + 60), clamp(y, -40, H - h + 40), w, h];
+    }
+    function zoomUI() {
+      const z = isZoomed();
+      root.querySelector('[data-act="whole"]').hidden = !z;
+      svg.querySelector('.ar-callouts').style.display = z ? 'none' : '';
+      svg.classList.toggle('ar-zoomed', z);
+      const out = root.querySelector('[data-act="zoomout"]'); if (out) out.disabled = !z;
+    }
+    function setVB(v) { S.vb = v; svg.setAttribute('viewBox', v.map(f1).join(' ')); zoomUI(); }
     function zoomTo(bb) {
       let w = Math.max(220, (bb.x2 - bb.x) * 2.4), h = Math.max(260, (bb.y2 - bb.y) * 2.4);
       if (w / h > W / H) h = w * H / W; else w = h * W / H;
       const cx = (bb.x + bb.x2) / 2, cy = (bb.y + bb.y2) / 2;
-      animateVB([clamp(cx - w / 2, -100, W - w + 100), clamp(cy - h / 2, -50, H - h + 50), w, h]);
-      root.querySelector('[data-act="whole"]').hidden = false;
-      svg.querySelector('.ar-callouts').style.display = 'none';
+      animateVB(fitVB(cx - w / 2, cy - h / 2, w));
     }
     function animateVB(to) {
+      cancelAnimationFrame(vbAnim);
       const from = S.vb.slice(), t0 = performance.now(), dur = reduce ? 1 : 650;
-      const step = now => { if (!alive) return; const t = ease(clamp((now - t0) / dur, 0, 1)); S.vb = from.map((v, i) => v + (to[i] - v) * t); svg.setAttribute('viewBox', S.vb.map(f1).join(' ')); if (t < 1) requestAnimationFrame(step); else labelsSoon(); };
-      requestAnimationFrame(step);
+      const step = now => {
+        if (!alive) return;
+        const t = ease(clamp((now - t0) / dur, 0, 1));
+        S.vb = from.map((v, i) => v + (to[i] - v) * t);
+        svg.setAttribute('viewBox', S.vb.map(f1).join(' '));
+        if (t < 1) vbAnim = requestAnimationFrame(step); else { vbAnim = 0; S.vb = to.slice(); zoomUI(); labelsSoon(); }
+      };
+      zoomUI(); vbAnim = requestAnimationFrame(step);
+      if (to[2] < W - 1) { root.querySelector('[data-act="whole"]').hidden = false; svg.querySelector('.ar-callouts').style.display = 'none'; }
+    }
+    // 3D organs (organs3d.js): which structures have a 3D model, and opening the viewer
+    const O3 = {heart: 'heart', lungs: 'lungs', liver: 'liver', kidneys: 'kidneys', brain: 'brain', stomach: 'stomach', spleen: 'spleen'};
+    function organ3d(target) { return window.MFOrgans3D && window.MFOrgans3D.available() ? O3[target] : null; }
+    function open3d(organ) {
+      if (!window.MFOrgans3D) return;
+      const first = F.findings.find(f => O3[f.target]);
+      window.MFOrgans3D.open(organ || (first ? O3[first.target] : 'heart'), F);
+    }
+    function wholeBody() { zoomGen++; if (isZoomed() || vbAnim) animateVB([0, 0, W, H]); else zoomUI(); }
+    function zoomBy(f, cx = S.vb[0] + S.vb[2] / 2, cy = S.vb[1] + S.vb[3] / 2, animate = true) {
+      zoomGen++;
+      const w = clamp(S.vb[2] * f, MINW, W), k = w / S.vb[2];
+      const v = fitVB(cx - (cx - S.vb[0]) * k, cy - (cy - S.vb[1]) * k, w);
+      if (animate) animateVB(v); else { cancelAnimationFrame(vbAnim); setVB(v); }
     }
 
     /* ---- a different body or skin tone is a fresh drawing; the view settings carry over */
@@ -1321,9 +1385,12 @@
       if (b.dataset.act === 'reset') {
         LAYERS.forEach(l => { S.holes[l.key] = []; S.on[l.key] = true; S.op[l.key] = 1; });
         S.peeled.clear(); S.lens = null; S.glass = false; S.split = null;
-        svg.querySelector('.ar-sel').innerHTML = ''; animateVB([0, 0, W, H]); root.querySelector('[data-act="whole"]').hidden = true; svg.querySelector('.ar-callouts').style.display = ''; setDepth(0);
+        svg.querySelector('.ar-sel').innerHTML = ''; wholeBody(); setDepth(0);
       }
-      if (b.dataset.act === 'whole') { animateVB([0, 0, W, H]); b.hidden = true; svg.querySelector('.ar-callouts').style.display = ''; }
+      if (b.dataset.act === 'whole') wholeBody();
+      if (b.dataset.act === 'zoomin') zoomBy(1 / 1.6);
+      if (b.dataset.act === 'organs3d') open3d();
+      if (b.dataset.act === 'zoomout') zoomBy(1.6);
       if (b.dataset.act === 'dissect') {
         let n = 0; b.disabled = true;
         const next = () => { if (!alive) return; n++; if (n <= LAST) { setDepth(n); setTimeout(next, reduce ? 300 : 1250); } else setTimeout(() => { if (!alive) return; setDepth(0); b.disabled = false; }, 2000); };
@@ -1360,19 +1427,45 @@
       const li = ev.target.closest('[data-find]'); if (li) { openFinding(F.findings[+li.dataset.find]); return; }
       if (ev.target.closest('.ar-x')) { root.querySelector('.ar-detail').innerHTML = ''; svg.querySelector('.ar-sel').innerHTML = ''; S.sel = null; return; }
       const act = ev.target.closest('[data-act]');
-      if (act && act.dataset.act === 'zoomsel' && S.selBox) zoomTo(S.selBox);
+      if (act && act.dataset.act === 'zoomsel' && S.selBox) { zoomGen++; zoomTo(S.selBox); }
+      if (act && act.dataset.act === 'view3d') { open3d(act.dataset.organ); return; }
       if (act && act.dataset.act === 'askflow' && S.sel) {
         const fs = F.findings.filter(f => f.sys === S.sel.layer && f.target === S.sel.target);
         const q = `${S.sel.name}: ${fs.length ? fs.map(f => f.text).join(' ') : 'no abnormal result here'}. What does this mean for the patient and what should be checked next?`;
         if (window.LabInsightsAsk) window.LabInsightsAsk(q); else window.DrFlow.ask({kind: 'free', question: q});
       }
     });
-    let dragged = false;
+    let dragged = false, pan = null;
     svg.addEventListener('pointerdown', ev => {
-      if (!ev.target.closest('.ar-splith')) return;
-      S.drag = true; dragged = false; svg.setPointerCapture(ev.pointerId); ev.preventDefault();
+      dragged = false;
+      if (ev.target.closest('.ar-splith')) { S.drag = true; dragged = false; svg.setPointerCapture(ev.pointerId); ev.preventDefault(); return; }
+      if (isZoomed() && ev.button === 0 && !ev.target.closest('.ar-co')) pan = {x: ev.clientX, y: ev.clientY, vb: S.vb.slice(), id: ev.pointerId, on: false};
     });
-    svg.addEventListener('pointerup', ev => { if (!S.drag) return; S.drag = false; try { svg.releasePointerCapture(ev.pointerId); } catch (e) { /* gone */ } render(); });
+    const endPan = ev => { if (pan && pan.on) { try { svg.releasePointerCapture(pan.id); } catch (e) { /* gone */ } svg.classList.remove('ar-panning'); } pan = null; };
+    svg.addEventListener('pointerup', ev => { endPan(ev); if (!S.drag) return; S.drag = false; try { svg.releasePointerCapture(ev.pointerId); } catch (e) { /* gone */ } render(); });
+    svg.addEventListener('pointercancel', endPan);
+    svg.addEventListener('pointermove', ev => {
+      if (!pan || S.drag) return;
+      const dx = ev.clientX - pan.x, dy = ev.clientY - pan.y;
+      if (!pan.on && Math.hypot(dx, dy) < 6) return;          // small movements are still clicks (peel, inspect…)
+      if (!pan.on) { pan.on = true; dragged = true; svg.setPointerCapture(pan.id); svg.classList.add('ar-panning'); zoomGen++; cancelAnimationFrame(vbAnim); }
+      const k = S.vb[2] / svg.getBoundingClientRect().width;
+      setVB(fitVB(pan.vb[0] - dx * k, pan.vb[1] - dy * k, pan.vb[2]));
+    });
+    // Ctrl/⌘ + scroll or a trackpad pinch zooms around the pointer; plain scrolling still scrolls the page
+    svg.addEventListener('wheel', ev => {
+      if (!ev.ctrlKey && !ev.metaKey) return;
+      ev.preventDefault();
+      const p = pt(ev);
+      zoomBy(Math.exp(clamp(ev.deltaY, -60, 60) * .012), p.x, p.y, false);
+    }, {passive: false});
+    const onKey = ev => {
+      if (root.offsetParent === null || ev.target.closest && ev.target.closest('input, textarea, select')) return;
+      if (ev.key === 'Escape') wholeBody();                      // also cancels a zoom that is still on its way
+      else if ((ev.key === '+' || ev.key === '=') && svg.matches(':hover')) zoomBy(1 / 1.4);
+      else if (ev.key === '-' && svg.matches(':hover')) zoomBy(1.4);
+    };
+    document.addEventListener('keydown', onKey);
     svg.addEventListener('keydown', ev => {
       if (ev.target.closest && ev.target.closest('.ar-splith') && ['ArrowLeft', 'ArrowRight'].includes(ev.key)) {
         ev.preventDefault(); S.split = clamp(S.split + (ev.key === 'ArrowLeft' ? -20 : 20), 40, W - 40); render(); svg.querySelector('.ar-splith').focus(); return;
@@ -1455,7 +1548,7 @@
     renderList(); showDepth(0); render();
     api.destroy = () => {
       alive = false; clearTimeout(labelTimer);
-      removeEventListener('scroll', onScroll); removeEventListener('resize', onScroll);
+      removeEventListener('scroll', onScroll); removeEventListener('resize', onScroll); document.removeEventListener('keydown', onKey); cancelAnimationFrame(vbAnim);
       urls.forEach(u => URL.revokeObjectURL(u));
     };
     api.set = relook;
