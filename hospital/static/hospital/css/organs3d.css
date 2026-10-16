@@ -1,0 +1,35 @@
+/* 3D Organ Lab (organs3d.js) */
+body.o3-open{overflow:hidden}
+.o3-modal{position:fixed;inset:0;z-index:2000;background:rgba(4,10,16,.72);backdrop-filter:blur(4px);display:grid;place-items:center;padding:18px}
+.o3-box{width:min(1180px,100%);height:min(780px,calc(100vh - 36px));display:grid;grid-template-columns:minmax(0,1fr) 300px;grid-template-rows:auto minmax(0,1fr);
+  border-radius:20px;overflow:hidden;background:#0b1824;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+@media (max-width:900px){.o3-box{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr) auto}.o3-side{max-height:30vh}}
+.o3-head{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:10px 14px;background:linear-gradient(#0f2233,#0b1824);border-bottom:1px solid rgba(127,231,255,.15)}
+.o3-tabs{display:flex;gap:4px;overflow-x:auto;flex:1}
+.o3-tabs button{border:0;background:rgba(255,255,255,.06);color:#cfe3ee;font-weight:650;font-size:.86rem;padding:7px 13px;border-radius:10px;white-space:nowrap}
+.o3-tabs button[aria-selected=true]{background:#7fe7ff;color:#08131d}
+.o3-x{border:0;background:rgba(255,255,255,.08);color:#e8f6fb;width:36px;height:36px;border-radius:10px;font-size:1.5rem;line-height:1}
+.o3-stage{position:relative;min-height:0;background:radial-gradient(ellipse 60% 55% at 50% 42%,#1d3a52 0%,#0f2233 55%,#08131d 100%)}
+.o3-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+.o3-canvas:active{cursor:grabbing}
+.o3-msg{position:absolute;inset:0;display:grid;place-items:center;color:#a9c7d6}
+.o3-tools{position:absolute;left:12px;right:12px;top:12px;display:flex;gap:8px;flex-wrap:wrap}
+.o3-tools button,.o3-cut{border:1px solid rgba(255,255,255,.14);background:rgba(8,19,29,.7);color:#cfe3ee;font-weight:600;font-size:.82rem;padding:6px 11px;border-radius:10px;display:inline-flex;gap:6px;align-items:center;margin:0}
+.o3-tools button.on{background:#7fe7ff;color:#08131d;border-color:#7fe7ff}
+.o3-cut input{width:120px;accent-color:#7fe7ff}
+.o3-help{position:absolute;left:0;right:0;bottom:8px;margin:0;text-align:center;color:rgba(207,227,238,.55);font-size:.76rem;pointer-events:none}
+.o3-pins{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.o3-pin{position:absolute;left:0;top:0;display:flex;align-items:center;gap:6px;transition:opacity .2s;white-space:nowrap}
+.o3-pin i{width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;background:#ffb02e;box-shadow:0 0 0 4px rgba(255,176,46,.3),0 0 18px #ffb02e;animation:o3-pulse 1.4s ease-in-out infinite}
+.o3-pin.lv3 i{background:#ff5a5f;box-shadow:0 0 0 4px rgba(255,90,95,.3),0 0 18px #ff5a5f}
+.o3-pin span{background:rgba(8,19,29,.85);color:#fff;font-size:.78rem;font-weight:650;padding:3px 8px;border-radius:8px;border:1px solid rgba(255,176,46,.6);margin-top:-8px}
+.o3-pin.lv3 span{border-color:rgba(255,90,95,.7)}
+@keyframes o3-pulse{50%{transform:scale(1.25)}}
+.o3-side{background:#fff;padding:16px;overflow:auto}
+.o3-side h3{font-family:var(--display);font-size:1.25rem;margin:0 0 6px}
+.o3-side p{font-size:.88rem}
+.o3-find{border-left:4px solid var(--amber);background:var(--amber-wash);border-radius:8px;padding:7px 10px;margin-bottom:8px}
+.o3-find.lv3{border-color:var(--red);background:var(--red-wash)}
+.o3-find b{display:block;font-size:.88rem}.o3-find span{font-size:.82rem}
+.o3-ok{color:var(--teal-2)}.o3-note{color:var(--muted);font-size:.76rem!important}
+@media (prefers-reduced-motion: reduce){.o3-pin i{animation:none}}
