@@ -1,6 +1,6 @@
 {% extends 'hospital/base.html' %}{% load static medflow %}
 {% block title %}Lab insights · {{ p.full_name }}{% endblock %}
-{% block head %}<link href="{% asset 'hospital/css/organs.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/anatomy-real.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/organs3d.css' %}" rel="stylesheet">
+{% block head %}<link href="{% asset 'hospital/css/organs.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/anatomy-real.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/organs3d.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/body3d.css' %}" rel="stylesheet">
 <script type="importmap">{"imports": {"three": "{% static 'hospital/vendor/three/three.module.min.js' %}"}}</script>
 <script>/* the 3D heart loads three.js from this server; the same address as the import map, so only one copy loads */
 window.MF_THREE = {three: "{% static 'hospital/vendor/three/three.module.min.js' %}", controls: "{% static 'hospital/vendor/three/OrbitControls.js' %}", room: "{% static 'hospital/vendor/three/RoomEnvironment.js' %}"};</script>
@@ -18,6 +18,7 @@ window.MF_THREE = {three: "{% static 'hospital/vendor/three/three.module.min.js'
     <div class="seg" role="tablist" aria-label="Results view">
       <button data-view="body" role="tab"><i class="bi bi-person-arms-up"></i>Body map</button>
       <button data-view="anatomy" role="tab"><i class="bi bi-layers-half"></i>Anatomy</button>
+      <button data-view="body3d" role="tab"><i class="bi bi-badge-3d"></i>3D body</button>
       <button data-view="clean" role="tab"><i class="bi bi-bar-chart-line"></i>Charts &amp; lists</button>
     </div>
     {% if open_encounter %}<button class="btn btn-primary" data-drawer="{% url 'lab_new' %}?encounter={{ open_encounter.pk }}" data-title="New lab request"><i class="bi bi-plus-lg"></i>Order tests</button>
@@ -132,6 +133,9 @@ window.MF_THREE = {three: "{% static 'hospital/vendor/three/three.module.min.js'
   <!-- ===================== REALISTIC ANATOMY (anatomy-real.js): peel skin, muscles, vessels, organs, skeleton ===================== -->
   <section class="view view-anatomy" data-pane-view="anatomy"><div id="anatomy-real"></div></section>
 
+  <!-- ===================== 3D BODY (body3d.js): atlas figures with the patient's entered values pinned to the organs ===================== -->
+  <section class="view view-body3d" data-pane-view="body3d"><div id="body3d"></div></section>
+
   <!-- ===================== CHARTS & LISTS ===================== -->
   <section class="view view-clean" data-pane-view="clean">
     <div class="kpis" id="kpis"></div>
@@ -148,4 +152,4 @@ window.MF_THREE = {three: "{% static 'hospital/vendor/three/three.module.min.js'
 </div>
 {{ data|json_script:"lab-data" }}
 {% endblock %}
-{% block scripts %}<script src="{% asset 'hospital/js/organs3d.js' %}"></script><script src="{% asset 'hospital/js/anatomy-real.js' %}"></script><script src="{% asset 'hospital/js/knowledge.js' %}"></script><script src="{% asset 'hospital/js/organs.js' %}"></script><script src="{% asset 'hospital/js/organs-real.js' %}"></script><script src="{% asset 'hospital/js/organs-anatomy.js' %}"></script><script src="{% asset 'hospital/js/organs-heart3d.js' %}"></script><script src="{% asset 'hospital/js/organs-skeleton.js' %}"></script><script src="{% asset 'hospital/js/organs-womb3d.js' %}"></script><script src="{% asset 'hospital/js/organs-repro.js' %}"></script><script src="{% asset 'hospital/js/organs-blood.js' %}"></script><script src="{% asset 'hospital/js/anatomy-layers.js' %}"></script><script src="{% asset 'hospital/js/insights.js' %}"></script>{% if 'drflow' in caps %}<script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/lab-insights-drflow.js' %}"></script>{% endif %}{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/organs3d.js' %}"></script><script src="{% asset 'hospital/js/anatomy-real.js' %}"></script><script src="{% asset 'hospital/js/body3d.js' %}"></script><script src="{% asset 'hospital/js/knowledge.js' %}"></script><script src="{% asset 'hospital/js/organs.js' %}"></script><script src="{% asset 'hospital/js/organs-real.js' %}"></script><script src="{% asset 'hospital/js/organs-anatomy.js' %}"></script><script src="{% asset 'hospital/js/organs-heart3d.js' %}"></script><script src="{% asset 'hospital/js/organs-skeleton.js' %}"></script><script src="{% asset 'hospital/js/organs-womb3d.js' %}"></script><script src="{% asset 'hospital/js/organs-repro.js' %}"></script><script src="{% asset 'hospital/js/organs-blood.js' %}"></script><script src="{% asset 'hospital/js/anatomy-layers.js' %}"></script><script src="{% asset 'hospital/js/insights.js' %}"></script>{% if 'drflow' in caps %}<script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/lab-insights-drflow.js' %}"></script>{% endif %}{% endblock %}

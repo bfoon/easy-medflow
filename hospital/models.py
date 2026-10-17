@@ -27,7 +27,7 @@ class StaffProfile(Tracked):
     email_notifications=models.BooleanField(default=True,help_text='Also send notifications by email')
     facility=models.ForeignKey('NetworkFacility',null=True,blank=True,on_delete=models.SET_NULL,related_name='staff',
                                help_text='Partner role only: the network facility this account belongs to')
-    lab_view=models.CharField(max_length=10,choices=[('body','Body map'),('anatomy','Anatomy'),('clean','Charts & lists')],default='body',help_text='Preferred way to review lab results')
+    lab_view=models.CharField(max_length=10,choices=[('body','Body map'),('anatomy','Anatomy'),('body3d','3D body'),('clean','Charts & lists')],default='body',help_text='Preferred way to review lab results')
     def __str__(self):return f'{self.user} - {self.role}'
 
 class Location(Tracked):

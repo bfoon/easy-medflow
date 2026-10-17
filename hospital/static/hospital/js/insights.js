@@ -326,6 +326,7 @@
     $$('[data-pane-view]').forEach(p => p.classList.toggle('on', p.dataset.paneView === v));
     if (v === 'clean') renderClean();
     if (v === 'anatomy') startAnatomy();
+    if (v === 'body3d') startBody3D();
     if (save) fetch(root.dataset.viewUrl, {method: 'POST', credentials: 'same-origin', headers: {'X-CSRFToken': csrf()}, body: new URLSearchParams({view: v})}).catch(() => {});
   }
   $$('.seg button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view, true)));
@@ -338,7 +339,14 @@
     if (anatomy || !host || !window.MFAnatomy || !window.MFAnatomy.mount) return;
     try { anatomy = window.MFAnatomy.mount(host, DATA); } catch (e) { host.innerHTML = '<div class="empty">The anatomy view could not be drawn in this browser.</div>'; console.error(e); }
   }
-  setView(['clean', 'anatomy'].includes(root.dataset.initialView) ? root.dataset.initialView : 'body', false);
+  /* the 3D body is built the first time it is opened (body3d.js); it reads the same DATA, so its numbers are the entered values */
+  let body3d = null;
+  function startBody3D() {
+    const host = document.getElementById('body3d');
+    if (body3d || !host || !window.MFBody3D || !window.MFBody3D.mount) return;
+    body3d = window.MFBody3D.mount(host, DATA).catch(e => { host.innerHTML = '<div class="empty">The 3D body could not be drawn in this browser.</div>'; console.error(e); });
+  }
+  setView(['clean', 'anatomy', 'body3d'].includes(root.dataset.initialView) ? root.dataset.initialView : 'body', false);
   const firstCrit = Object.values(SYS).find(s => SEVERITY[s.worst] === 4 && s.open);
   if (firstCrit && root.dataset.initialView === 'body') {   // fly to the most urgent finding, unless the doctor has already chosen something
     // only if the doctor has not touched anything yet and is still looking at the body map

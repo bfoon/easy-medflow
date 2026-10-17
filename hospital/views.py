@@ -756,7 +756,7 @@ def lab_view_pref(request):
 @require_POST
 def set_lab_view(request):
     view = request.POST.get('view')
-    if view not in ('body', 'clean', 'anatomy'):
+    if view not in ('body', 'clean', 'anatomy', 'body3d'):
         return HttpResponseBadRequest('Unknown view')
     p = StaffProfile.objects.filter(user=request.user).first()
     if p:
