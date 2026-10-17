@@ -205,14 +205,18 @@ class ProgrammeMessage(Tracked):
 
 
 class ProgrammeAIRun(Tracked):
-    """A Dr. Flow answer for a programme (cohort insight) or one enrolment (follow-up plan). Only de-identified data is
-    sent; the SHA-256 of exactly what was sent is kept for audit."""
-    KIND = [('cohort', 'Programme insight'), ('patient', 'Follow-up plan')]
+    """A Dr. Flow answer: the programme's daily summary (shared with the whole care team, made automatically after each
+    visit day), a private question from one team member (only they see it), or a follow-up plan for one enrolment.
+    Only de-identified data is sent; the SHA-256 of exactly what was sent is kept for audit."""
+    KIND = [('cohort', 'Programme summary'), ('question', 'Question'), ('patient', 'Follow-up plan')]
     STATUS = [('queued', 'Queued'), ('running', 'Thinking'), ('done', 'Ready'), ('failed', 'Failed'), ('blocked', 'Blocked by the privacy check')]
     programme = models.ForeignKey(Programme, on_delete=models.CASCADE, related_name='ai_runs')
     enrolment = models.ForeignKey(Enrolment, null=True, blank=True, on_delete=models.CASCADE, related_name='ai_runs')
     kind = models.CharField(max_length=8, choices=KIND)
     requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    auto = models.BooleanField(default=False, help_text='Made automatically after a visit day')
+    covers_day = models.DateField(null=True, blank=True, help_text='The last visit day this summary includes')
+    question = models.CharField(max_length=500, blank=True, help_text="A team member's private question (checked for personal data before sending)")
     status = models.CharField(max_length=10, choices=STATUS, default='queued')
     text = models.TextField(blank=True)
     model_name = models.CharField(max_length=80, blank=True)

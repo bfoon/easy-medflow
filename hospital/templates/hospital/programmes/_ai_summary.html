@@ -1,0 +1,21 @@
+{% load evidence_tags %}<section class="panel pg-sum" data-feed="{% url 'programme_ai_feed' p.pk %}" data-ask="{% url 'programme_ai_ask' 'cohort' p.pk %}"
+  data-status="{% url 'programme_ai_status' 0 %}" data-context="{% url 'programme_ai_context' 'cohort' p.pk %}" {% if feed.pending %}data-pending="{{ feed.pending.id }}"{% endif %}>
+  <div class="panel-head"><h2><i class="bi bi-stars me-1" style="color:var(--indigo)"></i>Daily summary</h2>
+    {% if ai_on %}<span class="tag indigo"><i class="bi bi-people"></i>Shared with the care team</span>{% elif ai_switch %}<span class="tag amber">Switched on · AI not connected</span>{% else %}<span class="tag">AI off for this programme</span>{% endif %}</div>
+  <div class="pg-sum-meta small muted">
+    {% if summary %}<span data-sum-meta>{% if summary.covers %}After the visits of <b>{{ summary.covers }}</b>{% else %}Made {{ summary.at }}{% endif %} · {% if summary.auto %}made automatically{% else %}refreshed by {{ summary.by }}{% endif %} · {{ summary.at }}</span>
+    {% elif ai_on %}<span data-sum-meta>No summary yet. It is made automatically from {{ summary_hour }}:00 on each visit day (or the next morning).</span>{% endif %}
+    <span class="pg-sum-pending" {% if not feed.pending %}hidden{% endif %}><span class="spinner-border spinner-border-sm"></span> Updating with the latest visits…</span>
+  </div>
+  <div class="pg-ai-scroll pg-sum-body" tabindex="0" role="region" aria-label="Daily programme summary">
+    {% if summary %}{{ summary.html|safe }}
+    {% elif not ai_on %}<p class="muted small mb-0">{% if ai_switch %}AI is switched on for this programme, but this server has no AI service connected yet.{% else %}AI is off for this programme. {% if can_manage %}A programme lead can switch it on in Settings.{% else %}The programme lead can switch it on.{% endif %}{% endif %} The patterns on the right are worked out without AI.</p>
+    {% else %}<p class="muted small mb-0">The first summary appears after the next visit day.</p>{% endif %}
+  </div>
+  <div class="pg-sum-foot">
+    {% if feed.history|length > 1 %}<label class="small muted">Earlier <select class="form-select form-select-sm" data-sum-history>{% for h in feed.history %}<option value="{{ h.id }}">{% if h.covers %}{{ h.covers }}{% else %}{{ h.at }}{% endif %}{% if not h.auto %} (refreshed){% endif %}</option>{% endfor %}</select></label>{% endif %}
+    <span class="ms-auto d-flex gap-2">{% if ai_on %}<button type="button" class="btn btn-sm btn-ghost" data-sum-refresh title="Make a new summary now"><i class="bi bi-arrow-clockwise"></i>Refresh now</button>{% endif %}
+      <button type="button" class="btn btn-sm btn-ghost" data-sum-see><i class="bi bi-eye"></i>What is sent</button></span>
+  </div>
+  <p class="small muted mb-0 mt-2"><i class="bi bi-shield-lock"></i> Totals only, numbers under 5 hidden. No names, record numbers, phones, places, dates or notes ever reach the AI. Advisory: the team decides.</p>
+</section>

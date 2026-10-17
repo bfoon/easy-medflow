@@ -314,3 +314,79 @@ class PageTests(ProgrammeBase):
         self.assertEqual(r.json()['status'], 'Sent')
         m.refresh_from_db()
         self.assertEqual(m.sent_by, self.nurse)
+
+
+@override_settings(CLINICAL_AI_ENABLED=True, ANTHROPIC_API_KEY='k')
+class InsightsTests(ProgrammeBase):
+    """The shared daily summary and private questions."""
+    def setUp(self):
+        super().setUp()
+        self.p = self.htn(ai_enabled=True)
+        self.e = self.enrol(self.p, days_ago=31)
+        self.inline = mock.patch('hospital.programmes.queue_ai', side_effect=lambda r: P.run_ai(r.pk) and r)
+        self.dispatch = mock.patch('hospital.evidence_views._dispatch', side_effect=lambda t, pk: P.run_ai(pk))
+        self.ask = mock.patch('hospital.medical_ai._ask', return_value=('## Since the last visit day\nTwo came.', [], 0))
+        self.inline.start(); self.dispatch.start(); self.ai = self.ask.start()
+        self.addCleanup(mock.patch.stopall)
+
+    def evening(self, day):
+        return timezone.make_aware(timezone.datetime.combine(day, timezone.datetime.min.time()).replace(hour=P.SUMMARY_HOUR + 1))
+
+    def test_summary_is_made_once_after_each_visit_day(self):
+        v = self.e.visits.get(kind='refill')
+        P.record_visit(v, self.nurse, TODAY)
+        self.assertIsNone(P.maybe_auto_summary(self.p, now=self.evening(TODAY).replace(hour=10)))   # not before the evening
+        r = P.maybe_auto_summary(self.p, now=self.evening(TODAY))
+        r.refresh_from_db()
+        self.assertEqual((r.status, r.auto, r.covers_day, r.kind), ('done', True, TODAY, 'cohort'))
+        self.assertIsNone(P.maybe_auto_summary(self.p, now=self.evening(TODAY)))                    # only once for that day
+        self.assertIn('Since the last visit day', self.ai.call_args[0][2])                          # the daily prompt
+        sent = self.ai.call_args[0][0]
+        self.assertEqual(sent['last_visit_day']['came'], '<5')
+        nxt = self.e.visits.filter(status='scheduled').order_by('due').first()
+        P.record_visit(nxt, self.nurse, TODAY + timedelta(days=2))
+        self.assertIsNotNone(P.maybe_auto_summary(self.p, now=self.evening(TODAY + timedelta(days=2))))   # a new visit day: a new summary
+
+    def test_no_automatic_summary_when_ai_is_off(self):
+        P.record_visit(self.e.visits.get(kind='refill'), self.nurse, TODAY)
+        self.p.ai_enabled = False
+        self.p.save()
+        self.assertIsNone(P.maybe_auto_summary(self.p, now=self.evening(TODAY)))
+        self.assertFalse(ProgrammeAIRun.objects.exists())
+
+    def test_the_whole_team_sees_the_summary_and_it_scrolls(self):
+        P.record_visit(self.e.visits.get(kind='refill'), self.nurse, TODAY)
+        P.maybe_auto_summary(self.p, now=self.evening(TODAY))
+        for who in ('doctor', 'nurse'):
+            page = self.as_(who).get(f'/programmes/{self.p.pk}/?tab=insights').content.decode()
+            self.assertIn('Two came.', page)
+            self.assertIn('pg-ai-scroll pg-sum-body', page)
+            self.assertIn('made automatically', page)
+
+    def test_questions_are_private_to_the_person_who_asked(self):
+        r = self.as_('nurse').post(f'/programmes/ai/question/{self.p.pk}/ask/', {'q': 'Which reason for missed visits should we tackle first?'}).json()
+        self.assertEqual((r['run']['status'], r['run']['kind']), ('done', 'question'))
+        self.assertIn('Which reason for missed visits', self.ai.call_args[0][2])
+        self.assertEqual(self.ai.call_args[0][0]['question'], 'Which reason for missed visits should we tackle first?')
+        doc = self.as_('doctor')
+        self.assertEqual(doc.get(f'/programmes/ai/runs/{r["run"]["id"]}/').status_code, 403)
+        self.assertNotIn('Which reason for missed visits', doc.get(f'/programmes/{self.p.pk}/?tab=insights').content.decode())
+        self.assertEqual(doc.get(f'/programmes/{self.p.pk}/ai/feed/').json()['questions'], [])
+        nurse = self.as_('nurse')
+        self.assertIn('Which reason for missed visits', nurse.get(f'/programmes/{self.p.pk}/?tab=insights').content.decode())
+        self.assertEqual(nurse.post(f'/programmes/ai/runs/{r["run"]["id"]}/forget/').json(), {'ok': True})
+        self.assertFalse(ProgrammeAIRun.objects.filter(kind='question').exists())
+
+    def test_a_question_that_identifies_a_patient_is_stopped_before_anything_is_saved_or_sent(self):
+        c = self.as_('nurse')
+        for q in ('Why does Awa keep missing?', f'What about {self.patient.mrn}?', 'Patient on 341 5919, what next?', 'Missed visit on 2026-10-01?'):
+            r = c.post(f'/programmes/ai/question/{self.p.pk}/ask/', {'q': q})
+            self.assertEqual(r.status_code, 400, q)
+            self.assertTrue(r.json()['privacy'])
+        self.assertFalse(ProgrammeAIRun.objects.exists())
+        self.ai.assert_not_called()
+
+    def test_questions_need_ai_on_for_the_programme(self):
+        self.p.ai_enabled = False
+        self.p.save()
+        self.assertEqual(self.as_('nurse').post(f'/programmes/ai/question/{self.p.pk}/ask/', {'q': 'How are we doing?'}).status_code, 403)

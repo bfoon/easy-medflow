@@ -131,3 +131,111 @@
     });
   });
 })();
+
+/* Insights: the shared daily summary (refresh, history, live update) and private questions to Dr. Flow. */
+(() => {
+  'use strict';
+  const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+  const toast = (m, l) => (window.mfToast ? mfToast(m, l) : alert(m));
+  const getJSON = url => fetch(url, {credentials: 'same-origin'}).then(r => r.json());
+  const post = (url, body) => fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'X-CSRFToken': csrf(), 'Accept': 'application/json'}, body: new URLSearchParams(body || {})})
+    .then(r => r.json().catch(() => ({ok: false, error: 'No answer from the server.'})));
+  const statusUrl = (panel, id) => panel.dataset.status.replace('/0/', `/${id}/`);
+  // ask again every few seconds until the AI has answered
+  const waitFor = (panel, id, done) => {
+    const tick = async () => {
+      const d = await getJSON(statusUrl(panel, id)).catch(() => null);
+      if (!d || !d.run) return setTimeout(tick, 5000);
+      if (d.run.status === 'running' || d.run.status === 'queued') return setTimeout(tick, 3000);
+      done(d.run);
+    };
+    setTimeout(tick, 2000);
+  };
+
+  /* shared daily summary */
+  const sum = $('.pg-sum');
+  if (sum) {
+    const body = $('.pg-sum-body', sum), meta = $('[data-sum-meta]', sum), pend = $('.pg-sum-pending', sum);
+    const show = run => {
+      body.innerHTML = run.status === 'done' ? run.html : `<div class="alert-mf warn"><i class="bi bi-exclamation-triangle"></i><div>${esc(run.error || 'The AI did not answer. The previous summary is still shown in Earlier.')}</div></div>`;
+      body.scrollTop = 0;
+      if (meta && run.status === 'done') meta.innerHTML = `${run.covers ? `After the visits of <b>${esc(run.covers)}</b>` : 'Made ' + esc(run.at)} · ${run.auto ? 'made automatically' : 'refreshed by ' + esc(run.by)} · ${esc(run.at)}`;
+    };
+    const watch = id => { pend.hidden = false; waitFor(sum, id, run => { pend.hidden = true; show(run); if (run.status === 'done') toast('Daily summary updated.'); }); };
+    if (sum.dataset.pending) watch(sum.dataset.pending);
+    $('[data-sum-refresh]', sum)?.addEventListener('click', async ev => {
+      ev.currentTarget.disabled = true;
+      const d = await post(sum.dataset.ask);
+      ev.currentTarget.disabled = false;
+      if (!d.ok) return toast(d.error || 'Could not refresh.', 'warning');
+      if (d.run.status === 'done') show(d.run); else watch(d.run.id);
+    });
+    $('[data-sum-history]', sum)?.addEventListener('change', async ev => {
+      const d = await getJSON(statusUrl(sum, ev.target.value)).catch(() => null);
+      if (d && d.run) show(d.run);
+    });
+    $('[data-sum-see]', sum)?.addEventListener('click', async () => {
+      const d = await getJSON(sum.dataset.context).catch(() => null);
+      if (!d) return;
+      const html = `<div class="pg-verdict ${d.ok ? 'ok' : 'no'}"><i class="bi bi-shield-${d.ok ? 'check' : 'x'}"></i><div><b>Privacy check:</b> ${esc(d.verdict)}</div></div>
+        <p class="small muted">${d.ai_on ? 'This is exactly what Dr. Flow receives for the daily summary.' : 'AI is not active for this programme: nothing is sent. This is what would be sent.'}</p>
+        <pre class="pg-ai-ctx">${esc(JSON.stringify(d.context, null, 2))}</pre>`;
+      if (window.mfModal) mfModal('What the AI receives', html);
+    });
+    // a summary made by someone else (or automatically) while this page is open appears by itself
+    setInterval(async () => {
+      if (document.hidden || !pend.hidden) return;
+      const d = await getJSON(sum.dataset.feed).catch(() => null);
+      if (d && d.pending) watch(d.pending.id);
+    }, 60000);
+  }
+
+  /* private questions */
+  const qa = $('.pg-qa');
+  if (qa) {
+    const list = $('[data-qa-list]', qa), form = $('[data-qa-form]', qa);
+    const fill = (item, run) => {
+      const a = $('.pg-qa-a', item);
+      item.dataset.statusNow = run.status;
+      a.innerHTML = run.status === 'done' ? run.html : (run.status === 'running' || run.status === 'queued')
+        ? '<span class="small muted"><span class="spinner-border spinner-border-sm"></span> Thinking…</span>'
+        : `<span class="small text-danger">${esc(run.error || 'No answer. Try again.')}</span>`;
+    };
+    const add = run => {
+      $('[data-qa-empty]', qa)?.remove();
+      list.insertAdjacentHTML('afterbegin', `<article class="pg-qa-item" data-run="${run.id}"><div class="pg-qa-q"><i class="bi bi-person"></i>${esc(run.question)}</div><div class="pg-qa-a"></div>
+        <div class="pg-qa-meta small muted">${esc(run.at)} · <button type="button" class="link-btn" data-qa-forget>Delete</button></div></article>`);
+      const item = list.firstElementChild;
+      fill(item, run);
+      list.scrollTop = 0;
+      if (run.status === 'running' || run.status === 'queued') waitFor(qa, run.id, r => fill(item, r));
+    };
+    $$('.pg-qa-item', list).forEach(item => { if (['running', 'queued'].includes(item.dataset.statusNow)) waitFor(qa, item.dataset.run, r => fill(item, r)); });
+    $$('[data-qa-suggest]', qa).forEach(b => b.addEventListener('click', () => { const t = form.q; t.value = b.textContent.trim(); t.focus(); }));
+    form?.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const q = form.q.value.trim(); if (q.length < 3) return;
+      const btn = form.querySelector('button.btn-primary'); btn.disabled = true;
+      $('.pg-qa-blocked', qa)?.remove();
+      const d = await post(qa.dataset.ask, {q});
+      btn.disabled = false;
+      if (!d.ok) {
+        if (d.privacy) form.insertAdjacentHTML('afterend', `<div class="pg-qa-blocked mb-2"><i class="bi bi-shield-x"></i> ${esc(d.error)}</div>`);
+        else toast(d.error || 'Could not ask.', 'warning');
+        return;
+      }
+      form.q.value = '';
+      add(d.run);
+    });
+    form?.q.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) form.requestSubmit(); });
+    list.addEventListener('click', async e => {
+      const b = e.target.closest('[data-qa-forget]'); if (!b) return;
+      const item = b.closest('[data-run]');
+      if (!confirm('Delete this question and its answer?')) return;
+      const d = await post(qa.dataset.forget.replace('/0/', `/${item.dataset.run}/`));
+      if (d.ok) item.remove();
+    });
+  }
+})();

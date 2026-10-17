@@ -226,7 +226,11 @@ def detail(request, pk):
         ctx['addable'] = staff_qs().exclude(pk__in=p.members.values('user_id'))
     elif tab == 'insights':
         ctx['patterns'] = P.patterns(p)
-        ctx['last_ai'] = p.ai_runs.filter(kind='cohort').first()
+        feed = ai_feed_data(p, request.user)
+        ctx['feed'], ctx['summary'] = feed, feed['summary']
+        ctx['last_day'] = P.last_visit_day(p, today)
+        ctx['summary_hour'] = P.SUMMARY_HOUR
+        ctx['qa_suggestions'] = QA_SUGGESTIONS.get(p.kind, QA_SUGGESTIONS['other'])
     elif tab == 'outbox':
         ctx['reminders'] = [{'m': m, 'links': P.send_links(m)} for m in
                            ProgrammeMessage.objects.filter(enrolment__programme=p).select_related('enrolment__patient', 'visit').order_by('status', '-created_at')[:150]]
@@ -508,16 +512,37 @@ def _ai_json(r):
     if r is None:
         return None
     status = 'running' if r.busy else ('failed' if r.status in ('queued', 'running') else r.status)
-    return {'id': r.pk, 'status': status, 'html': str(simple_md(r.text)) if r.text else '', 'error': r.error if status in ('failed', 'blocked') else '',
+    return {'id': r.pk, 'kind': r.kind, 'status': status, 'html': str(simple_md(r.text)) if r.text else '',
+            'error': r.error if status in ('failed', 'blocked') else '', 'question': r.question, 'auto': r.auto,
+            'covers': r.covers_day.strftime('%a %d %b') if r.covers_day else '',
             'at': timezone.localtime(r.created_at).strftime('%d %b %H:%M'), 'by': (r.requested_by.get_full_name() or r.requested_by.username) if r.requested_by_id else ''}
 
 
 def _ai_target(request, kind, pk):
-    if kind == 'cohort':
-        p = _programme(request, pk)
-        return p, None
-    e = _enrolment(request, pk)
-    return e.programme, e
+    if kind in ('cohort', 'question'):
+        return _programme(request, pk), None
+    if kind == 'patient':
+        e = _enrolment(request, pk)
+        return e.programme, e
+    raise PermissionDenied('Unknown kind')
+
+
+def _ai_visible(request, r):
+    """Summaries and follow-up plans: the whole care team. A question: only the person who asked it."""
+    _programme(request, r.programme_id)
+    if r.kind == 'question' and r.requested_by_id != request.user.pk:
+        raise PermissionDenied('Questions are private to the person who asked them.')
+
+
+QUESTIONS_PER_DAY = 30
+QA_SUGGESTIONS = {
+    'hiv': ['How can we improve viral suppression?', 'Would multi-month dispensing help our retention?', 'What do the reasons for missed refills suggest?'],
+    'hypertension': ['How many patients are controlled, and what would help the rest?', 'Which day of the week should we avoid?', 'What do the reasons for missed visits suggest?'],
+    'diabetes': ['How is HbA1c control trending?', 'What would help patients who miss refills?', 'Which checks are most overdue?'],
+    'immunisation': ['Which vaccine visit is missed most?', 'How can we reduce drop-out between Penta 1 and Penta 3?', 'What helps carers come on time?'],
+    'antenatal': ['Which contact is missed most?', 'How can we get more women to 8 contacts?', 'What do the reasons for missed contacts suggest?'],
+    'other': ['What should we focus on this week?', 'What do the reasons for missed visits suggest?', 'How does our retention compare with good practice?'],
+}
 
 
 @login_required
@@ -528,10 +553,26 @@ def ai_ask(request, kind, pk):
     p, e = _ai_target(request, kind, pk)
     if not P.ai_allowed(p):
         return JsonResponse({'ok': False, 'error': 'AI is switched off for this programme.'}, status=403)
-    busy = ProgrammeAIRun.objects.filter(programme=p, enrolment=e, kind=kind, status__in=['queued', 'running']).first()
-    if busy and busy.busy:
-        return JsonResponse({'ok': True, 'run': _ai_json(busy)})
-    r = ProgrammeAIRun.objects.create(programme=p, enrolment=e, kind=kind, requested_by=request.user)
+    q = ''
+    if kind == 'question':
+        q = ' '.join((request.POST.get('q') or '').split())[:500]
+        if len(q) < 3:
+            return JsonResponse({'ok': False, 'error': 'Type a question first.'}, status=400)
+        try:
+            P.check_question(p, q)                    # before anything is saved or sent
+        except P.PIIBlocked as exc:
+            audit(request, 'programme_ai_blocked', f'programme:{p.pk}', {'kind': kind})   # the question itself is not logged
+            return JsonResponse({'ok': False, 'privacy': True, 'error': str(exc).replace('Not sent: the request', 'Not sent: your question')
+                                 + ' Ask about the programme without details that could identify a patient.'}, status=400)
+        today = ProgrammeAIRun.objects.filter(programme=p, kind='question', requested_by=request.user, created_at__date=timezone.localdate()).count()
+        if today >= QUESTIONS_PER_DAY:
+            return JsonResponse({'ok': False, 'error': f'You have asked {QUESTIONS_PER_DAY} questions today. Try again tomorrow.'}, status=429)
+    else:
+        busy = ProgrammeAIRun.objects.filter(programme=p, enrolment=e, kind=kind, status__in=['queued', 'running']).first()
+        if busy and busy.busy:
+            return JsonResponse({'ok': True, 'run': _ai_json(busy)})
+    r = ProgrammeAIRun.objects.create(programme=p, enrolment=e, kind=kind, requested_by=request.user, question=q,
+                                      covers_day=P.last_visit_day(p, timezone.localdate()) if kind == 'cohort' else None)
     audit(request, 'programme_ai', f'programme:{p.pk}', {'kind': kind, 'enrolment': e.pk if e else None, 'run': r.pk})
     _dispatch(programme_ai_task, r.pk)
     r.refresh_from_db()
@@ -542,8 +583,35 @@ def ai_ask(request, kind, pk):
 @require_GET
 def ai_status(request, pk):
     r = get_object_or_404(ProgrammeAIRun.objects.select_related('requested_by'), pk=pk)
-    _programme(request, r.programme_id)
+    _ai_visible(request, r)
     return JsonResponse({'ok': True, 'run': _ai_json(r)})
+
+
+@login_required
+@require_POST
+def ai_forget(request, pk):
+    """Delete one of your own questions and its answer."""
+    r = get_object_or_404(ProgrammeAIRun, pk=pk, kind='question')
+    _ai_visible(request, r)
+    r.delete()
+    return JsonResponse({'ok': True})
+
+
+def ai_feed_data(p, user):
+    runs = ProgrammeAIRun.objects.filter(programme=p).select_related('requested_by')
+    summaries = list(runs.filter(kind='cohort').exclude(status='failed')[:15])
+    current = next((r for r in summaries if r.status == 'done'), None)
+    pending = next((r for r in summaries if r.busy), None)
+    return {'summary': _ai_json(current), 'pending': _ai_json(pending) if pending and (not current or pending.created_at > current.created_at) else None,
+            'history': [_ai_json(r) for r in summaries if r.status == 'done'][:10],
+            'questions': [_ai_json(r) for r in runs.filter(kind='question', requested_by=user)[:20]]}
+
+
+@login_required
+@require_GET
+def ai_feed(request, pk):
+    p = _programme(request, pk)
+    return JsonResponse({'ok': True, 'ai_on': P.ai_allowed(p), **ai_feed_data(p, request.user)})
 
 
 @login_required
@@ -551,7 +619,7 @@ def ai_status(request, pk):
 def ai_context(request, kind, pk):
     """Exactly what the AI would receive, and the privacy check's verdict. Nothing is sent here."""
     p, e = _ai_target(request, kind, pk)
-    r = ProgrammeAIRun(programme=p, enrolment=e, kind=kind)
+    r = ProgrammeAIRun(programme=p, enrolment=e, kind=kind, question=(request.GET.get('q') or '')[:500])
     ctx, patients = P.ai_context(r)
     try:
         P.firewall(ctx, patients)

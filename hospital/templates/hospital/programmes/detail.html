@@ -113,11 +113,14 @@
 </section>
 
 {% elif tab == 'insights' %}
-<div class="grid g-main">
-  <section class="panel"><div class="panel-head"><h2>Patterns</h2><span class="hint">Worked out here, without AI</span></div>
-    {% for lvl, icon, text in patterns %}<div class="alert-mf {% if lvl == 'warn' %}warn{% else %}info{% endif %} mb-2"><i class="bi bi-{{ icon }}"></i><div>{{ text }}</div></div>
-    {% empty %}<div class="empty">Patterns appear once there are visits, measurements and tracing records.</div>{% endfor %}</section>
-  {% include 'hospital/programmes/_ai_panel.html' with kind='cohort' target=p.pk last=last_ai title='Programme insight' %}
+<div class="grid g-main pg-insights">
+  {% include 'hospital/programmes/_ai_summary.html' %}
+  <div class="stack">
+    {% include 'hospital/programmes/_ai_questions.html' %}
+    <section class="panel"><div class="panel-head"><h2>Patterns</h2><span class="hint">Worked out here, without AI</span></div>
+      {% for lvl, icon, text in patterns %}<div class="alert-mf {% if lvl == 'warn' %}warn{% else %}info{% endif %} mb-2"><i class="bi bi-{{ icon }}"></i><div>{{ text }}</div></div>
+      {% empty %}<div class="empty">Patterns appear once there are visits, measurements and tracing records.</div>{% endfor %}</section>
+  </div>
 </div>
 
 {% elif tab == 'outbox' %}

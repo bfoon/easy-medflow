@@ -13,7 +13,10 @@ long-term programmes.
 * **Staff notifications** (bell and email) never contain patient names: only counts and a link that needs a sign-in.
 * **Risk** is worked out by rules, without AI: lateness, on-time history, tracing results and off-target measures.
 * **AI (optional, per programme)** receives only de-identified data: an aggregate with small numbers hidden (<5) for a
-  programme, or a pseudonymous timeline in relative days for one patient. A privacy firewall checks every request for
+  programme, or a pseudonymous timeline in relative days for one patient. The programme summary is made automatically
+  after each visit day (from SUMMARY_HOUR that evening, or the next morning) and the whole care team sees it. Team
+  members can also ask their own questions about the programme: only the person who asked sees the answer, and the
+  question itself passes the privacy firewall before anything is sent. A privacy firewall checks every request for
   the patients' names, record numbers, phones, emails, addresses, birth dates and any real date, and blocks it if it
   finds one. Notes are never sent.
 """
@@ -464,6 +467,10 @@ def sweep(today=None):
         notify([u], f'{pr.name}: {len(es)} patient{"s" if len(es) != 1 else ""} lost to follow-up',
                f'No visit for more than {pr.ltfu_days} days. They stay on the tracing list until they return or the enrolment is closed.',
                url=reverse('programme_detail', args=[pr.pk]) + '?tab=missed', kind='programme')
+    from .models_programmes import Programme
+    for pr in Programme.objects.filter(active=True, ai_enabled=True):
+        if maybe_auto_summary(pr):
+            out['summaries'] += 1
     return dict(out)
 
 
@@ -746,7 +753,40 @@ def cohort_context(programme, today=None):
         'tracing_outcomes': {k: _small(v) for k, v in outcomes.items()},
         'risk_levels': {k: _small(v) for k, v in levels.items()},
         'control_findings': [t for _lvl, _icon, t in patterns(programme, today) if '%' in t],
+        'by_step_last_180_days': step_counts(programme, today),
+        'last_visit_day': day_activity(programme, last_visit_day(programme, today)),
     }
+
+
+def step_counts(programme, today):
+    from .models_programmes import ProgrammeVisit
+    rows = Counter((v['title'].replace(' (catch-up)', ''), v['status']) for v in ProgrammeVisit.objects.filter(
+        enrolment__programme=programme, due__gte=today - timedelta(days=180), due__lte=today).values('title', 'status'))
+    steps = sorted({t for t, _s in rows})
+    return [{'step': s, 'attended': _small(rows[(s, 'attended')]), 'missed': _small(rows[(s, 'missed')])} for s in steps]
+
+
+def last_visit_day(programme, upto):
+    """The most recent day, up to `upto`, on which visits happened or were missed in this programme."""
+    from .models_programmes import ProgrammeVisit
+    vq = ProgrammeVisit.objects.filter(enrolment__programme=programme)
+    days = [vq.filter(attended_on__lte=upto).order_by('-attended_on').values_list('attended_on', flat=True).first(),
+            vq.filter(status='missed', due__lte=upto).order_by('-due').values_list('due', flat=True).first()]
+    days = [d for d in days if d]
+    return max(days) if days else None
+
+
+def day_activity(programme, day):
+    """What happened on one visit day, as counts (the day itself is not sent)."""
+    from .models_programmes import ProgrammeVisit
+    if not day:
+        return None
+    vq = ProgrammeVisit.objects.filter(enrolment__programme=programme)
+    came = list(vq.filter(attended_on=day).values('due', 'measures'))
+    return {'came': _small(len(came)), 'came_late': _small(sum(1 for v in came if (day - v['due']).days > programme.grace_days)),
+            'missed_that_day': _small(vq.filter(status='missed', due=day).count()),
+            'new_enrolments': _small(programme.enrolments.filter(enrolled_on=day).count()),
+            'days_ago': (timezone.localdate() - day).days}
 
 
 def patient_context(enrolment, today=None):
@@ -774,9 +814,11 @@ def patient_context(enrolment, today=None):
     }
 
 
-COHORT_TASK = """You are helping the care team of a long-term treatment or prevention programme at a hospital in The Gambia.
-Use only the aggregate, de-identified numbers provided (numbers 1-4 are shown as "<5" on purpose).
-Start with one sentence: how the programme is doing. Then use exactly these headings:
+COHORT_TASK = """You are writing the daily summary for the care team of a long-term treatment or prevention programme at a
+hospital in The Gambia. Every team member reads it. Use only the aggregate, de-identified numbers provided (numbers 1-4 are
+shown as "<5" on purpose). Start with one sentence: how the programme is doing. Then use exactly these headings:
+## Since the last visit day
+(who came, came late or missed on the last visit day, from "last_visit_day"; say if nothing happened)
 ## What stands out
 (retention, missed visits, trends by month, reasons for missing, control of the condition)
 ## Interventions to try
@@ -799,14 +841,26 @@ Use exactly these headings:
 Be respectful and non-judgemental. Never try to identify the patient. Do not invent results."""
 
 
+QUESTION_TASK = """A member of the care team of this long-term programme asks the question below. Answer it for them, briefly
+and practically, using only the aggregate, de-identified programme data provided (numbers 1-4 are shown as "<5" on
+purpose) and general clinical and public-health knowledge. If the data cannot answer it, say so and say what the team
+could record to answer it next time. Never try to identify or describe an individual patient. If the question asks for
+personal details of a patient, explain that they are not shared with the AI and answer at programme level instead.
+Question: """
+
+SUMMARY_HOUR = 19        # from this hour the day's summary is made; otherwise the previous visit day is summarised
+
+
 def ai_allowed(programme):
     from .medical_ai import enabled
     return bool(programme.ai_enabled and enabled())
 
 
 def ai_context(run):
-    if run.kind == 'cohort':
+    if run.kind in ('cohort', 'question'):
         ctx = cohort_context(run.programme)
+        if run.kind == 'question':
+            ctx['question'] = run.question
         patients = [e.patient for e in run.programme.enrolments.select_related('patient').prefetch_related('patient__enrolments')]
     else:
         ctx = patient_context(run.enrolment)
@@ -833,8 +887,8 @@ def run_ai(pk):
         ctx, patients = ai_context(r)
         firewall(ctx, patients)
         r.context_digest = digest(ctx)
-        text, _sources, _ = medical_ai._ask(ctx, f'programme_{r.kind}', COHORT_TASK if r.kind == 'cohort' else PATIENT_TASK,
-                                            system=medical_ai.GENERAL_SYSTEM_PROMPT)
+        task = {'cohort': COHORT_TASK, 'question': QUESTION_TASK + r.question, 'patient': PATIENT_TASK}[r.kind]
+        text, _sources, _ = medical_ai._ask(ctx, f'programme_{r.kind}', task, system=medical_ai.GENERAL_SYSTEM_PROMPT)
         if not (text or '').strip():
             raise RuntimeError('The AI service returned no text')
         r.text, r.status = text.strip(), 'done'
@@ -845,3 +899,47 @@ def run_ai(pk):
     r.finished_at = timezone.now()
     r.save()
     return r
+
+
+def queue_ai(run):
+    """Hand an AI request to the worker. If the worker cannot be reached, answer in a background thread so a page
+    (or the sweep run from a page view) never waits for the AI."""
+    from .tasks import programme_ai_task
+    try:
+        programme_ai_task.apply_async(args=[run.pk], retry=False)
+    except Exception:
+        import threading
+        threading.Thread(target=run_ai, args=(run.pk,), daemon=True).start()
+    return run
+
+
+def maybe_auto_summary(programme, now=None):
+    """Make the shared programme summary once per visit day. Returns the new run, or None when nothing is due."""
+    from .models_programmes import ProgrammeAIRun
+    if not ai_allowed(programme):
+        return None
+    now = timezone.localtime(now or timezone.now())
+    upto = now.date() if now.hour >= SUMMARY_HOUR else now.date() - timedelta(days=1)
+    day = last_visit_day(programme, upto)
+    if not day:
+        return None
+    runs = ProgrammeAIRun.objects.filter(programme=programme, kind='cohort')
+    if runs.filter(auto=True, covers_day__gte=day).exclude(status='failed').exists():
+        return None
+    if any(r.busy for r in runs.filter(status__in=['queued', 'running'])):
+        return None
+    if runs.filter(auto=True, covers_day=day, status='failed').count() >= 3:
+        return None                                   # stop retrying a day the AI keeps failing on
+    r = ProgrammeAIRun.objects.create(programme=programme, kind='cohort', auto=True, covers_day=day)
+    return queue_ai(r)
+
+
+def check_question(programme, text):
+    """Raise PIIBlocked if a question mentions anything that identifies a patient (before anything is saved or sent)."""
+    patients = [e.patient for e in programme.enrolments.select_related('patient').prefetch_related('patient__enrolments')]
+    return firewall({'question': text}, patients)
+
+
+def latest_summary(programme):
+    from .models_programmes import ProgrammeAIRun
+    return ProgrammeAIRun.objects.filter(programme=programme, kind='cohort', status='done').first()
