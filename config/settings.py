@@ -101,6 +101,7 @@ from celery.schedules import crontab  # noqa: E402
 CELERY_BEAT_SCHEDULE = {   # runs when the worker is started with -B (see compose files)
     'refresh-stale-medical-evidence': {'task': 'hospital.tasks.refresh_stale_evidence_task', 'schedule': crontab(hour=2, minute=30, day_of_week='sun')},
     'check-who-reference-sources': {'task': 'hospital.tasks.check_reference_sources_task', 'schedule': crontab(hour=3, minute=0, day_of_week='sun')},
+    'care-programme-sweep': {'task': 'hospital.tasks.programme_sweep_task', 'schedule': crontab(minute=10)},   # hourly; reminders go out from 07:00
 }
 
 # Clinical AI (off by default). When enabled, only de-identified context is sent, from the server.
@@ -148,3 +149,8 @@ EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
 EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='E-MedFlow <no-reply@e-medflow.local>')
 SITE_URL = env('SITE_URL', default='http://localhost:8000')   # used for links in emails
+# Care programmes: the clinic name in patient reminders, and an optional SMS gateway (JSON POST {"to", "message"} with a
+# Bearer token). Without a gateway, SMS and WhatsApp reminders wait in the programme outbox for staff to send in one tap.
+MEDFLOW_CLINIC_NAME = env('MEDFLOW_CLINIC_NAME', default='')
+PROGRAMME_SMS_URL = env('PROGRAMME_SMS_URL', default='')
+PROGRAMME_SMS_TOKEN = env('PROGRAMME_SMS_TOKEN', default='')

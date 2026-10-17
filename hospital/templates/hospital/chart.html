@@ -171,6 +171,7 @@
       <ul class="plain ruled">{% for inv in billing.invoices %}<li><a class="d-flex gap-2 text-decoration-none" href="{% url 'invoice_detail' inv.pk %}"><span><b class="text-dark">{{ inv.number }}</b> <span class="tag inv-{{ inv.status }}">{{ inv.get_status_display }}</span><br><span class="small muted">{{ inv.created_at|date:'j M Y' }} · {{ inv.total|money }}</span></span>{% if inv.balance and inv.status != 'draft' and inv.status != 'void' %}<b class="ms-auto text-danger">{{ inv.balance|money }}</b>{% endif %}</a></li>{% empty %}<li class="muted small">No bills yet.</li>{% endfor %}</ul>
       {% if billing.encounter %}<a class="btn btn-sm btn-ink w-100 mt-2" href="{% url 'invoice_for_encounter' billing.encounter.pk %}"><i class="bi bi-receipt"></i>{% if billing.encounter.status == 'open' %}Bill current visit{% else %}Bill last visit{% endif %}</a>{% endif %}
     </section>
+    {% if programmes %}{% include 'hospital/programmes/_chart_panel.html' %}{% endif %}
     {% include 'hospital/_similar.html' with patient_id=p.pk %}
     <section class="panel network-access">
       <div class="panel-head"><h2><i class="bi bi-diagram-3 me-1" style="color:var(--teal)"></i>Network access</h2>

@@ -1,0 +1,47 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Care programmes{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/programmes.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}Care programmes{% endblock %}
+{% block subheading %}<p class="sub">Long-term treatment and prevention: who is due, who missed, who needs tracing. Reminders go out by themselves; missed visits reach the responsible doctor and nurse.</p>{% endblock %}
+{% block actions %}{% if can_create %}<button class="btn btn-primary" type="button" data-pg-open="pg-new"><i class="bi bi-plus-lg"></i>New programme</button>{% endif %}{% endblock %}
+{% block content %}
+{% if mine_missed or outbox %}<div class="pg-strip">
+  {% if mine_missed %}<span class="pg-pill red"><i class="bi bi-telephone-outbound"></i><b>{{ mine_missed }}</b> missed visit{{ mine_missed|pluralize }} of patients you are responsible for</span>{% endif %}
+  {% if outbox %}<span class="pg-pill amber"><i class="bi bi-chat-dots"></i><b>{{ outbox }}</b> reminder{{ outbox|pluralize }} waiting to be sent</span>{% endif %}
+</div>{% endif %}
+
+{% if can_create %}
+<section class="panel pg-new" id="pg-new" {% if cards %}hidden{% endif %}>
+  <div class="panel-head"><h2>Start a programme</h2><span class="hint">Pick a ready-made plan, then choose the team and adjust the visits.</span></div>
+  <form method="post" action="{% url 'programme_create' %}" class="pg-templates">{% csrf_token %}
+    {% for key, t in templates.items %}
+    <label class="pg-tpl" style="--c:{{ t.color }}"><input type="radio" name="template" value="{{ key }}" {% if forloop.first %}checked{% endif %}>
+      <i class="bi bi-{{ t.icon }}"></i><b>{{ t.name }}</b><span>{{ t.description|truncatechars:110 }}</span>
+      <em>{{ t.steps|length }} step{{ t.steps|length|pluralize }}{% if t.discreet %} · discreet reminders{% endif %}</em></label>
+    {% endfor %}
+    <label class="pg-tpl" style="--c:#5A6F7D"><input type="radio" name="template" value="blank"><i class="bi bi-plus-square-dotted"></i><b>Blank programme</b><span>Build your own visit plan from scratch.</span><em>for any intervention</em></label>
+    <div class="pg-new-row"><input class="form-control" name="name" placeholder="Name (optional, e.g. Hypertension · Serrekunda)" maxlength="120"><button class="btn btn-primary"><i class="bi bi-arrow-right"></i>Create and set up</button></div>
+  </form>
+</section>
+{% endif %}
+
+<div class="pg-cards">
+  {% for c in cards %}{% with p=c.p s=c.s %}
+  <a class="pg-card {% if not p.active %}off{% endif %}" href="{% url 'programme_detail' p.pk %}" style="--c:{{ p.color }}">
+    <div class="pg-card-head"><span class="pg-ico"><i class="bi bi-{{ p.icon }}"></i></span><div><h3>{{ p.name }}</h3><span class="muted small">{{ p.get_kind_display }}{% if p.lead %} · lead {{ p.lead|display_name }}{% endif %}</span></div>
+      <span class="ms-auto d-flex gap-1 flex-wrap justify-content-end">{% if not p.active %}<span class="tag">Paused</span>{% endif %}{% if p.ai_enabled %}<span class="tag indigo" title="AI on for this programme (de-identified only)"><i class="bi bi-stars"></i>AI</span>{% endif %}{% if p.discreet %}<span class="tag" title="Reminders do not name the programme"><i class="bi bi-incognito"></i>Discreet</span>{% endif %}</span></div>
+    <div class="pg-card-nums">
+      <div><b>{{ s.active }}</b><span>active</span></div>
+      <div class="{% if s.due_today %}hot{% endif %}"><b>{{ s.due_today }}</b><span>due now</span></div>
+      <div class="{% if s.missed %}bad{% endif %}"><b>{{ s.missed }}</b><span>missed</span></div>
+      <div class="{% if s.lost %}bad{% endif %}"><b>{{ s.lost }}</b><span>lost to follow-up</span></div>
+    </div>
+    <div class="pg-meter" title="Visits attended on time in the last 90 days"><span style="width:{{ s.on_time_pct|default:0 }}%"></span></div>
+    <div class="pg-card-foot"><span>{% if s.on_time_pct is not None %}<b>{{ s.on_time_pct }}%</b> on time (90 days){% else %}No visits due yet{% endif %}</span><span>{{ p.n_team }} in the team</span></div>
+  </a>
+  {% endwith %}{% empty %}
+  <div class="empty panel"><i class="bi bi-calendar2-heart"></i>{% if can_create %}No programmes yet. Start one above.{% else %}You are not in the care team of any programme yet. Ask a programme lead to add you.{% endif %}</div>
+  {% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/programmes.js' %}"></script>{% endblock %}

@@ -269,7 +269,9 @@ def patient_chart(request, pk):
     timeline.sort(key=lambda x: x['when'], reverse=True)
     latest = next((e for e in encounters if e.vitals), None)
     vitals = [(lbl, unit, latest.vitals.get(k)) for k, lbl, unit, _ in VITAL_FIELDS if latest.vitals.get(k)] if latest else []
+    from .programme_views import chart_panel
     return render(request, 'hospital/chart.html', {
+        'programmes': chart_panel(request.user, p),
         'p': p, 'allergies': p.allergies.order_by('status', '-created_at'), 'conditions': p.conditions.order_by('status', '-created_at'),
         'encounters': encounters, 'prescriptions': prescriptions, 'labs': labs, 'referrals': referrals, 'admissions': admissions,
         'lab_reqs': lab_reqs, 'submissions': p.submissions.select_related('definition').prefetch_related('signature_set').order_by('-created_at'),
@@ -1842,6 +1844,8 @@ def bed_maintenance(request, pk):
 
 ROLES['billing'] = {'finance', 'reception', 'admin'}
 ROLES['finance_admin'] = {'finance', 'admin'}
+ROLES['programmes'] = {'doctor', 'nurse', 'admin'}
+ROLES['programme_admin'] = {'admin'}
 
 
 def money(v):

@@ -1,0 +1,12 @@
+<section class="panel pg-ai" data-ask="{% url 'programme_ai_ask' kind target %}" data-context="{% url 'programme_ai_context' kind target %}" data-status="{% url 'programme_ai_status' 0 %}" {% if last %}data-last="{{ last.pk }}"{% endif %}>
+  <div class="panel-head"><h2><i class="bi bi-stars me-1" style="color:var(--indigo)"></i>{{ title }}</h2>
+    {% if ai_on %}<span class="tag indigo">AI on · de-identified</span>{% elif ai_switch %}<span class="tag amber">Switched on · AI not connected</span>{% else %}<span class="tag">AI off for this programme</span>{% endif %}</div>
+  {% if ai_on %}
+    <p class="small muted mb-2">{% if kind == 'cohort' %}Dr. Flow sees totals only (numbers under 5 hidden) and suggests interventions.{% else %}Dr. Flow sees sex, age band and the visit history in days since enrolment, and suggests a follow-up plan.{% endif %} No names, numbers, phones, places, dates or notes.</p>
+    <div class="d-flex gap-2 flex-wrap mb-2"><button type="button" class="btn btn-sm btn-primary" data-pg-ai-ask><i class="bi bi-stars"></i>Ask Dr. Flow</button><button type="button" class="btn btn-sm btn-ghost" data-pg-ai-see><i class="bi bi-eye"></i>See exactly what is sent</button></div>
+    <div class="pg-ai-out"></div>
+  {% else %}
+    <p class="small muted mb-2">The team works without AI here: the risk levels, patterns and tracing lists are worked out by rules. {% if ai_switch %}AI is switched on for this programme, but this server has no AI service connected yet (an administrator sets it up).{% elif can_manage %}A programme lead can switch AI on in Settings once the hospital has AI connected.{% else %}The programme lead can switch it on once the hospital has AI connected.{% endif %}</p>
+    <button type="button" class="btn btn-sm btn-ghost" data-pg-ai-see><i class="bi bi-eye"></i>Preview what would be sent</button><div class="pg-ai-out"></div>
+  {% endif %}
+</section>

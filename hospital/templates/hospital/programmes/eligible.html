@@ -1,0 +1,17 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Eligible patients · {{ p.name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/programmes.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}Patients who may need {{ p.name }}{% endblock %}
+{% block subheading %}<p class="sub">Found from active conditions, diagnoses{% if p.kind == 'hypertension' %}, blood pressure readings{% endif %}{% if p.kind == 'immunisation' or p.kind == 'nutrition' %}, age{% endif %}. Not enrolled yet. Check each one before enrolling.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'programme_detail' p.pk %}"><i class="bi bi-arrow-left"></i>Back</a>{% endblock %}
+{% block content %}
+<form method="post" class="panel flush">{% csrf_token %}
+  <div class="panel-head"><h2>{{ rows|length }} found</h2><label class="small ms-auto"><input type="checkbox" data-pg-all> Select all</label></div>
+  <ul class="plain pg-list">{% for pt, why in rows %}<li class="pg-row"><input type="checkbox" name="patient" value="{{ pt.pk }}" class="form-check-input" aria-label="Enrol {{ pt.full_name }}">
+    <div class="grow"><a href="{% url 'patient_chart' pt.pk %}"><b>{{ pt.full_name }}</b></a> <span class="small muted">{{ pt.mrn }} · {{ pt.get_sex_display }}{% if pt.age is not None %}, {{ pt.age }} y{% endif %}</span><div class="small">{{ why }}</div></div>
+    <a class="btn btn-sm btn-ghost" data-drawer="{% url 'programme_enrol' p.pk %}?patient={{ pt.pk }}" data-title="Enrol {{ pt.full_name }}">Enrol with details</a></li>
+  {% empty %}<li class="empty"><i class="bi bi-search"></i>Nobody found who is not already enrolled.</li>{% endfor %}</ul>
+  {% if rows %}<div class="form-actions px-4 pb-3"><button class="btn btn-primary"><i class="bi bi-people"></i>Enrol selected</button><span class="small muted">Uses you as the responsible doctor where you are one; reminders by SMS. Change details per patient later.</span></div>{% endif %}
+</form>
+{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/programmes.js' %}"></script>{% endblock %}

@@ -1,0 +1,139 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ p.name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/programmes.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}<span class="pg-title" style="--c:{{ p.color }}"><span class="pg-ico"><i class="bi bi-{{ p.icon }}"></i></span>{{ p.name }}</span>{% endblock %}
+{% block subheading %}<p class="sub">{{ p.get_kind_display }}{% if p.lead %} · lead {{ p.lead|display_name }}{% endif %} · missed after {{ p.grace_days }} day{{ p.grace_days|pluralize }}, lost to follow-up after {{ p.ltfu_days }} days{% if p.discreet %} · <i class="bi bi-incognito"></i> discreet reminders{% endif %}{% if not p.active %} · <b>paused</b>{% endif %}</p>{% endblock %}
+{% block actions %}
+  <button class="btn btn-primary" data-drawer="{% url 'programme_enrol' p.pk %}" data-title="Enrol a patient in {{ p.name }}"><i class="bi bi-person-plus"></i>Enrol patient</button>
+  <a class="btn btn-ghost" href="{% url 'programme_eligible' p.pk %}"><i class="bi bi-search-heart"></i>Find eligible</a>
+  {% if can_manage %}<a class="btn btn-ghost" href="{% url 'programme_edit' p.pk %}"><i class="bi bi-gear"></i>Settings</a>{% endif %}
+{% endblock %}
+{% block content %}
+<div class="pg-top">
+  <div class="kpis pg-kpis">
+    <div class="kpi"><b>{{ s.active }}</b><span>active patients{% if s.paused %} · {{ s.paused }} paused{% endif %}</span></div>
+    <div class="kpi {% if s.due_today %}abn{% endif %}"><b>{{ s.due_today }}</b><span>due now · {{ s.due_week }} more this week</span></div>
+    <div class="kpi {% if s.missed %}crit{% endif %}"><b>{{ s.missed }}</b><span>missed, to trace</span></div>
+    <div class="kpi {% if s.lost %}crit{% endif %}"><b>{{ s.lost }}</b><span>lost to follow-up</span></div>
+    <div class="kpi"><b>{% if s.on_time_pct is not None %}{{ s.on_time_pct }}%{% else %}—{% endif %}</b><span>on time, 90 days{% if s.retention_pct is not None %} · {{ s.retention_pct }}% retained at 6 mo{% endif %}</span></div>
+  </div>
+  <section class="panel pg-chart-panel">
+    <div class="panel-head"><h2>Visits by week</h2><span class="hint"><i class="sw att"></i>attended <i class="sw mis"></i>missed <i class="sw pla"></i>planned</span></div>
+    <div class="pg-chart" id="pg-chart" role="img" aria-label="Visits attended, missed and planned over the last 12 weeks"></div>
+    {{ s.weeks|json_script:'pg-weeks' }}
+  </section>
+</div>
+
+<div class="boxtabs pg-tabs" role="tablist">
+  {% for key, label, icon in tabs %}<a class="boxtab {% if tab == key %}on{% endif %}" href="?tab={{ key }}" role="tab"><i class="bi bi-{{ icon }}"></i>{{ label }}
+    {% if key == 'missed' and s.missed %}<span class="pending">{{ s.missed }}</span>{% elif key == 'today' and s.due_today %}<span class="n">{{ s.due_today }}</span>{% elif key == 'outbox' and s.pending_messages %}<span class="pending">{{ s.pending_messages }}</span>{% endif %}</a>{% endfor %}
+</div>
+
+{% if tab == 'today' %}
+<div class="grid g-main">
+  <section class="panel flush">
+    <div class="panel-head"><h2>Due today</h2><span class="hint">and overdue within the grace period</span></div>
+    <ul class="plain pg-list">{% for v in due_today %}{% include 'hospital/programmes/_visit_row.html' %}{% empty %}<li class="empty"><i class="bi bi-check2-circle"></i>Nobody else is due today.</li>{% endfor %}</ul>
+  </section>
+  <div class="stack">
+    <section class="panel flush"><div class="panel-head"><h2>Next 7 days</h2></div>
+      <ul class="plain pg-list compact">{% for v in due_week %}{% include 'hospital/programmes/_visit_row.html' %}{% empty %}<li class="empty">Nothing planned.</li>{% endfor %}</ul></section>
+    <section class="panel"><div class="panel-head"><h2>Seen today</h2><span class="hint">{{ attended_today|length }}</span></div>
+      <ul class="plain ruled small">{% for v in attended_today %}<li><a href="{% url 'programme_enrolment' v.enrolment_id %}">{{ v.enrolment.patient.full_name }}</a> · {{ v.title }}{% if v.measures.bp %} · BP {{ v.measures.bp }}{% endif %}</li>{% empty %}<li class="muted">No visits recorded yet today.</li>{% endfor %}</ul></section>
+  </div>
+</div>
+
+{% elif tab == 'missed' %}
+<section class="panel flush">
+  <div class="panel-head"><h2>Missed visits and tracing</h2><span class="hint">Highest risk and longest late first. Record every call or home visit: untraced misses go to the lead after {{ p.escalate_days }} days.</span></div>
+  {% if rows %}<div class="pg-trace">
+    {% for r in rows %}{% with v=r.v e=r.v.enrolment %}
+    <article class="pg-trace-row risk-{{ r.risk.0 }}">
+      <div class="pg-who"><a href="{% url 'programme_enrolment' e.pk %}"><b>{{ e.patient.full_name }}</b></a> <span class="muted small">{{ e.patient.mrn }} · {{ e.patient.get_sex_display }}{% if e.patient.age is not None %}, {{ e.patient.age }} y{% endif %}</span>
+        {% if e.status == 'lost' %}<span class="tag red">Lost since {{ e.lost_since|date:'j M' }}</span>{% endif %}
+        <div class="small">{{ v.title }} · due {{ v.due|date:'D j M' }} · <b class="text-danger">{{ r.late }} day{{ r.late|pluralize }} late</b>{% if v.escalated_at %} · <span class="tag amber">escalated</span>{% endif %}</div>
+        <div class="small muted">{% if e.clinician %}Dr {{ e.clinician|display_name }}{% endif %}{% if e.nurse %} · {{ e.nurse|display_name }}{% endif %}{% if r.last %} · last: {{ r.last.get_outcome_display|lower }} ({{ r.last.created_at|timesince }} ago){% else %} · <b>not traced yet</b>{% endif %}</div>
+        {% if r.risk.2 %}<div class="pg-why">{% for w in r.risk.2|slice:':3' %}<span>{{ w }}</span>{% endfor %}</div>{% endif %}
+      </div>
+      <div class="reach">{% if e.contact_phone or e.patient.phone %}<a class="btn btn-sm btn-ghost" href="tel:{{ e.contact_phone|default:e.patient.phone }}"><i class="bi bi-telephone"></i>{{ e.contact_phone|default:e.patient.phone }}</a>{% else %}<span class="small muted">No phone</span>{% endif %}</div>
+      <form method="post" action="{% url 'programme_trace' e.pk %}" class="pg-trace-form">{% csrf_token %}
+        <input type="hidden" name="visit" value="{{ v.pk }}"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <select name="method" class="form-select form-select-sm" aria-label="How">{% for k, l in methods %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select>
+        <select name="outcome" class="form-select form-select-sm" required aria-label="Outcome" data-pg-outcome><option value="">What happened…</option>{% for k, l in outcomes %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select>
+        <select name="reason" class="form-select form-select-sm" aria-label="Reason">{% for k, l in reasons %}<option value="{{ k }}">{% if not k %}Reason for missing…{% else %}{{ l }}{% endif %}</option>{% endfor %}</select>
+        <input type="date" name="due" class="form-control form-control-sm" aria-label="New date" hidden min="{{ today|date:'Y-m-d' }}">
+        <button class="btn btn-sm btn-ink"><i class="bi bi-check2"></i>Save</button>
+      </form>
+    </article>{% endwith %}{% endfor %}
+  </div>{% else %}<div class="empty"><i class="bi bi-emoji-smile"></i>No missed visits. Well done, team.</div>{% endif %}
+</section>
+
+{% elif tab == 'patients' %}
+<section class="panel flush">
+  <div class="panel-head"><h2>Patients</h2>
+    <form class="d-flex gap-2 ms-auto" method="get"><input type="hidden" name="tab" value="patients">
+      <select name="status" class="form-select form-select-sm" onchange="this.form.submit()"><option value="open" {% if st == 'open' %}selected{% endif %}>In care (active, paused, lost)</option>{% for k, l in statuses %}<option value="{{ k }}" {% if st == k %}selected{% endif %}>{{ l }}</option>{% endfor %}<option value="all" {% if st == 'all' %}selected{% endif %}>Everyone</option></select>
+      <input name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="Name or record number" style="max-width:200px"></form></div>
+  <div class="table-responsive"><table class="table pg-table align-middle mb-0">
+    <thead><tr><th>Patient</th><th>Status</th><th>Risk</th><th>Next visit</th><th>Doctor · nurse</th><th>Reminders</th></tr></thead>
+    <tbody>{% for r in rows %}{% with e=r.e %}<tr>
+      <td><a href="{% url 'programme_enrolment' e.pk %}"><b>{{ e.patient.full_name }}</b></a><div class="small muted">{{ e.patient.mrn }} · since {{ e.enrolled_on|date:'j M Y' }}</div></td>
+      <td><span class="tag {% if e.status == 'active' %}teal{% elif e.status == 'lost' %}red{% elif e.status == 'paused' %}amber{% endif %}">{{ e.get_status_display }}</span></td>
+      <td><span class="pg-risk {{ r.risk.0 }}" title="{{ r.risk.2|join:'; ' }}">{{ r.risk.0|title }}</span></td>
+      <td>{% if r.next %}{{ r.next.title }}<div class="small {% if r.next.status == 'missed' %}text-danger{% else %}muted{% endif %}">{{ r.next.due|date:'D j M' }}{% if r.next.status == 'missed' %} · missed{% endif %}</div>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="small">{{ e.clinician|display_name|default:'—' }}<br><span class="muted">{{ e.nurse|display_name|default:'—' }}</span></td>
+      <td class="small">{% if e.consent_reminders and e.channel != 'none' %}{{ e.get_channel_display }}{% else %}<span class="muted">none</span>{% endif %}</td>
+    </tr>{% endwith %}{% empty %}<tr><td colspan="6"><div class="empty">No patients here. <a href="{% url 'programme_eligible' p.pk %}">Find eligible patients</a>.</div></td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+
+{% elif tab == 'plan' %}
+<section class="panel">
+  <div class="panel-head"><h2>Visit plan</h2><span class="hint">Counted from {{ p.get_anchor_display|lower }}.</span>{% if can_manage %}<a class="more" href="{% url 'programme_edit' p.pk %}">Edit</a>{% endif %}</div>
+  <ol class="pg-plan">{% for st in p.steps.all %}<li class="k-{{ st.kind }}"><span class="dot"></span><div><b>{{ st.name }}</b> <span class="tag">{{ st.get_kind_display }}</span>
+    <div class="small muted">Day {{ st.offset_days }}{% if st.repeat_days %} · then every {{ st.repeat_days }} days{% if st.until_days %} until day {{ st.until_days }}{% endif %}{% endif %}{% if st.medicine %} · {{ st.medicine }}{% endif %}{% if st.days_supply %} · {{ st.days_supply }} days of medicine{% endif %}</div>
+    {% if st.items %}<div class="pg-items">{% for i in st.items %}<span>{{ i }}</span>{% endfor %}</div>{% endif %}</div></li>{% empty %}<li class="muted">No steps yet.</li>{% endfor %}</ol>
+  <div class="small muted">Recorded at visits: {% for k, m in measures %}{{ m.0 }}{% if not forloop.last %}, {% endif %}{% empty %}nothing set{% endfor %}.</div>
+</section>
+
+{% elif tab == 'team' %}
+<section class="panel flush">
+  <div class="panel-head"><h2>Care team</h2><span class="hint">The responsible doctor and nurse always hear about their patients' missed visits. "All missed visits" adds every patient in the programme.</span></div>
+  <table class="table align-middle mb-0 pg-table"><thead><tr><th>Name</th><th>Role in the programme</th><th>Patients (doctor · nurse)</th><th>All missed visits</th><th></th></tr></thead><tbody>
+    {% for m in members %}<tr><td><b>{{ m.user|display_name }}</b><div class="small muted">{{ m.user.hospital_staff.get_role_display|default:'' }}</div></td>
+      <td>{% if can_manage %}<form method="post" action="{% url 'programme_team' p.pk %}">{% csrf_token %}<input type="hidden" name="act" value="role"><input type="hidden" name="member" value="{{ m.pk }}"><select name="role" class="form-select form-select-sm" onchange="this.form.submit()">{% for k, l in roles %}<option value="{{ k }}" {% if m.role == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></form>{% else %}{{ m.get_role_display }}{% endif %}</td>
+      <td class="small">{{ m.n_doc }} · {{ m.n_nurse }}</td>
+      <td>{% if can_manage %}<form method="post" action="{% url 'programme_team' p.pk %}">{% csrf_token %}<input type="hidden" name="act" value="notify"><input type="hidden" name="member" value="{{ m.pk }}"><button class="tag {% if m.notify %}teal{% endif %}" style="border:0;cursor:pointer">{% if m.notify %}<i class="bi bi-bell-fill"></i>On{% else %}<i class="bi bi-bell-slash"></i>Off{% endif %}</button></form>{% else %}{{ m.notify|yesno:'On,Off' }}{% endif %}</td>
+      <td>{% if can_manage %}<form method="post" action="{% url 'programme_team' p.pk %}" data-confirm="Remove {{ m.user|display_name }} from the team?">{% csrf_token %}<input type="hidden" name="act" value="remove"><input type="hidden" name="member" value="{{ m.pk }}"><button class="btn btn-sm btn-ghost" aria-label="Remove"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>{% endfor %}
+  </tbody></table>
+  {% if can_manage %}<form method="post" action="{% url 'programme_team' p.pk %}" class="pg-add-member">{% csrf_token %}<input type="hidden" name="act" value="add">
+    <select name="user" class="form-select form-select-sm" required><option value="">Add a person…</option>{% for u in addable %}<option value="{{ u.pk }}">{{ u|display_name }}{% if u.hospital_staff %} · {{ u.hospital_staff.get_role_display }}{% endif %}</option>{% endfor %}</select>
+    <select name="role" class="form-select form-select-sm">{% for k, l in roles %}<option value="{{ k }}" {% if k == 'nurse' %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <button class="btn btn-sm btn-primary"><i class="bi bi-plus-lg"></i>Add</button></form>{% endif %}
+</section>
+
+{% elif tab == 'insights' %}
+<div class="grid g-main">
+  <section class="panel"><div class="panel-head"><h2>Patterns</h2><span class="hint">Worked out here, without AI</span></div>
+    {% for lvl, icon, text in patterns %}<div class="alert-mf {% if lvl == 'warn' %}warn{% else %}info{% endif %} mb-2"><i class="bi bi-{{ icon }}"></i><div>{{ text }}</div></div>
+    {% empty %}<div class="empty">Patterns appear once there are visits, measurements and tracing records.</div>{% endfor %}</section>
+  {% include 'hospital/programmes/_ai_panel.html' with kind='cohort' target=p.pk last=last_ai title='Programme insight' %}
+</div>
+
+{% elif tab == 'outbox' %}
+<section class="panel flush">
+  <div class="panel-head"><h2>Reminders to patients</h2><span class="hint">Email{% if sms_gateway %} and SMS{% endif %} go out by themselves. WhatsApp, SMS and calls wait here: tap to open the message on your phone, then mark it sent.</span></div>
+  <ul class="plain pg-outbox">{% for x in reminders %}{% with m=x.m %}<li class="st-{{ m.status }}">
+    <div class="pg-who"><a href="{% url 'programme_enrolment' m.enrolment_id %}"><b>{{ m.enrolment.patient.full_name }}</b></a> <span class="tag {% if m.kind == 'missed' %}red{% else %}teal{% endif %}">{{ m.get_kind_display }}</span> <span class="small muted">{{ m.get_channel_display }} · {{ m.created_at|date:'j M H:i' }}</span>
+      <div class="pg-bubble">{{ m.text }}</div>{% if m.error %}<div class="small text-danger">{{ m.error }}</div>{% endif %}</div>
+    <div class="act">{% if m.status == 'pending' or m.status == 'failed' %}
+      {% if x.links.whatsapp %}<a class="btn btn-sm btn-ghost" href="{{ x.links.whatsapp }}" target="_blank" rel="noopener" data-pg-sent="{% url 'programme_message' m.pk %}"><i class="bi bi-whatsapp"></i>WhatsApp</a>
+      <a class="btn btn-sm btn-ghost" href="{{ x.links.sms }}" data-pg-sent="{% url 'programme_message' m.pk %}"><i class="bi bi-chat-text"></i>SMS</a><a class="btn btn-sm btn-ghost" href="{{ x.links.call }}"><i class="bi bi-telephone"></i></a>{% endif %}
+      {% if x.links.email %}<a class="btn btn-sm btn-ghost" href="{{ x.links.email }}" data-pg-sent="{% url 'programme_message' m.pk %}"><i class="bi bi-envelope"></i></a>{% endif %}
+      <form method="post" action="{% url 'programme_message' m.pk %}" class="d-inline">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button name="act" value="sent" class="btn btn-sm btn-ink"><i class="bi bi-check2"></i>Sent</button><button name="act" value="skip" class="btn btn-sm btn-ghost">Skip</button></form>
+    {% else %}<span class="tag {% if m.status == 'sent' %}teal{% endif %}">{{ m.get_status_display }}{% if m.sent_at %} {{ m.sent_at|date:'j M H:i' }}{% endif %}</span>{% endif %}</div>
+  </li>{% endwith %}{% empty %}<li class="empty"><i class="bi bi-chat-dots"></i>No reminders yet. They are created before each visit and after a missed one, for patients who agreed to reminders.</li>{% endfor %}</ul>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/programmes.js' %}"></script>{% endblock %}

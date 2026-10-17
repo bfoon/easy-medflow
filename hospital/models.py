@@ -1018,3 +1018,5 @@ from .models_reports import DoctorReport, ReportAttachment, ReportAssist  # noqa
 from .models_imaging_ai import ImagingAIRun  # noqa: E402,F401
 from .models_drflow import DrFlowAsk, BedSummary, LabInsightAsk  # noqa: E402,F401
 from .models_notes import NoteRevision, ClinicalNoteAsk  # noqa: E402,F401
+from .models_programmes import (Programme, ProgrammeMember, ProgrammeStep, Enrolment, ProgrammeVisit,  # noqa: E402,F401
+                                TracingAttempt, ProgrammeMessage, ProgrammeAIRun)

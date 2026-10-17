@@ -1,0 +1,11 @@
+{% load medflow %}<section class="panel pg-chartpanel">
+  <div class="panel-head"><h2><i class="bi bi-calendar2-heart me-1" style="color:var(--teal)"></i>Care programmes</h2>
+    {% if programmes.can_enrol %}<details class="pg-menu ms-auto"><summary class="btn btn-sm btn-ghost"><i class="bi bi-plus-lg"></i>Enrol</summary>
+      <div>{% for x in programmes.can_enrol %}<button type="button" data-drawer="{% url 'programme_enrol' x.pk %}?patient={{ p.pk }}" data-title="Enrol in {{ x.name }}"><i class="bi bi-{{ x.icon }}" style="color:{{ x.color }}"></i>{{ x.name }}</button>{% endfor %}</div></details>{% endif %}</div>
+  <ul class="plain ruled">{% for r in programmes.rows %}{% with e=r.e %}<li style="--c:{{ e.programme.color }}" class="pg-chartrow">
+    <div class="d-flex gap-2 align-items-baseline">{% if r.mine %}<a href="{% url 'programme_enrolment' e.pk %}"><b>{{ e.programme.name }}</b></a>{% else %}<b>{{ e.programme.name }}</b>{% endif %}
+      <span class="ms-auto tag {% if e.status == 'active' %}teal{% elif e.status == 'lost' %}red{% elif e.status == 'paused' %}amber{% endif %}">{{ e.get_status_display }}</span></div>
+    <div class="small muted">{% if r.next %}{% if r.next.status == 'missed' %}<span class="text-danger">Missed: {{ r.next.title }} ({{ r.next.due|date:'j M' }})</span>{% else %}Next: {{ r.next.title }} · {{ r.next.due|date:'D j M' }}{% endif %}{% elif e.ended_on %}Ended {{ e.ended_on|date:'j M Y' }}{% else %}No visit planned{% endif %}
+      {% if r.risk and r.risk.0 != 'low' %} · <span class="pg-risk {{ r.risk.0 }}">{{ r.risk.0|title }} risk</span>{% endif %}</div>
+  </li>{% endwith %}{% empty %}<li class="muted small">Not enrolled in any programme.</li>{% endfor %}</ul>
+</section>

@@ -1,0 +1,6 @@
+{% load medflow %}<li class="pg-row k-{{ v.kind }}">
+  <span class="pg-date {% if v.due < today %}late{% elif v.due == today %}now{% endif %}"><b>{{ v.due|date:'j' }}</b>{{ v.due|date:'M' }}</span>
+  <div class="grow"><a href="{% url 'programme_enrolment' v.enrolment_id %}"><b>{{ v.enrolment.patient.full_name }}</b></a> <span class="small muted">{{ v.enrolment.patient.mrn }}</span>
+    <div class="small">{{ v.title }}{% if v.items_planned %} · {{ v.items_planned|join:', ' }}{% endif %}{% if v.status == 'reminded' %} · <span class="text-success"><i class="bi bi-bell"></i> reminded</span>{% endif %}</div></div>
+  <button class="btn btn-sm btn-primary" data-drawer="{% url 'programme_visit_record' v.pk %}" data-title="Record visit · {{ v.enrolment.patient.full_name }}"><i class="bi bi-check2-circle"></i>Came</button>
+</li>

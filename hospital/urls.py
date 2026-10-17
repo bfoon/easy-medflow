@@ -15,6 +15,7 @@ from . import notes_views as nv
 from . import theatre_views as tv
 from . import access_views as av
 from . import library_views as libv
+from . import programme_views as pgv
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -254,6 +255,24 @@ urlpatterns = [
     path('studio/runs/<int:pk>/resubmit/', sv.run_resubmit, name='run_resubmit'),
     path('studio/runs/<int:pk>/cancel/', sv.run_cancel, name='run_cancel'),
     path('studio/runs/<int:pk>/<str:action>/', sv.workflow_act, name='workflow_act'),
+    path('programmes/', pgv.index, name='programmes'),
+    path('programmes/new/', pgv.create, name='programme_create'),
+    path('programmes/<int:pk>/', pgv.detail, name='programme_detail'),
+    path('programmes/<int:pk>/edit/', pgv.edit, name='programme_edit'),
+    path('programmes/<int:pk>/team/', pgv.team_act, name='programme_team'),
+    path('programmes/<int:pk>/enrol/', pgv.enrol, name='programme_enrol'),
+    path('programmes/<int:pk>/eligible/', pgv.eligible, name='programme_eligible'),
+    path('programmes/<int:pk>/patient-search/', pgv.patient_search, name='programme_patient_search'),
+    path('programmes/enrolments/<int:pk>/', pgv.enrolment, name='programme_enrolment'),
+    path('programmes/enrolments/<int:pk>/trace/', pgv.trace, name='programme_trace'),
+    path('programmes/enrolments/<int:pk>/status/', pgv.enrolment_status, name='programme_enrolment_status'),
+    path('programmes/enrolments/<int:pk>/team/', pgv.enrolment_team, name='programme_enrolment_team'),
+    path('programmes/visits/<int:pk>/record/', pgv.visit_record, name='programme_visit_record'),
+    path('programmes/visits/<int:pk>/act/', pgv.visit_act, name='programme_visit_act'),
+    path('programmes/messages/<int:pk>/', pgv.message_act, name='programme_message'),
+    path('programmes/ai/<str:kind>/<int:pk>/ask/', pgv.ai_ask, name='programme_ai_ask'),
+    path('programmes/ai/<str:kind>/<int:pk>/context/', pgv.ai_context, name='programme_ai_context'),
+    path('programmes/ai/runs/<int:pk>/', pgv.ai_status, name='programme_ai_status'),
     path('esign/', ev.home, name='esign'),
     path('esign/new/', ev.compose, name='esign_new'),
     path('esign/verify/', ev.verify, name='esign_verify'),

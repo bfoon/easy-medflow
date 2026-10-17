@@ -208,6 +208,8 @@ def run_all():
     res['bedside, injury and form demos'] = care_demo(doctor, nurse)
     from .demo_theatre import run as theatre_demo
     res['theatre and eye & ear demos'] = theatre_demo(doctor, nurse)
+    from .demo_programmes import run as programmes_demo
+    res['care programme enrolments'] = programmes_demo()
     return res
 
 

@@ -1,0 +1,21 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Enrol · {{ p.name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/programmes.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}Enrol a patient{% endblock %}
+{% block subheading %}<p class="sub">{{ p.name }} · the visit plan is created as soon as you save.</p>{% endblock %}
+{% block content %}
+<form method="post" class="panel form-shell" novalidate>{% csrf_token %}
+  {% if error %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ error }}</div></div>{% endif %}
+  <div class="field span-2 pg-pick" data-search="{{ search_url }}">
+    <label class="form-label" for="pg-q">Patient <span class="text-danger">*</span></label>
+    <input type="hidden" name="patient" value="{{ patient.pk|default:'' }}">
+    <div class="pg-picked" {% if not patient %}hidden{% endif %}><i class="bi bi-person-check"></i><b>{{ patient.full_name }}</b> <span class="muted small">{{ patient.mrn }}</span><button type="button" class="btn btn-sm btn-ghost ms-auto" data-pg-clear>Change</button></div>
+    <input id="pg-q" class="form-control" placeholder="Type a name, record number or phone" autocomplete="off" {% if patient %}hidden{% endif %}>
+    <ul class="pg-results plain" hidden></ul>
+  </div>
+  <div class="form-grid">{% for field in form %}{% include 'hospital/_field.html' %}{% endfor %}</div>
+  <p class="small muted"><i class="bi bi-shield-lock"></i> Reminders name only the first name, the clinic and the date{% if p.discreet %}, never the programme or condition{% endif %}. The notes stay with the care team and are never sent to the AI.</p>
+  <div class="form-actions"><button class="btn btn-primary"><i class="bi bi-person-plus"></i>Enrol and plan visits</button><a href="javascript:history.back()" class="btn btn-ghost">Cancel</a></div>
+</form>
+{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/programmes.js' %}"></script>{% endblock %}

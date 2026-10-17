@@ -1,0 +1,24 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Record visit{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/programmes.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}{{ v.title }}{% endblock %}
+{% block subheading %}<p class="sub">{{ e.patient.full_name }} · {{ e.programme.name }} · due {{ v.due|date:'D j M Y' }}{% if v.status == 'missed' %} · <b class="text-danger">missed, recording a late visit</b>{% endif %}</p>{% endblock %}
+{% block content %}
+<form method="post" class="panel form-shell" novalidate>{% csrf_token %}
+  {% for err in form.non_field_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ err }}</div></div>{% endfor %}
+  {% if v.items_planned %}<div class="field span-2"><label class="form-label">Given / done at this visit</label>
+    <div class="pg-checks big">{% for i in v.items_planned %}<label><input type="checkbox" name="items" value="{{ i }}" checked> {{ i }}</label>{% endfor %}</div>
+    <div class="form-text">Untick anything not given today (it stays visible as not given).</div></div>{% endif %}
+  <div class="form-grid">
+    {% include 'hospital/_field.html' with field=form.attended_on %}
+    {% if v.kind == 'refill' %}{% include 'hospital/_field.html' with field=form.days_supply %}{% endif %}
+    {% for m in fields %}<div class="field"><label class="form-label" for="m_{{ m.key }}">{{ m.label }}{% if m.unit %} <span class="muted">({{ m.unit }})</span>{% endif %}</label>
+      {% if m.choices %}<select class="form-select" name="m_{{ m.key }}" id="m_{{ m.key }}"><option value="">—</option>{% for o in m.choices %}<option {% if o == m.value %}selected{% endif %}>{{ o }}</option>{% endfor %}</select>
+      {% else %}<input class="form-control" name="m_{{ m.key }}" id="m_{{ m.key }}" value="{{ m.value }}" inputmode="{% if m.kind == 'number' %}decimal{% else %}text{% endif %}" placeholder="{{ m.placeholder }}">{% endif %}
+      {% if m.last %}<div class="form-text">Last: {{ m.last.0 }} ({{ m.last.1|date:'j M' }})</div>{% endif %}</div>{% endfor %}
+    {% include 'hospital/_field.html' with field=form.next_due %}
+    {% include 'hospital/_field.html' with field=form.note %}
+  </div>
+  <div class="form-actions"><button class="btn btn-primary"><i class="bi bi-check2"></i>Save visit</button><a href="javascript:history.back()" class="btn btn-ghost">Cancel</a></div>
+</form>
+{% endblock %}

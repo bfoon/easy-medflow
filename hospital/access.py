@@ -42,6 +42,8 @@ CAPABILITIES = [
     ('finance_admin', 'Finance approvals', 'Finance', 'Discounts and voiding bills or payments.'),
     ('studio', 'Forms & approvals designer', 'Organisation', 'Design forms and approval flows.'),
     ('esign', 'E-sign', 'Organisation', 'Send and sign documents.'),
+    ('programmes', 'Care programmes', 'Programmes', 'Work in the programmes you belong to: record visits, trace patients who missed, send reminders. Opens the records of patients enrolled in those programmes.'),
+    ('programme_admin', 'Manage care programmes', 'Programmes', 'Create programmes, choose the care team and visit plan, switch AI on or off, see every programme.'),
     ('library', 'Clinical library', 'Knowledge', 'Anonymous summaries of diseases, treatments and outcomes at this hospital.'),
     ('drflow', 'Dr. Flow assistant', 'Knowledge', 'Ask Dr. Flow about medicines, tests, diseases and patients in your care.'),
     ('access_admin', 'Manage access and roles', 'Organisation', 'Create groups, choose capabilities, allocate staff and change roles.'),
@@ -59,7 +61,7 @@ EXTRA = {
     'lab': {'patient_records', 'all_patients', 'pharmacy_view'},
     'radiology': {'patient_records', 'all_patients', 'pharmacy_view'},
     'finance': {'patient_records', 'all_patients', 'pharmacy_view'},
-    'management': {'patient_records', 'all_patients', 'pharmacy_view', 'library'},
+    'management': {'patient_records', 'all_patients', 'pharmacy_view', 'library', 'programme_admin'},
 }
 # Standard groups an administrator can create in one click (then edit).
 STANDARD_GROUPS = [
@@ -156,7 +158,11 @@ def visible_patient_ids(request):
         return None
     if not has(request.user, 'patient_records'):
         return set()
-    return active_patient_ids() | emergency_ids(request)
+    ids = active_patient_ids() | emergency_ids(request)
+    if has(request.user, 'programmes'):              # a programme's care team follows its patients between visits
+        from .programmes import care_team_patient_ids
+        ids |= care_team_patient_ids(request.user)
+    return ids
 
 
 def can_see(request, patient_id):
@@ -216,6 +222,7 @@ PATIENT_PAGES = {
     'theatre_case': _p('SurgicalCase'), 'theatre_edit': _p('SurgicalCase'), 'theatre_action': _p('SurgicalCase'),
     'theatre_preop': _p('SurgicalCase'), 'theatre_checklist': _p('SurgicalCase'), 'theatre_recovery': _p('SurgicalCase'), 'theatre_note': _p('SurgicalCase'),
     'bed_detail': _bed, 'submission_detail': _p('FormSubmission'),
+    'programme_enrolment': _p('Enrolment'), 'programme_visit_record': _p('ProgrammeVisit', 'enrolment__patient_id'),
 }
 # Pages that are part of a job and open for that job even without patient-record access
 JOB_PAGES = {'prescription_detail': 'pharmacy', 'lab_request_detail': 'lab', 'imaging_detail': 'imaging', 'imaging_file': 'imaging',

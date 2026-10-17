@@ -68,3 +68,16 @@ def notes_ai_task(pk):
 def lab_insight_task(pk):
     from .lab_insights_ai import run
     run(pk)
+
+
+@shared_task(ignore_result=True, soft_time_limit=900)
+def programme_sweep_task():
+    """Care programmes: reminders, missed visits, escalations and lost to follow-up (programmes.sweep)."""
+    from .programmes import sweep
+    return sweep()
+
+
+@shared_task(ignore_result=True, soft_time_limit=300)
+def programme_ai_task(pk):
+    from .programmes import run_ai
+    run_ai(pk)

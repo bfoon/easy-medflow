@@ -234,3 +234,35 @@ class SenseExamAdmin(admin.ModelAdmin):
     search_fields = ('patient__first_name', 'patient__last_name', 'patient__mrn')
     raw_id_fields = ('encounter', 'patient')
     readonly_fields = ('data', 'computed')
+
+
+# ------------------------------------------------------------------ care programmes
+class ProgrammeStepInline(admin.TabularInline):
+    model = models.ProgrammeStep
+    extra = 0
+
+
+class ProgrammeMemberInline(admin.TabularInline):
+    model = models.ProgrammeMember
+    extra = 0
+
+
+@admin.register(models.Programme)
+class ProgrammeAdmin(admin.ModelAdmin):
+    list_display = ['name', 'kind', 'active', 'lead', 'ai_enabled', 'discreet']
+    list_filter = ['kind', 'active', 'ai_enabled']
+    inlines = [ProgrammeMemberInline, ProgrammeStepInline]
+
+
+@admin.register(models.Enrolment)
+class EnrolmentAdmin(admin.ModelAdmin):
+    list_display = ['patient', 'programme', 'status', 'enrolled_on', 'clinician', 'nurse']
+    list_filter = ['programme', 'status']
+    raw_id_fields = ['patient']
+
+
+@admin.register(models.ProgrammeVisit)
+class ProgrammeVisitAdmin(admin.ModelAdmin):
+    list_display = ['enrolment', 'title', 'due', 'status', 'attended_on']
+    list_filter = ['status', 'kind']
+    raw_id_fields = ['enrolment', 'encounter']

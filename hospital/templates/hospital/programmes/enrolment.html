@@ -1,0 +1,92 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ pt.full_name }} · {{ p.name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/programmes.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}{{ pt.full_name }}{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'programme_detail' p.pk %}" style="color:{{ p.color }}"><i class="bi bi-{{ p.icon }}"></i> {{ p.name }}</a> · <a href="{% url 'patient_chart' pt.pk %}">{{ pt.mrn }}</a> · {{ pt.get_sex_display }}{% if pt.age is not None %}, {{ pt.age }} yrs{% endif %} · enrolled {{ e.enrolled_on|date:'j M Y' }}{% if e.anchor_date %} · {{ p.get_anchor_display|lower }}: {{ e.anchor_date|date:'j M Y' }}{% endif %}</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'patient_chart' pt.pk %}"><i class="bi bi-person-vcard"></i>Chart</a>{% endblock %}
+{% block content %}
+<div class="pg-hero risk-{{ risk.0 }}">
+  <div class="pg-status"><span class="tag {% if e.status == 'active' %}teal{% elif e.status == 'lost' %}red{% elif e.status == 'paused' %}amber{% endif %}">{{ e.get_status_display }}{% if e.lost_since %} since {{ e.lost_since|date:'j M' }}{% endif %}</span>
+    <span class="pg-risk {{ risk.0 }}">{{ risk.0|title }} risk</span></div>
+  <div class="pg-why">{% for w in risk.2 %}<span>{{ w }}</span>{% empty %}<span class="ok">On track: no warning signs by the programme rules</span>{% endfor %}</div>
+  {% if planned_count and p.kind == 'immunisation' %}<div class="pg-cover"><div class="pg-meter"><span style="width:{% widthratio given_count planned_count 100 %}%"></span></div><span class="small">{{ given_count }} of {{ planned_count }} vaccines given</span></div>{% endif %}
+</div>
+
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel flush">
+      <div class="panel-head"><h2>Next visits</h2></div>
+      <ul class="plain pg-list">{% for v in upcoming %}<li class="pg-row k-{{ v.kind }} {% if v.status == 'missed' %}missed{% endif %}">
+        <span class="pg-date {% if v.due < today %}late{% elif v.due == today %}now{% endif %}"><b>{{ v.due|date:'j' }}</b>{{ v.due|date:'M' }}</span>
+        <div class="grow"><b>{{ v.title }}</b> <span class="tag">{{ v.get_kind_display }}</span>{% if v.status == 'missed' %} <span class="tag red">Missed · {{ v.days_late }} days</span>{% elif v.status == 'reminded' %} <span class="tag teal"><i class="bi bi-bell"></i>Reminded</span>{% endif %}
+          {% if v.items_planned %}<div class="pg-items">{% for i in v.items_planned %}<span>{{ i }}</span>{% endfor %}</div>{% endif %}
+          {% if v.rescheduled_from %}<div class="small muted">Moved from {{ v.rescheduled_from|date:'j M' }}</div>{% endif %}</div>
+        <div class="pg-row-act">
+          <button class="btn btn-sm btn-primary" data-drawer="{% url 'programme_visit_record' v.pk %}" data-title="Record visit · {{ v.title }}"><i class="bi bi-check2-circle"></i>Came</button>
+          <form method="post" action="{% url 'programme_visit_act' v.pk %}" class="pg-move">{% csrf_token %}<input type="hidden" name="act" value="reschedule"><input type="date" name="due" class="form-control form-control-sm" value="{{ v.due|date:'Y-m-d' }}" aria-label="New date"><button class="btn btn-sm btn-ghost" title="Move to this date"><i class="bi bi-calendar-event"></i></button></form>
+          <form method="post" action="{% url 'programme_visit_act' v.pk %}">{% csrf_token %}<button name="act" value="remind" class="btn btn-sm btn-ghost" title="Send a reminder now"><i class="bi bi-bell"></i></button>
+            <button name="act" value="cancel" class="btn btn-sm btn-ghost" title="Cancel this visit" data-confirm="Cancel {{ v.title }}?"><i class="bi bi-x-lg"></i></button></form>
+        </div></li>{% empty %}<li class="empty">{% if e.status == 'active' %}Nothing planned.{% else %}The enrolment is {{ e.get_status_display|lower }}: no visits are planned.{% endif %}</li>{% endfor %}</ul>
+    </section>
+
+    {% if bp or series %}<section class="panel">
+      <div class="panel-head"><h2>Measurements over time</h2></div>
+      <div class="pg-sparks">
+        {% if bp %}<figure class="pg-spark" data-kind="bp" data-points='[{% for d, v in bp %}["{{ d|date:"j M" }}",{{ v.0 }},{{ v.1 }}]{% if not forloop.last %},{% endif %}{% endfor %}]'><figcaption>Blood pressure <span class="muted">mmHg · target below 140/90</span></figcaption></figure>{% endif %}
+        {% for label, unit, pts in series %}<figure class="pg-spark" data-points='[{% for d, v in pts %}["{{ d|date:"j M" }}",{{ v }}]{% if not forloop.last %},{% endif %}{% endfor %}]'><figcaption>{{ label }} <span class="muted">{{ unit }}</span></figcaption></figure>{% endfor %}
+      </div>
+    </section>{% endif %}
+
+    <section class="panel flush">
+      <div class="panel-head"><h2>History</h2></div>
+      <ul class="plain pg-timeline">{% for v in history %}<li class="st-{{ v.status }}"><span class="dot"></span>
+        <div><b>{{ v.title }}</b> · {% if v.status == 'attended' %}came {{ v.attended_on|date:'j M Y' }}{% if v.days_supply %} · {{ v.days_supply }} days of medicine{% endif %}{% else %}{{ v.get_status_display|lower }} ({{ v.due|date:'j M Y' }}){% endif %}
+          {% if v.items_done %}<div class="pg-items">{% for i in v.items_done %}<span class="done">{{ i }}</span>{% endfor %}</div>{% endif %}
+          {% if v.measures %}<div class="small">{% for label, val, unit in v.measure_list %}<span class="pg-m">{{ label }} <b>{{ val }}</b> {{ unit }}</span>{% endfor %}</div>{% endif %}
+          {% if v.note %}<div class="small muted"><i class="bi bi-lock"></i> {{ v.note }}</div>{% endif %}
+          {% if v.recorded_by %}<div class="small muted">by {{ v.recorded_by|display_name }}</div>{% endif %}</div></li>{% empty %}<li class="empty">No visits yet.</li>{% endfor %}</ul>
+    </section>
+  </div>
+
+  <div class="stack">
+    {% if latest %}<section class="panel"><div class="panel-head"><h2>Latest</h2></div><div class="vitals">{% for label, unit, val, when in latest %}<div class="vital" title="{{ when|date:'j M Y' }}"><span>{{ label }}</span><b>{{ val }}</b><small>{{ unit }}</small></div>{% endfor %}</div></section>{% endif %}
+
+    <section class="panel">
+      <div class="panel-head"><h2>Trace or follow up</h2></div>
+      <form method="post" action="{% url 'programme_trace' e.pk %}" class="pg-trace-side">{% csrf_token %}
+        <div class="d-flex gap-2"><select name="method" class="form-select form-select-sm">{% for k, l in methods %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select>
+          {% if e.contact_phone or pt.phone %}<a class="btn btn-sm btn-ghost" href="tel:{{ e.contact_phone|default:pt.phone }}"><i class="bi bi-telephone"></i>{{ e.contact_phone|default:pt.phone }}</a>{% endif %}</div>
+        <select name="outcome" class="form-select form-select-sm" required data-pg-outcome><option value="">What happened…</option>{% for k, l in outcomes %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select>
+        <select name="reason" class="form-select form-select-sm">{% for k, l in reasons %}<option value="{{ k }}">{% if not k %}Reason for missing (if any)…{% else %}{{ l }}{% endif %}</option>{% endfor %}</select>
+        <input type="date" name="due" class="form-control form-control-sm" hidden min="{{ today|date:'Y-m-d' }}" aria-label="New date">
+        <input name="note" class="form-control form-control-sm" maxlength="300" placeholder="Note (care team only, never sent to AI)">
+        <button class="btn btn-sm btn-ink"><i class="bi bi-check2"></i>Save</button>
+      </form>
+      <ul class="plain ruled small mt-2">{% for t in tracing|slice:':6' %}<li><b>{{ t.get_outcome_display }}</b> · {{ t.get_method_display|lower }}{% if t.reason %} · {{ t.reason_label|lower }}{% endif %}<br><span class="muted">{{ t.created_at|date:'j M H:i' }} · {{ t.by|display_name }}{% if t.note %} · <i class="bi bi-lock"></i> {{ t.note }}{% endif %}</span></li>{% endfor %}</ul>
+    </section>
+
+    {% include 'hospital/programmes/_ai_panel.html' with kind='patient' target=e.pk last=last_ai title='Follow-up plan' %}
+
+    <section class="panel">
+      <div class="panel-head"><h2>Care team &amp; reminders</h2></div>
+      <form method="post" action="{% url 'programme_enrolment_team' e.pk %}" class="pg-mini-form">{% csrf_token %}
+        <label class="small">Responsible doctor<select name="clinician" class="form-select form-select-sm"><option value="">—</option>{% for m in p.members.all %}<option value="{{ m.user_id }}" {% if e.clinician_id == m.user_id %}selected{% endif %}>{{ m.user|display_name }} · {{ m.get_role_display }}</option>{% endfor %}{% if e.clinician and not e.clinician in p.team.all %}<option value="{{ e.clinician_id }}" selected>{{ e.clinician|display_name }}</option>{% endif %}</select></label>
+        <label class="small">Responsible nurse<select name="nurse" class="form-select form-select-sm"><option value="">—</option>{% for m in p.members.all %}<option value="{{ m.user_id }}" {% if e.nurse_id == m.user_id %}selected{% endif %}>{{ m.user|display_name }} · {{ m.get_role_display }}</option>{% endfor %}{% if e.nurse and not e.nurse in p.team.all %}<option value="{{ e.nurse_id }}" selected>{{ e.nurse|display_name }}</option>{% endif %}</select></label>
+        <label class="small">Reminders by<select name="channel" class="form-select form-select-sm">{% for k, l in channels %}<option value="{{ k }}" {% if e.channel == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></label>
+        <button class="btn btn-sm btn-ghost">Save</button>
+      </form>
+      {% if not e.consent_reminders %}<div class="alert-mf warn mt-2"><i class="bi bi-bell-slash"></i><div>The patient has not agreed to reminders.</div></div>{% endif %}
+      {% if reminders %}<ul class="plain ruled small mt-2">{% for x in reminders %}<li><span class="tag {% if x.m.status == 'sent' %}teal{% elif x.m.status == 'failed' %}red{% else %}amber{% endif %}">{{ x.m.get_status_display }}</span> {{ x.m.get_kind_display }} · {{ x.m.get_channel_display }}<div class="muted">{{ x.m.text|truncatechars:90 }}</div>
+        {% if x.m.status == 'pending' and x.links.whatsapp %}<a href="{{ x.links.whatsapp }}" target="_blank" rel="noopener" data-pg-sent="{% url 'programme_message' x.m.pk %}"><i class="bi bi-whatsapp"></i> Send on WhatsApp</a>{% endif %}</li>{% endfor %}</ul>{% endif %}
+      {% if e.notes %}<div class="small mt-2"><i class="bi bi-lock"></i> {{ e.notes|linebreaksbr }}</div>{% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Enrolment</h2></div>
+      <form method="post" action="{% url 'programme_enrolment_status' e.pk %}" class="d-flex gap-2" data-confirm="Change the enrolment status? Closing it cancels the visits still planned.">{% csrf_token %}
+        <select name="status" class="form-select form-select-sm">{% for k, l in statuses %}<option value="{{ k }}" {% if e.status == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select><button class="btn btn-sm btn-ghost">Change</button></form>
+    </section>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/programmes.js' %}"></script>{% endblock %}

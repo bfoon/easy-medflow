@@ -1,0 +1,76 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Set up · {{ p.name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/programmes.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}{% if new %}Set up the programme{% else %}Programme settings{% endif %}{% endblock %}
+{% block subheading %}<p class="sub">{{ p.name }} · choose the care team, the follow-up rules and the visit plan.</p>{% endblock %}
+{% block content %}
+<form method="post" class="pg-edit" novalidate>{% csrf_token %}
+  {% for e in form.non_field_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ e }}</div></div>{% endfor %}
+  {% if steps.non_form_errors %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div>{{ steps.non_form_errors }}</div></div>{% endif %}
+
+  <section class="panel">
+    <div class="panel-head"><h2><span class="pg-num">1</span>The programme</h2></div>
+    <div class="form-grid">
+      {% include 'hospital/_field.html' with field=form.name %}{% include 'hospital/_field.html' with field=form.kind %}
+      {% include 'hospital/_field.html' with field=form.description %}
+      {% include 'hospital/_field.html' with field=form.color %}{% include 'hospital/_field.html' with field=form.icon %}
+      {% include 'hospital/_field.html' with field=form.anchor %}{% include 'hospital/_field.html' with field=form.active %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2><span class="pg-num">2</span>Care team</h2><span class="hint">Doctors and nurses in the team can open the records of enrolled patients between visits, and can choose to hear about every missed visit.</span></div>
+    <div class="form-grid">
+      {% include 'hospital/_field.html' with field=form.lead %}<div></div>
+      {% include 'hospital/_field.html' with field=form.doctors %}{% include 'hospital/_field.html' with field=form.nurses %}
+      {% include 'hospital/_field.html' with field=form.others %}
+    </div>
+    <p class="small muted mb-0"><i class="bi bi-info-circle"></i> Hold Ctrl (⌘ on Mac) to choose several. Roles and who is notified can be fine-tuned on the Care team tab.</p>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2><span class="pg-num">3</span>Follow-up rules</h2><span class="hint">When a patient is reminded, counted as missed, escalated and lost to follow-up.</span></div>
+    <div class="pg-rules">
+      <div class="pg-rule"><i class="bi bi-bell"></i>{{ form.reminder_days }}<span>days before: remind the patient</span></div>
+      <div class="pg-rule"><i class="bi bi-hourglass-split"></i>{{ form.grace_days }}<span>days late: <b>missed</b>, tell the doctor and nurse</span></div>
+      <div class="pg-rule"><i class="bi bi-megaphone"></i>{{ form.escalate_days }}<span>more days untraced: tell the programme lead</span></div>
+      <div class="pg-rule"><i class="bi bi-person-x"></i>{{ form.ltfu_days }}<span>days without a visit: <b>lost to follow-up</b></span></div>
+    </div>
+    <div class="mt-3"><label class="form-label">{{ form.measures.label }}</label><div class="pg-checks">{% for c in form.measures %}<label>{{ c.tag }} {{ c.choice_label }}</label>{% endfor %}</div></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2><span class="pg-num">4</span>Reminders, privacy and AI</h2></div>
+    <div class="form-grid">
+      {% include 'hospital/_field.html' with field=form.discreet %}<div></div>
+      {% include 'hospital/_field.html' with field=form.reminder_text span='span-2' %}
+      {% include 'hospital/_field.html' with field=form.missed_text span='span-2' %}
+    </div>
+    <div class="pg-ai-switch">
+      <div>{{ form.ai_enabled }}</div>
+      <div><label for="{{ form.ai_enabled.id_for_label }}"><b><i class="bi bi-stars"></i> {{ form.ai_enabled.label }}</b></label>
+        <p class="small mb-1">{{ form.ai_enabled.help_text }}</p>
+        <ul class="pg-privacy small">
+          <li><i class="bi bi-shield-check"></i>Programme insight: totals only, numbers under 5 hidden.</li>
+          <li><i class="bi bi-shield-check"></i>Follow-up plan for a patient: sex, age band and visits counted in days since enrolment.</li>
+          <li><i class="bi bi-shield-lock"></i>A privacy firewall blocks any request containing a name, record number, phone, email, address, birth date or real date.</li>
+          <li><i class="bi bi-eye"></i>Anyone in the team can see exactly what would be sent before asking.</li>
+        </ul></div>
+    </div>
+  </section>
+
+  <section class="panel flush">
+    <div class="panel-head"><h2><span class="pg-num">5</span>Visit plan</h2><span class="hint">Days are counted from the anchor day. A refill with days of medicine is next due when the medicine runs out.</span></div>
+    {{ steps.management_form }}
+    <div class="table-responsive"><table class="table pg-steps align-middle mb-0">
+      <thead><tr><th style="width:56px">#</th><th>Name</th><th>Type</th><th title="Days after the anchor day">Day</th><th title="Repeat every N days">Every</th><th title="Stop repeating after day N">Until day</th><th>Vaccines / tasks</th><th>Medicine</th><th title="Days of medicine given">Days</th><th></th></tr></thead>
+      <tbody>{% for f in steps %}<tr>{% for h in f.hidden_fields %}{{ h }}{% endfor %}
+        <td>{{ f.order }}</td><td>{{ f.name }}{% for e in f.name.errors %}<div class="field-error">{{ e }}</div>{% endfor %}</td><td>{{ f.kind }}</td><td>{{ f.offset_days }}</td><td>{{ f.repeat_days }}</td>
+        <td>{{ f.until_days }}</td><td>{{ f.items }}</td><td>{{ f.medicine }}</td><td>{{ f.days_supply }}</td><td>{% if f.instance.pk %}<label class="small muted" title="Remove this step">{{ f.DELETE }} <i class="bi bi-trash"></i></label>{% endif %}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <p class="small muted px-4 py-2 mb-0">Save to get two more empty rows. Removing a step keeps the visits already recorded.</p>
+  </section>
+
+  <div class="form-actions pg-sticky"><button class="btn btn-primary"><i class="bi bi-check2"></i>Save programme</button><a class="btn btn-ghost" href="{% url 'programme_detail' p.pk %}">Cancel</a></div>
+</form>
+{% endblock %}
