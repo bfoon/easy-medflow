@@ -1,0 +1,25 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Study cases · Library{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/library.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/mortality.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}Learning from deaths{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'library' %}">Clinical library</a> · anonymised study cases from this hospital, with autopsy findings and M&amp;M reviews where done{% if slug_title %} · <b>{{ slug_title }}</b> <a href="{% url 'library_cases' %}">(all)</a>{% endif %}</p>{% endblock %}
+{% block content %}
+<form class="lib-search" method="get"><i class="bi bi-search"></i><input class="form-control" name="q" value="{{ q }}" placeholder="Search study cases">{% if slug %}<input type="hidden" name="dx" value="{{ slug }}">{% endif %}</form>
+<div class="case-grid">
+  {% for c in cases %}
+  <a class="case-card" href="{% url 'library_case' c.code %}">
+    <span class="code">{{ c.code }} · {{ c.snapshot.death.year }}</span>
+    <b>{{ c.title }}</b>
+    <span class="q">{{ c.question }}</span>
+    <span class="tags">
+      {% if c.snapshot.autopsy %}<span class="tag plum"><i class="bi bi-clipboard2-pulse"></i>Autopsy{% if c.snapshot.autopsy.goldman %} · class {{ c.snapshot.autopsy.goldman }}{% endif %}</span>{% endif %}
+      {% if c.snapshot.review %}<span class="tag indigo">M&amp;M · {{ c.snapshot.review.preventability|default:'reviewed' }}</span>{% endif %}
+      {% if c.snapshot.death.within_24h %}<span class="tag amber">&lt;24 h</span>{% endif %}
+      {% if c.snapshot.death.maternal %}<span class="tag red">Maternal</span>{% endif %}
+      <span class="tag">{{ c.views }} view{{ c.views|pluralize }}</span>
+    </span>
+  </a>
+  {% empty %}<div class="empty"><i class="bi bi-journal"></i>{% if q %}No study case matches “{{ q }}”.{% else %}No study cases have been published yet. They are prepared after each death and published once a reviewer has checked the anonymisation.{% endif %}</div>{% endfor %}
+</div>
+<p class="small muted mt-4 mb-0"><i class="bi bi-shield-lock"></i> Each case was checked by a reviewer before publication: no names, numbers, addresses or dates, only relative times. Cases are never published when the family declined.</p>
+{% endblock %}

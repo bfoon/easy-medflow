@@ -16,6 +16,7 @@ from . import theatre_views as tv
 from . import access_views as av
 from . import library_views as libv
 from . import programme_views as pgv
+from . import mortality_views as mv
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -37,6 +38,23 @@ urlpatterns = [
     path('patients/<int:pk>/', v.patient_chart, name='patient_chart'),
     path('patients/<int:pk>/allergies/new/', v.allergy_new, name='allergy_new'),
     path('patients/<int:pk>/conditions/new/', v.condition_new, name='condition_new'),
+    path('patients/<int:pk>/death/', mv.death_new, name='death_new'),
+
+    path('mortality/', mv.index, name='mortality'),
+    path('mortality/archive/', mv.archive, name='mortality_archive'),
+    path('deaths/verify/<str:token>/', mv.death_verify, name='death_verify'),
+    path('deaths/<int:pk>/', mv.death_detail, name='death_detail'),
+    path('deaths/<int:pk>/certificate/', mv.death_certificate, name='death_certificate'),
+    path('deaths/<int:pk>/certificate/print/', mv.death_print, name='death_print'),
+    path('deaths/<int:pk>/family/', mv.death_family, name='death_family'),
+    path('deaths/<int:pk>/body/', mv.death_body, name='death_body'),
+    path('deaths/<int:pk>/revoke/', mv.death_revoke, name='death_revoke'),
+    path('deaths/<int:pk>/autopsy/', mv.autopsy_new, name='autopsy_new'),
+    path('deaths/<int:pk>/review/', mv.death_review, name='death_review'),
+    path('deaths/<int:pk>/study-case/', mv.study_case_manage, name='study_case_manage'),
+    path('autopsies/<int:pk>/', mv.autopsy_detail, name='autopsy_detail'),
+    path('autopsies/<int:pk>/print/', mv.autopsy_print, name='autopsy_print'),
+    path('autopsies/<int:pk>/<str:action>/', mv.autopsy_act, name='autopsy_act'),
 
     path('encounters/new/', v.encounter_new, name='encounter_new'),
     path('encounters/<int:pk>/', v.encounter_detail, name='encounter_detail'),
@@ -104,6 +122,8 @@ urlpatterns = [
     path('access/staff/<int:user_pk>/', av.member_save, name='access_member'),
     path('access/emergency/<int:pk>/', av.emergency, name='access_emergency'),
     path('library/', libv.index, name='library'),
+    path('library/cases/', mv.library_cases, name='library_cases'),
+    path('library/cases/<str:code>/', mv.library_case, name='library_case'),
     path('library/<slug:slug>/', libv.detail, name='library_detail'),
     path('theatre/api/board/', tv.api_board, name='theatre_api_board'),
     path('theatre/new/', tv.case_new, name='theatre_new'),

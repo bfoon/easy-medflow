@@ -44,6 +44,10 @@ CAPABILITIES = [
     ('esign', 'E-sign', 'Organisation', 'Send and sign documents.'),
     ('programmes', 'Care programmes', 'Programmes', 'Work in the programmes you belong to: record visits, trace patients who missed, send reminders. Opens the records of patients enrolled in those programmes.'),
     ('programme_admin', 'Manage care programmes', 'Programmes', 'Create programmes, choose the care team and visit plan, switch AI on or off, see every programme.'),
+    ('mortality', 'Record deaths and run the mortuary', 'Mortality', 'Pronounce and record a death (which archives the patient), inform the family, mortuary cabinets and release of the body.'),
+    ('death_certify', 'Certify the cause of death', 'Mortality', 'Write and sign the WHO medical certificate of cause of death. Usually doctors.'),
+    ('autopsy', 'Perform autopsies', 'Mortality', 'Pathology: autopsy reports, organ findings and clinicopathological correlation. Opens the records of deceased patients.'),
+    ('mortality_review', 'Mortality reviews and study cases', 'Mortality', 'M&M reviews, mortality statistics and publishing anonymised study cases to the library. Opens the records of deceased patients.'),
     ('library', 'Clinical library', 'Knowledge', 'Anonymous summaries of diseases, treatments and outcomes at this hospital.'),
     ('drflow', 'Dr. Flow assistant', 'Knowledge', 'Ask Dr. Flow about medicines, tests, diseases and patients in your care.'),
     ('access_admin', 'Manage access and roles', 'Organisation', 'Create groups, choose capabilities, allocate staff and change roles.'),
@@ -54,14 +58,15 @@ CAP_LABELS = {c[0]: c[1] for c in CAPABILITIES}
 # Capabilities that are not module checks, by role. Module checks come from ROLES (see defaults()).
 EXTRA = {
     'admin': set(CAP_KEYS),
-    'doctor': {'patient_records', 'break_glass', 'operation_note', 'pharmacy_view', 'pharmacy_revise', 'library', 'drflow'},
-    'nurse': {'patient_records', 'break_glass', 'pharmacy_view', 'library', 'drflow'},
+    'doctor': {'patient_records', 'break_glass', 'operation_note', 'pharmacy_view', 'pharmacy_revise', 'library', 'drflow',
+               'mortality', 'death_certify', 'mortality_review'},
+    'nurse': {'patient_records', 'break_glass', 'pharmacy_view', 'library', 'drflow', 'mortality'},
     'pharmacy': {'pharmacy_view', 'pharmacy_stock', 'pharmacy_revise', 'library', 'drflow'},
     'reception': {'patient_records', 'all_patients', 'pharmacy_view'},
-    'lab': {'patient_records', 'all_patients', 'pharmacy_view'},
+    'lab': {'patient_records', 'all_patients', 'pharmacy_view', 'autopsy', 'library'},
     'radiology': {'patient_records', 'all_patients', 'pharmacy_view'},
     'finance': {'patient_records', 'all_patients', 'pharmacy_view'},
-    'management': {'patient_records', 'all_patients', 'pharmacy_view', 'library', 'programme_admin'},
+    'management': {'patient_records', 'all_patients', 'pharmacy_view', 'library', 'programme_admin', 'mortality_review'},
 }
 # Standard groups an administrator can create in one click (then edit).
 STANDARD_GROUPS = [
@@ -162,7 +167,19 @@ def visible_patient_ids(request):
     if has(request.user, 'programmes'):              # a programme's care team follows its patients between visits
         from .programmes import care_team_patient_ids
         ids |= care_team_patient_ids(request.user)
+    if has(request.user, 'mortality_review') or has(request.user, 'autopsy'):   # learning from deaths needs the whole record
+        ids |= deceased_patient_ids()
     return ids
+
+
+def deceased_patient_ids():
+    from .models import Patient
+    return set(Patient.objects.filter(deceased_at__isnull=False).values_list('pk', flat=True))
+
+
+def can_mortality(user):
+    """May open the mortality pages at all."""
+    return any(has(user, c) for c in ('mortality', 'death_certify', 'autopsy', 'mortality_review'))
 
 
 def can_see(request, patient_id):
@@ -223,10 +240,20 @@ PATIENT_PAGES = {
     'theatre_preop': _p('SurgicalCase'), 'theatre_checklist': _p('SurgicalCase'), 'theatre_recovery': _p('SurgicalCase'), 'theatre_note': _p('SurgicalCase'),
     'bed_detail': _bed, 'submission_detail': _p('FormSubmission'),
     'programme_enrolment': _p('Enrolment'), 'programme_visit_record': _p('ProgrammeVisit', 'enrolment__patient_id'),
+    'death_new': lambda kw: kw.get('pk'),
+    'death_detail': _p('DeathRecord'), 'death_certificate': _p('DeathRecord'), 'death_print': _p('DeathRecord'),
+    'death_family': _p('DeathRecord'), 'death_body': _p('DeathRecord'), 'death_revoke': _p('DeathRecord'),
+    'autopsy_new': _p('DeathRecord'), 'death_review': _p('DeathRecord'), 'study_case_manage': _p('DeathRecord'),
+    'autopsy_detail': _p('Autopsy', 'death__patient_id'), 'autopsy_act': _p('Autopsy', 'death__patient_id'),
+    'autopsy_print': _p('Autopsy', 'death__patient_id'),
 }
 # Pages that are part of a job and open for that job even without patient-record access
 JOB_PAGES = {'prescription_detail': 'pharmacy', 'lab_request_detail': 'lab', 'imaging_detail': 'imaging', 'imaging_file': 'imaging',
-             'invoice_for_encounter': 'billing'}
+             'invoice_for_encounter': 'billing',
+             # the mortuary looks after every body, whoever the clinical team was
+             'death_detail': 'mortality', 'death_family': 'mortality', 'death_body': 'mortality', 'death_print': 'mortality',
+             'death_certificate': 'death_certify', 'autopsy_detail': 'autopsy', 'autopsy_act': 'autopsy', 'autopsy_print': 'autopsy',
+             'death_review': 'mortality_review', 'study_case_manage': 'mortality_review'}
 
 
 class PatientScopeMiddleware:

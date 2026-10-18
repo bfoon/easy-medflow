@@ -15,7 +15,7 @@ from .phones import LOCAL_LEN, MIN_DIGITS, PHONE_QUERY, digits as phone_digits, 
 
 AGE_BANDS = [('child', 'Under 18', 0, 17), ('adult', '18–64', 18, 64), ('older', '65 and over', 65, 200)]
 STATUS = [('inpatient', 'Admitted now'), ('queue', 'In the queue'), ('open', 'Open visit'), ('critical', 'Unreviewed abnormal results'),
-          ('allergy', 'Has allergies'), ('mine', 'My patients')]
+          ('allergy', 'Has allergies'), ('mine', 'My patients'), ('deceased', 'Deceased · archived')]
 
 
 NEGATION = re.compile(r'\b(no|not|without|negative for|nil|absent|free of)\b(?:\W+\w+){0,4}?\W+$', re.I)
@@ -94,6 +94,14 @@ def search_patients(user, q='', cats=(), dept='', status=(), age='', sex='', tow
     if town:
         qs = qs.filter(Q(location__name__iexact=town) | Q(location__parent__name__iexact=town))
     st = set(status)
+    # deceased patients are archived (hospital/mortality.py): found only when asked for
+    archived = 0
+    if 'deceased' in st:
+        qs = qs.filter(deceased_at__isnull=False)
+    else:
+        if tokens:
+            archived = qs.filter(deceased_at__isnull=False).count()
+        qs = qs.filter(deceased_at__isnull=True)
     if 'inpatient' in st:
         qs = qs.filter(encounters__admissions__discharged_at__isnull=True, encounters__admissions__isnull=False)
     if 'queue' in st:
@@ -162,7 +170,7 @@ def search_patients(user, q='', cats=(), dept='', status=(), age='', sex='', tow
                         'cat_hit': cat_hit.get(p.pk), 'cat_hit_info': INFO.get(cat_hit[p.pk].category) if p.pk in cat_hit else None,
                         'cats': [INFO[c] for c in sorted(pcats.get(p.pk, ()), key=lambda c: (c not in cats, c)) if c in INFO]})   # selected categories first
     facets = sorted(({**INFO[c], 'n': len(ids)} for c, ids in by_cat.items() if c in INFO), key=lambda f: -f['n'])
-    return {'results': results, 'total': total, 'facets': facets, 'departments': Department.objects.order_by('name')}
+    return {'results': results, 'total': total, 'facets': facets, 'departments': Department.objects.order_by('name'), 'archived': archived}
 
 
 def category_suggestions(q):

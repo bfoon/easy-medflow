@@ -1,10 +1,10 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}{{ p.full_name }}{% endblock %}
 {% block topbar %}{% endblock %}
-{% block head %}{% if 'drflow' in caps %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endif %}{% endblock %}
+{% block head %}{% if 'drflow' in caps %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endif %}<link href="{% asset 'hospital/css/mortality.css' %}" rel="stylesheet">{% endblock %}
 {% block content %}
 {% with active_allergies=allergies %}
-<section class="wristband {% if p.medical_alerts or allergies %}alerting{% endif %}">
+<section class="wristband {% if p.medical_alerts or allergies %}alerting{% endif %}{% if death %} deceased{% endif %}">
   <span class="avatar xl {{ p.sex }}">{{ p.initials }}</span>
   <div>
     <h1>{{ p.full_name }}</h1>
@@ -15,10 +15,15 @@
       {% if p.blood_group %}<span>Blood <b>{{ p.blood_group }}</b></span>{% endif %}
       <span><i class="bi bi-telephone"></i> {{ p.phone|default:'No phone' }}</span>
       {% if current_admission %}<span class="tag ink"><i class="bi bi-hospital"></i>In {{ current_admission.bed }}</span>{% endif %}
+      {% if death %}<span class="tag mort-tag"><i class="bi bi-flower1"></i>Died {{ death.died_at|date:'j M Y, H:i' }}</span>{% endif %}
     </div>
   </div>
   <div class="actions">
-    {% if open_encounter %}
+    {% if death %}
+      {% if can_mortality %}<a class="btn btn-primary" href="{% url 'death_detail' death.pk %}"><i class="bi bi-flower1"></i>Death record</a>
+      {% if death.certified %}<a class="btn btn-ghost" href="{% url 'death_print' death.pk %}" target="_blank"><i class="bi bi-file-earmark-medical"></i>Certificate</a>{% endif %}
+      {% if death_autopsy %}<a class="btn btn-ghost" href="{% url 'autopsy_detail' death_autopsy.pk %}"><i class="bi bi-clipboard2-pulse"></i>Autopsy</a>{% endif %}{% endif %}
+    {% elif open_encounter %}
       <button class="btn btn-primary" data-drawer="{% url 'lab_new' %}?encounter={{ open_encounter.pk }}" data-title="New lab request"><i class="bi bi-droplet-half"></i>Order lab tests</button>
       <button class="btn btn-primary" data-drawer="{% url 'prescription_new' %}?encounter={{ open_encounter.pk }}" data-title="New prescription"><i class="bi bi-capsule"></i>Prescribe</button>
       <button class="btn btn-ghost" data-drawer="{% url 'imaging_new' %}?encounter={{ open_encounter.pk }}" data-title="Imaging request"><i class="bi bi-radioactive"></i>Imaging</button>
@@ -37,7 +42,7 @@
         <li><button class="dropdown-item" onclick="mfModal('Patient QR code', document.getElementById('qr-tpl').innerHTML)">Patient QR code &amp; wristband</button></li>
         <li><button class="dropdown-item" data-drawer="{% url 'allergy_new' p.pk %}" data-title="Record allergy">Record allergy</button></li>
         <li><button class="dropdown-item" data-drawer="{% url 'condition_new' p.pk %}" data-title="Add condition">Add condition</button></li>
-        <li><button class="dropdown-item" data-drawer="{% url 'ticket_new' %}?patient={{ p.pk }}" data-title="Queue ticket">Add to queue</button></li>
+        {% if not death %}<li><button class="dropdown-item" data-drawer="{% url 'ticket_new' %}?patient={{ p.pk }}" data-title="Queue ticket">Add to queue</button></li>{% endif %}
         {% if open_encounter %}
         <li><a class="dropdown-item" href="{% url 'network_specialists' %}?encounter={{ open_encounter.pk }}">Find a specialist</a></li>
         <li><button class="dropdown-item" data-drawer="{% url 'referral_new' %}?encounter={{ open_encounter.pk }}" data-title="Referral">Refer</button></li>
@@ -46,11 +51,18 @@
         <li><a class="dropdown-item" href="{% url 'sense_exam' open_encounter.pk %}">Eyes &amp; ears</a></li>
         <li><button class="dropdown-item" data-drawer="{% url 'theatre_new' %}?encounter={{ open_encounter.pk }}" data-title="Book an operation">Book an operation</button></li>
         {% endif %}
+        {% if can_record_death %}<li><hr class="dropdown-divider"></li><li><a class="dropdown-item text-danger" href="{% url 'death_new' p.pk %}"><i class="bi bi-flower1 me-1"></i>Record death</a></li>{% endif %}
       </ul>
     </div>
   </div>
 </section>
 
+{% if death %}<div class="mort-banner mb-3"><i class="bi bi-flower1"></i>
+  <div><b>{{ p.first_name }} died on {{ death.died_at|date:'l j F Y' }} at {{ death.died_at|date:'H:i' }}{% if death.time_estimated %} (estimated){% endif %}</b>
+    · {{ death.get_place_display }}{% if death.underlying_cause %} · {{ death.underlying_cause }}{% endif %}
+    <div class="small">This record is archived: it no longer appears in active lists and new visits cannot be opened. Everything below is kept in full{% if death.study_case and death.study_case.status == 'published' %} and an anonymised study case is in the <a href="{% url 'library_case' death.study_case.code %}">clinical library</a>{% endif %}.</div></div>
+  {% if can_mortality %}<a class="btn btn-sm btn-ghost ms-auto" href="{% url 'death_detail' death.pk %}">Open death record <i class="bi bi-arrow-right"></i></a>{% endif %}
+</div>{% endif %}
 {% if p.medical_alerts %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon-fill"></i><div><b>Medical alert.</b> {{ p.medical_alerts }}</div></div>{% endif %}
 <div class="allergy-strip {% if not allergies %}none{% endif %}">
   <i class="bi bi-exclamation-triangle-fill"></i>

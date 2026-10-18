@@ -24,7 +24,20 @@ def medflow(request):
             'imaging': ImagingOrder.objects.filter(status__in=['requested', 'acquired']).count(),
             'bills': Invoice.objects.filter(status='draft').count(),
             'theatre': __import__('hospital.theatre', fromlist=['active_count']).active_count(),
+            'mortality': _mortality_count(request.user),
             'programmes': __import__('hospital.models_programmes', fromlist=['ProgrammeVisit']).ProgrammeVisit.objects.filter(
                 status='missed', enrolment__status__in=['active', 'lost']).filter(Q(enrolment__clinician=request.user) | Q(enrolment__nurse=request.user)).count(),
         },
     }
+
+
+def _mortality_count(user):
+    """Deaths without a certificate (for those who certify) plus open autopsies (for pathology)."""
+    from .access import has
+    from .models_mortality import Autopsy, DeathRecord
+    n = 0
+    if has(user, 'death_certify'):
+        n += DeathRecord.objects.exclude(status='revoked').filter(certified_at__isnull=True).count()
+    if has(user, 'autopsy'):
+        n += Autopsy.objects.filter(status__in=['consented', 'scheduled', 'in_progress', 'preliminary']).count()
+    return n

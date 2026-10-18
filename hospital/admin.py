@@ -266,3 +266,49 @@ class ProgrammeVisitAdmin(admin.ModelAdmin):
     list_display = ['enrolment', 'title', 'due', 'status', 'attended_on']
     list_filter = ['status', 'kind']
     raw_id_fields = ['enrolment', 'encounter']
+
+
+# ============================================================== mortality (hospital/mortality.py)
+class AutopsyInline(admin.TabularInline):
+    model = models.Autopsy
+    extra = 0
+    fields = ('kind', 'status', 'pathologist', 'signed_at')
+    readonly_fields = ('signed_at',)
+    show_change_link = True
+    can_delete = False
+
+
+@admin.register(models.DeathRecord)
+class DeathRecordAdmin(admin.ModelAdmin):
+    list_display = ('__str__', 'died_at', 'place', 'status', 'body_status', 'certified_at', 'teaching_consent')
+    list_filter = ('status', 'body_status', 'place', 'manner', 'teaching_consent')
+    search_fields = ('patient__mrn', 'patient__first_name', 'patient__last_name', 'cause_a', 'cause_d', 'mortuary_slot')
+    readonly_fields = ('verify_token', 'content_hash', 'archive_log', 'pronounced_at', 'certified_at', 'revoked_at')
+    raw_id_fields = ('patient', 'encounter', 'admission')
+    inlines = [AutopsyInline]
+    has_delete_permission = lambda self, request, obj=None: False     # deaths are revoked with a reason, never deleted
+
+
+@admin.register(models.Autopsy)
+class AutopsyAdmin(admin.ModelAdmin):
+    list_display = ('number', 'death', 'kind', 'status', 'pathologist', 'goldman', 'signed_at')
+    list_filter = ('kind', 'status', 'goldman')
+    readonly_fields = ('content_hash', 'addenda', 'signed_at')
+    raw_id_fields = ('death',)
+    has_delete_permission = lambda self, request, obj=None: False
+
+
+@admin.register(models.MortalityReview)
+class MortalityReviewAdmin(admin.ModelAdmin):
+    list_display = ('death', 'status', 'preventability', 'meeting_date')
+    list_filter = ('status', 'preventability')
+    raw_id_fields = ('death',)
+
+
+@admin.register(models.StudyCase)
+class StudyCaseAdmin(admin.ModelAdmin):
+    list_display = ('code', 'title', 'status', 'slug', 'views', 'published_at')
+    list_filter = ('status',)
+    search_fields = ('code', 'title')
+    readonly_fields = ('code', 'snapshot', 'snapshot_at', 'checklist', 'views')
+    raw_id_fields = ('death',)

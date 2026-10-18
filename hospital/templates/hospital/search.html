@@ -31,7 +31,8 @@
   </div>
 </form>
 
-<div class="d-flex align-items-baseline gap-2 mb-2"><h2 class="h5 mb-0">{{ total }} patient{{ total|pluralize }}</h2>{% if not active %}<span class="small muted">· most recently seen first</span>{% endif %}</div>
+<div class="d-flex align-items-baseline gap-2 mb-2"><h2 class="h5 mb-0">{{ total }} patient{{ total|pluralize }}</h2>{% if not active %}<span class="small muted">· most recently seen first</span>{% endif %}
+  {% if archived %}<a class="small ms-auto" href="?{{ request.GET.urlencode }}&status=deceased"><i class="bi bi-flower1"></i> {{ archived }} deceased patient{{ archived|pluralize }} also match{{ archived|pluralize:'es,' }} · show the archive</a>{% endif %}</div>
 <div class="results">
   {% for r in results %}{% with p=r.p %}
   <article class="pres">
@@ -46,6 +47,7 @@
       </span>
     </a>
     <div class="pres-tags">
+      {% if p.deceased_at %}<span class="tag"><i class="bi bi-flower1"></i>Deceased {{ p.deceased_at|date:'j M Y' }}</span>{% endif %}
       {% if r.bed %}<span class="tag ink"><i class="bi bi-hospital"></i>Bed {{ r.bed.code }}</span>{% endif %}
       {% if r.ticket %}<span class="tag indigo"><i class="bi bi-people"></i>{{ r.ticket.display_code }}</span>{% endif %}
       {% if r.flagged %}<span class="tag red"><i class="bi bi-exclamation-octagon"></i>{{ r.flagged }} to review</span>{% endif %}

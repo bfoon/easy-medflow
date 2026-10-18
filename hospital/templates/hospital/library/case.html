@@ -1,0 +1,132 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ sc.code }} · Study case{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/library.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/mortality.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}{{ sc.title }}{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'library' %}">Clinical library</a> · <a href="{% url 'library_cases' %}">Study cases</a>{% if disease %} · <a href="{% url 'library_detail' sc.slug %}">{{ disease }}</a>{% endif %} · {{ sc.code }} · {{ s.death.year }}</p>{% endblock %}
+{% block actions %}<button class="btn btn-ghost no-print" onclick="print()"><i class="bi bi-printer"></i>Print for a teaching session</button>{% endblock %}
+{% block content %}
+{% if preview %}<div class="preview-band"><i class="bi bi-eye"></i> Preview · {{ sc.get_status_display }}. Only reviewers can see this. Check every line for names, numbers or details that could identify the person.</div>{% endif %}
+
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-person"></i> The patient</h2></div>
+      <dl class="mort-kv">
+        <dt>Who</dt><dd>{{ s.profile.sex }}, {{ s.profile.age_band }}{% if s.profile.region %} · {{ s.profile.region }}{% endif %}</dd>
+        {% if s.profile.conditions %}<dt>Known conditions</dt><dd>{% for c in s.profile.conditions %}<span class="tag me-1">{{ c.name }}{% if c.status != 'Active' %} · {{ c.status|lower }}{% endif %}</span>{% endfor %}</dd>{% endif %}
+        {% if s.profile.allergies %}<dt>Allergies</dt><dd>{{ s.profile.allergies|join:', ' }}</dd>{% endif %}
+        <dt>Visits on record</dt><dd>{{ s.profile.visits }}</dd>
+        {% if s.death.hours_in_hospital is not None and s.death.hours_in_hospital >= 0 %}<dt>Time in hospital</dt><dd>{% if s.death.hours_in_hospital < 48 %}{{ s.death.hours_in_hospital }} hours{% else %}{% widthratio s.death.hours_in_hospital 24 1 %} days{% endif %}</dd>{% endif %}
+      </dl>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-signpost-split"></i> The course of care</h2><span class="hint">Times are counted back from death</span></div>
+      <div class="course-filter no-print" role="group" aria-label="Filter the course">
+        <button class="on" data-k="all">All</button><button data-k="visit">Visits</button><button data-k="lab">Labs</button><button data-k="imaging">Imaging</button><button data-k="rx">Medicines</button><button data-k="operation">Operations</button><button data-k="admission">Admissions</button>
+      </div>
+      <ul class="course">
+        {% for e in s.events %}
+        <li class="k-{{ e.kind }}{% if e.flag %} flag{% endif %}" data-kind="{{ e.kind }}">
+          <div class="when">{{ e.label }}{% if e.dept %} · {{ e.dept }}{% endif %}</div>
+          <div class="t">{{ e.title }}{% if e.status and e.kind != 'lab' %} <span class="tag">{{ e.status }}</span>{% endif %}{% if e.days %} <span class="small muted">· {{ e.days }} days</span>{% endif %}</div>
+          {% if e.symptoms %}<div class="d"><b>Symptoms:</b> {{ e.symptoms }}</div>{% endif %}
+          {% if e.vitals %}<div class="d small muted">{% for k, val in e.vitals.items %}{{ k|cut:'_'|upper|truncatechars:6 }} {{ val }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+          {% if e.assessment %}<div class="d"><b>Assessment:</b> {{ e.assessment }}</div>{% endif %}
+          {% if e.dx %}<div class="d cpc-hide"><b>Working diagnosis:</b> {{ e.dx }}</div>{% endif %}
+          {% if e.plan %}<div class="d"><b>Plan:</b> {{ e.plan }}</div>{% endif %}
+          {% if e.abnormal %}<div class="chips">{% for x in e.abnormal %}<span>{{ x }}</span>{% endfor %}</div>{% endif %}
+          {% if e.impression %}<div class="d">{{ e.impression }}</div>{% endif %}
+          {% if e.lines %}<div class="d small">{{ e.lines|join:' · ' }}</div>{% endif %}
+        </li>
+        {% endfor %}
+        <li class="death"><div class="when">Death · {{ s.death.place }}</div>
+          <div class="t">{% if s.death.resuscitation %}{{ s.death.resuscitation }}{% else %}Died{% endif %}</div>
+          {% if s.death.circumstances %}<div class="d">{{ s.death.circumstances }}</div>{% endif %}</li>
+      </ul>
+    </section>
+
+    <details class="cpc" id="cpc">
+      <summary><i class="bi bi-patch-question"></i> Case conference: {{ sc.question|default:'What was the cause of death?' }} <span class="small muted ms-auto">open to commit to an answer</span></summary>
+      <p class="small muted mt-2 mb-0">Write your answer before revealing it. It stays on your screen only and is not saved.</p>
+      <textarea class="form-control" rows="3" id="guess" placeholder="Your underlying cause, and whether this death could have been prevented"></textarea>
+      <button type="button" class="btn btn-ink btn-sm" id="reveal"><i class="bi bi-eye"></i>Reveal the answer</button>
+    </details>
+
+    <div id="answer" hidden class="stack">
+      <section class="panel">
+        <div class="panel-head"><h2><i class="bi bi-file-earmark-medical"></i> Cause of death · certificate</h2></div>
+        <div id="guess-echo" class="alert-mf mb-3" hidden><i class="bi bi-chat-left-quote"></i><div></div></div>
+        <ul class="cause-chain">{% for c in s.death.chain %}<li><span class="ln">{{ c.line }}</span>{% if c.interval %}<span class="iv">{{ c.interval }}</span>{% endif %}{% if forloop.last %}<span class="uc">Underlying cause{% if s.death.icd %} · {{ s.death.icd }}{% endif %}</span>{% endif %}{{ c.cause }}</li>{% endfor %}</ul>
+        {% if s.death.contributing %}<div class="mort-sub">Contributing</div><p class="mb-0">{{ s.death.contributing }}</p>{% endif %}
+        <p class="small muted mt-2 mb-0">{{ s.death.manner }}{% if s.death.maternal %} · {{ s.death.maternal }}{% endif %}{% if s.death.surgery_4w %} · operation within 4 weeks{% endif %}</p>
+      </section>
+
+      {% if s.autopsy %}
+      <section class="panel">
+        <div class="panel-head"><h2><i class="bi bi-clipboard2-pulse"></i> Autopsy</h2><span class="hint">{{ s.autopsy.kind }}{% if s.autopsy.status != 'Final · signed' %} · {{ s.autopsy.status }}{% endif %}</span></div>
+        {% if s.autopsy.questions %}<p class="small"><b>The team asked:</b> {{ s.autopsy.questions }}</p>{% endif %}
+        {% if s.autopsy.organs %}<div class="body-map mb-3">{% for o in body %}<div class="{% if o.abnormal %}abn{% elif o.finding or o.weight_g %}seen{% endif %}" {% if o.finding %}title="{{ o.finding }}"{% endif %}><i class="bi {{ o.icon }}"></i> {{ o.label }}</div>{% endfor %}</div>
+        <table class="mini-table mb-3"><tbody>{% for o in s.autopsy.organs %}<tr><td style="width:150px"><b>{{ o.label }}</b>{% if o.abnormal %} <span class="tag red">abnormal</span>{% endif %}</td><td style="width:70px">{{ o.weight_g }}{% if o.weight_g %} g{% endif %}</td><td>{{ o.finding }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+        {% if s.autopsy.interview %}<p><b>Family’s account:</b> {{ s.autopsy.interview }}</p>{% endif %}
+        {% if s.autopsy.histology %}<p class="small"><b>Histology:</b> {{ s.autopsy.histology }}</p>{% endif %}
+        {% if s.autopsy.microbiology %}<p class="small"><b>Microbiology:</b> {{ s.autopsy.microbiology }}</p>{% endif %}
+        {% if s.autopsy.diagnosis %}<div class="mort-sub">Pathological diagnoses</div><p>{{ s.autopsy.diagnosis }}</p>{% endif %}
+        {% if s.autopsy.chain %}<ul class="cause-chain mb-3">{% for c in s.autopsy.chain %}<li><span class="ln">{{ c.line }}</span>{% if forloop.last %}<span class="uc">Autopsy underlying cause</span>{% endif %}{{ c.cause }}</li>{% endfor %}</ul>{% endif %}
+        {% if s.autopsy.goldman %}<div class="compare"><div><h4>Believed in life</h4>{{ s.autopsy.clinical|default:'—' }}</div><div class="vs"><i class="bi bi-arrow-left-right"></i></div><div><h4>Found at autopsy</h4>{{ s.autopsy.chain|last|default_if_none:''|get_item:'cause' }}</div></div>
+        <p class="mt-2 mb-1"><span class="tag {% if s.autopsy.goldman == 'I' %}red{% elif s.autopsy.goldman == 'II' %}amber{% elif s.autopsy.goldman == 'V' %}teal{% endif %}">{{ s.autopsy.goldman_label }}</span></p>{% endif %}
+        {% if s.autopsy.correlation %}<p class="small mb-0">{{ s.autopsy.correlation }}</p>{% endif %}
+      </section>
+      {% endif %}
+
+      {% if s.review %}
+      <section class="panel">
+        <div class="panel-head"><h2><i class="bi bi-people-fill"></i> M&amp;M review</h2>{% if s.review.preventability %}<span class="tag {% if s.review.preventability_key == 'probably' %}red{% elif s.review.preventability_key == 'possibly' %}amber{% elif s.review.preventability_key == 'not' %}teal{% endif %}">{{ s.review.preventability }}</span>{% endif %}</div>
+        {% if s.review.delays %}<p class="small"><b>Delays:</b> {{ s.review.delays|join:' · ' }}</p>{% endif %}
+        {% if s.review.factors %}<div class="d-flex flex-wrap gap-1 mb-2">{% for f in s.review.factors %}<span class="tag">{{ f }}</span>{% endfor %}</div>{% endif %}
+        {% if s.review.went_well %}<p class="small"><b>Went well:</b> {{ s.review.went_well }}</p>{% endif %}
+        {% if s.review.lessons %}<div class="mort-sub">Lessons</div><ul>{% for l in s.review.lessons %}<li>{{ l }}</li>{% endfor %}</ul>{% endif %}
+        {% if s.review.actions %}<div class="mort-sub">What the hospital changed</div><ul class="mb-0">{% for x in s.review.actions %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+      </section>
+      {% endif %}
+    </div>
+  </div>
+
+  <aside class="stack">
+    {% if sc.teaching_list or s.autopsy.learning %}
+    <section class="panel" id="teaching" hidden>
+      <div class="panel-head"><h2><i class="bi bi-lightbulb"></i> Teaching points</h2></div>
+      <ul class="mb-0">{% for t in sc.teaching_list %}<li>{{ t }}</li>{% endfor %}{% for t in s.autopsy.learning %}<li>{{ t }}</li>{% endfor %}</ul>
+    </section>
+    {% endif %}
+    <section class="panel">
+      <div class="panel-head"><h2>How to use this case</h2></div>
+      <ol class="small mb-0"><li>Read the course of care, as the team saw it.</li><li>Decide what you think happened and what you would have done differently.</li><li>Open the case conference, write your answer, then reveal the certificate, autopsy and review.</li></ol>
+      <label class="small d-flex gap-2 mt-3 no-print"><input type="checkbox" class="form-check-input m-0" id="hide-dx" checked> Hide working diagnoses until the reveal</label>
+    </section>
+    {% if disease %}<section class="panel"><div class="panel-head"><h2>{{ disease }}</h2></div><a class="small" href="{% url 'library_detail' sc.slug %}">General notes and this hospital’s figures <i class="bi bi-arrow-right"></i></a></section>{% endif %}
+    {% if related %}<section class="panel"><div class="panel-head"><h2>Related cases</h2></div>{% for c in related %}<a class="mort-case-row" href="{% url 'library_case' c.code %}"><span class="code">{{ c.code }}</span>{{ c.title }}</a>{% endfor %}</section>{% endif %}
+    <p class="small muted"><i class="bi bi-shield-lock"></i> Anonymised: no names, numbers or dates. If you recognise this person, tell the library reviewers so the case can be withdrawn.</p>
+  </aside>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+(() => {
+  const hideBox = document.getElementById('hide-dx'), answer = document.getElementById('answer'), teaching = document.getElementById('teaching');
+  const setHidden = () => document.querySelectorAll('.cpc-hide').forEach(el => el.hidden = hideBox.checked && answer.hidden);
+  hideBox.addEventListener('change', setHidden); setHidden();
+  document.getElementById('reveal').addEventListener('click', () => {
+    const g = document.getElementById('guess').value.trim(), echo = document.getElementById('guess-echo');
+    if (g) { echo.hidden = false; echo.querySelector('div').textContent = 'Your answer: ' + g; }
+    answer.hidden = false; if (teaching) teaching.hidden = false;
+    document.getElementById('cpc').open = false; setHidden();
+    answer.scrollIntoView({behavior: 'smooth', block: 'start'});
+  });
+  if (location.hash === '#answer' || window.matchMedia('print').matches) { answer.hidden = false; if (teaching) teaching.hidden = false; setHidden(); }
+  window.addEventListener('beforeprint', () => { answer.hidden = false; if (teaching) teaching.hidden = false; setHidden(); });
+  document.querySelectorAll('.course-filter button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.course-filter button').forEach(x => x.classList.toggle('on', x === b));
+    document.querySelectorAll('.course li[data-kind]').forEach(li => li.hidden = b.dataset.k !== 'all' && li.dataset.kind !== b.dataset.k);
+  }));
+})();
+</script>{% endblock %}

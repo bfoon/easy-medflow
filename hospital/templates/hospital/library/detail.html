@@ -1,6 +1,6 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}{{ d.title }} · Library{% endblock %}
-{% block head %}<link href="{% asset 'hospital/css/library.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/library.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/mortality.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endblock %}
 {% block heading %}{{ d.title }}{% endblock %}
 {% block subheading %}<p class="sub"><a href="{% url 'library' %}">Clinical library</a>{% if catinfo %} · <a href="{% url 'library' %}?cat={{ catinfo.key }}">{{ catinfo.label }}</a>{% endif %} · {{ d.n }} case{{ d.n|pluralize }} at this hospital</p>{% endblock %}
 {% block actions %}<button type="button" class="btn btn-primary" data-drflow-ask><i class="bi bi-robot"></i>Ask Dr. Flow about {{ d.title|lower }}</button>{% endblock %}
@@ -20,6 +20,13 @@
     {% else %}
     <section class="panel"><p class="mb-0">There are no general notes for this diagnosis yet. <button type="button" class="linklike fw-semibold" data-drflow-ask>Ask Dr. Flow</button> for an explanation from trusted sources.</p></section>
     {% endif %}
+    {% if d.study_cases %}
+    <section class="panel mort-cases-strip">
+      <div class="panel-head"><h2><i class="bi bi-flower1"></i> Learning from deaths</h2><span class="hint">Anonymised study cases, with autopsy and review where done</span><a class="more" href="{% url 'library_cases' %}?dx={{ d.slug }}">All</a></div>
+      {% for c in d.study_cases %}<a class="mort-case-row" href="{% url 'library_case' c.code %}"><span class="code">{{ c.code }}</span><b>{{ c.title }}</b>
+        {% if c.snapshot.autopsy %}<span class="tag plum"><i class="bi bi-clipboard2-pulse"></i>Autopsy</span>{% endif %}{% if c.snapshot.review %}<span class="tag indigo">M&amp;M</span>{% endif %}<i class="bi bi-chevron-right ms-auto"></i></a>{% endfor %}
+    </section>
+    {% endif %}
     {% if d.enough %}
     <section class="panel">
       <div class="panel-head"><h2>Anonymous case log</h2><span class="hint">The latest {{ d.log|length }} cases: what was done and how it ended</span></div>
@@ -36,6 +43,7 @@
     <section class="panel">
       <div class="panel-head"><h2>This hospital</h2></div>
       <div class="lib-kpis"><div><b>{{ d.n }}</b><span>cases</span></div><div><b>{{ d.admitted }}</b><span>admitted</span></div><div><b>{{ d.stay_days|default:'—' }}</b><span>median days in hospital</span></div></div>
+      {% if d.deaths %}<p class="small mb-2"><i class="bi bi-flower1"></i> <b>{{ d.deaths }}</b> death{{ d.deaths|pluralize }} in the last 12 months with this as the underlying cause.</p>{% elif d.deaths_few %}<p class="small muted mb-2"><i class="bi bi-flower1"></i> Fewer than {{ d.min }} deaths in the last 12 months.</p>{% endif %}
       <h3 class="lib-h">Cases per month</h3>
       <div class="lib-trend">{% for t in d.trend %}<i style="--h:{% widthratio t.n d.peak 100 %}%" title="{{ t.label }}: {{ t.n }}"><span>{{ t.n|default:'' }}</span></i>{% endfor %}</div>
       <div class="lib-trend-l"><span>{{ d.trend.0.label }}</span><span>{{ d.trend.11.label }}</span></div>

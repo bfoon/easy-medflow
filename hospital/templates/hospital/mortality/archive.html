@@ -1,0 +1,31 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Archive · deceased patients{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/mortality.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}Archive · deceased patients{% endblock %}
+{% block subheading %}<p class="sub">{{ total }} record{{ total|pluralize }}. Removed from the active lists; the medical record is kept in full.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'patients' %}"><i class="bi bi-person-vcard"></i>Active patients</a>{% if 'mortality' in caps or 'mortality_review' in caps %}<a class="btn btn-ghost" href="{% url 'mortality' %}"><i class="bi bi-flower1"></i>Mortality board</a>{% endif %}{% endblock %}
+{% block content %}
+<section class="panel flush">
+  <form class="searchbar" method="get">
+    <input class="form-control" name="q" value="{{ q }}" placeholder="Search by name or record number" aria-label="Search the archive" autofocus>
+    <select class="form-select" name="year" style="max-width:130px" onchange="this.form.submit()"><option value="">Any year</option>{% for y in years %}<option value="{{ y }}" {% if year == y|stringformat:'s' %}selected{% endif %}>{{ y }}</option>{% endfor %}</select>
+    <button class="btn btn-ink">Search</button>
+    {% if q or year %}<a class="btn btn-ghost" href="{% url 'mortality_archive' %}">Clear</a>{% endif %}
+  </form>
+  {% for r in rows %}{% with p=r.p d=r.d %}
+  <div class="patient-row">
+    <span class="avatar lg {{ p.sex }}" style="filter:grayscale(1)">{{ p.initials }}</span>
+    <span><span class="name">{{ p.full_name }}</span><br><span class="mrn">{{ p.mrn }} · {{ p.get_sex_display }} · born {{ p.dob|date:'Y' }}</span></span>
+    <span class="hide-sm small"><i class="bi bi-flower1 me-1"></i>Died {{ p.deceased_at|date:'j M Y' }}{% if d %}<br><span class="muted">{{ d.underlying_cause|default:'Certificate pending'|truncatechars:48 }}</span>{% endif %}</span>
+    <span class="hide-sm">{% if d %}<span class="tag {% if d.status == 'closed' %}teal{% elif d.status == 'pronounced' %}amber{% else %}indigo{% endif %}">{{ d.get_status_display }}</span>
+      {% if d.study_case and d.study_case.status == 'published' %} <span class="tag plum">In library</span>{% endif %}{% endif %}</span>
+    <span class="d-flex align-items-center gap-2">
+      {% if d and 'mortality' in caps or d and 'mortality_review' in caps or d and 'autopsy' in caps %}<a class="btn btn-sm btn-ghost" href="{% url 'death_detail' d.pk %}">Death record</a>{% endif %}
+      {% if r.open %}<a class="btn btn-sm btn-ghost" href="{% url 'patient_chart' p.pk %}">Medical record</a>{% else %}<span class="small muted" title="Opening this record needs access to deceased patients or emergency access"><i class="bi bi-shield-lock"></i></span>{% endif %}
+    </span>
+  </div>
+  {% endwith %}{% empty %}
+  <div class="empty" style="border-top:1px solid var(--line)"><i class="bi bi-archive"></i>{% if q %}No deceased patient matches “{{ q }}”.{% else %}The archive is empty.{% endif %}</div>
+  {% endfor %}
+</section>
+{% endblock %}

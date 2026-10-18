@@ -1,0 +1,47 @@
+{% load medflow %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>{{ a.number }} · Autopsy report</title>
+<link href="{% asset 'hospital/vendor/fonts/fonts.css' %}" rel="stylesheet">
+<style>
+  @page{size:A4;margin:14mm}
+  body{font-family:'Public Sans',system-ui,sans-serif;color:#14293A;font-size:12.5px;margin:0;background:#EEF1EF}
+  .sheet{background:#fff;max-width:186mm;margin:16px auto;padding:14mm;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+  h1{font-family:'Bricolage Grotesque',sans-serif;font-size:19px;margin:0}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#4B4A6B;margin:14px 0 4px;border-bottom:1px solid #DCE4E0;padding-bottom:2px}
+  .head{display:flex;justify-content:space-between;border-bottom:2px solid #0F2C3F;padding-bottom:8px;margin-bottom:10px}
+  .sub{color:#5A6F7D;font-size:11px}
+  table{width:100%;border-collapse:collapse}td,th{border:1px solid #C9D5CF;padding:5px 7px;vertical-align:top;text-align:left}th{background:#F2F5F3;font-size:11px}
+  .abn{color:#C8323F;font-weight:700}
+  .pre{white-space:pre-line}
+  .stamp{border:2px solid #0F7B78;color:#0B5F5D;border-radius:8px;padding:8px 10px;margin-top:16px}
+  .stamp.pre-r{border-color:#E0912A;color:#8A520B}
+  .bar{max-width:186mm;margin:12px auto 0;display:flex;gap:8px}
+  .bar button,.bar a{font:inherit;padding:6px 14px;border-radius:8px;border:1px solid #9AA8A2;background:#fff;color:#14293A;text-decoration:none;cursor:pointer}
+  @media print{body{background:#fff}.sheet{box-shadow:none;margin:0;max-width:none;padding:0}.bar{display:none}}
+</style></head>
+<body>
+<div class="bar"><button onclick="print()">Print</button><a href="{% url 'autopsy_detail' a.pk %}">Back</a></div>
+<div class="sheet">
+  <div class="head"><div><h1>Autopsy report</h1><div class="sub">{{ a.get_kind_display }} · {{ a.get_status_display }}</div></div>
+    <div style="text-align:right"><b>{{ a.number }}</b><div class="sub">Death record {{ d.number }}</div></div></div>
+  <table><tr><th>Deceased</th><td>{{ p.full_name }} · {{ p.mrn }}</td><th>Sex / born</th><td>{{ p.get_sex_display }} · {{ p.dob|date:'j M Y' }}</td></tr>
+    <tr><th>Died</th><td>{{ d.died_at|date:'j M Y H:i' }} · {{ d.get_place_display }}</td><th>Pathologist</th><td>{{ a.pathologist|display_name }}</td></tr>
+    <tr><th>Consent / authority</th><td colspan="3">{% if a.legal_authority %}{{ a.legal_authority }}{% elif a.consent_at %}{{ a.consent_name }} ({{ a.consent_relation }}) · {{ a.consent_scope }}{% if a.organ_retention %} · organ retention agreed{% endif %}{% else %}—{% endif %}</td></tr></table>
+  <h2>Clinical questions</h2><p class="pre">{{ a.questions }}</p>
+  <h2>Clinical diagnosis at death</h2><p>{{ a.clinical_diagnosis|default:'—' }}</p>
+  {% if a.interview %}<h2>Interview</h2><p class="pre">{{ a.interview }}</p>{% endif %}
+  {% if a.external_exam %}<h2>External examination</h2><p class="sub">{{ a.height_cm|default_if_none:'—' }} cm · {{ a.weight_kg|default_if_none:'—' }} kg</p><p class="pre">{{ a.external_exam }}</p>{% endif %}
+  <h2>Internal examination</h2>
+  <table><tr><th style="width:24%">System</th><th style="width:10%">Weight</th><th>Findings</th></tr>
+    {% for o in organs %}{% if o.finding or o.weight_g %}<tr><td class="{% if o.abnormal %}abn{% endif %}">{{ o.label }}</td><td>{{ o.weight_g }}{% if o.weight_g %} g{% endif %}</td><td>{{ o.finding }}</td></tr>{% endif %}{% empty %}{% endfor %}</table>
+  {% if a.histology %}<h2>Histology</h2><p class="pre">{{ a.histology }}</p>{% endif %}
+  {% if a.microbiology %}<h2>Microbiology</h2><p class="pre">{{ a.microbiology }}</p>{% endif %}
+  {% if a.toxicology %}<h2>Toxicology</h2><p class="pre">{{ a.toxicology }}</p>{% endif %}
+  {% if a.anatomical_diagnosis %}<h2>Pathological diagnoses</h2><p class="pre">{{ a.anatomical_diagnosis }}</p>{% endif %}
+  <h2>Cause of death</h2>
+  <table>{% for l, c in a.chain %}<tr><th style="width:8%">I({{ l|lower }})</th><td>{% if not forloop.first %}<span class="sub">due to </span>{% endif %}{{ c }}</td></tr>{% endfor %}
+    {% if a.contributing %}<tr><th>II</th><td>{{ a.contributing }}</td></tr>{% endif %}</table>
+  {% if a.goldman %}<h2>Clinicopathological correlation</h2><p><b>{{ a.get_goldman_display }}</b></p>{% if a.correlation_notes %}<p class="pre">{{ a.correlation_notes }}</p>{% endif %}{% endif %}
+  {% for x in a.addenda %}{% if forloop.first %}<h2>Addenda</h2>{% endif %}<p><span class="sub">{{ x.by }} · {{ x.at|slice:':10' }}</span><br>{{ x.text|linebreaksbr }}</p>{% endfor %}
+  {% if a.signed %}<div class="stamp">Signed by <b>{{ a.signed_by|display_name }}</b> on {{ a.signed_at|date:'j M Y H:i' }}<br><span class="sub">SHA-256 {{ a.content_hash }}</span></div>
+  {% else %}<div class="stamp pre-r"><b>Not final.</b> This is a {{ a.get_status_display|lower }} copy and may change.</div>{% endif %}
+</div></body></html>

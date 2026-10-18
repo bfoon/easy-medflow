@@ -74,6 +74,13 @@ class Patient(Tracked):
     @property
     def full_name(self):return f'{self.first_name} {self.last_name}'
     @property
+    def is_deceased(self):return self.deceased_at is not None
+    @property
+    def death_record(self):
+        """The current (not revoked) death record, if any. See hospital/models_mortality.py."""
+        if not self.deceased_at:return None
+        return self.deaths.exclude(status='revoked').first()
+    @property
     def initials(self):return (self.first_name[:1]+self.last_name[:1]).upper()
     @property
     def age(self):
@@ -120,7 +127,7 @@ class Encounter(Tracked):
     vitals=models.JSONField(default=dict,blank=True,help_text='Measurements with units (e.g. bp, heart_rate, temperature_c)')
     status=models.CharField(max_length=20,choices=STATUS,default='open')
     completed_at=models.DateTimeField(null=True,blank=True)
-    OUTCOMES=[('resolved','Resolved'),('improved','Improved'),('no_change','No change'),('worsened','Worsened'),('referred','Referred on')]
+    OUTCOMES=[('resolved','Resolved'),('improved','Improved'),('no_change','No change'),('worsened','Worsened'),('referred','Referred on'),('died','Died')]
     outcome=models.CharField(max_length=12,choices=OUTCOMES,blank=True,help_text='How the patient was at the end of this visit or course')
     outcome_notes=models.CharField(max_length=300,blank=True)
     nursing_notes=models.TextField(blank=True,help_text='Written by the attending nurse; shown under the clinical notes')
@@ -1020,3 +1027,4 @@ from .models_drflow import DrFlowAsk, BedSummary, LabInsightAsk  # noqa: E402,F4
 from .models_notes import NoteRevision, ClinicalNoteAsk  # noqa: E402,F401
 from .models_programmes import (Programme, ProgrammeMember, ProgrammeStep, Enrolment, ProgrammeVisit,  # noqa: E402,F401
                                 TracingAttempt, ProgrammeMessage, ProgrammeAIRun)
+from .models_mortality import DeathRecord, Autopsy, MortalityReview, StudyCase  # noqa: E402,F401

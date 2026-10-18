@@ -1,0 +1,169 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ a.number }} · Autopsy{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/mortality.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}{{ a.number }} · {{ a.get_kind_display }}{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'death_detail' d.pk %}">{{ d.number }}</a> · {{ p.full_name }} · {{ p.get_sex_display }}{% if p.dob %}, {{ p.dob|date:'Y' }}{% endif %} · died {{ d.died_at|date:'j M Y H:i' }} · <span class="tag {% if a.signed %}teal{% elif a.status == 'cancelled' or a.status == 'declined' %}{% else %}plum{% endif %}">{{ a.get_status_display }}</span></p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'autopsy_print' a.pk %}" target="_blank"><i class="bi bi-printer"></i>Print report</a><a class="btn btn-ghost" href="{% url 'patient_chart' p.pk %}"><i class="bi bi-person-vcard"></i>Medical record</a>{% endblock %}
+{% block content %}
+
+{# ---------------------------------------------------------- the workflow before the examination #}
+{% if a.status == 'requested' or a.status == 'consented' or a.status == 'scheduled' %}
+<section class="panel mb-3">
+  <div class="panel-head"><h2><i class="bi bi-signpost-2"></i> Next step</h2><span class="hint">Requested by {{ a.requested_by|display_name }} · {{ a.created_at|date:'j M H:i' }}</span></div>
+  {% if a.status == 'requested' and a.kind != 'verbal' %}
+    {% if can_consent %}
+    <div class="grid g-2">
+      <form method="post" action="{% url 'autopsy_act' a.pk 'consent' %}">{% csrf_token %}
+        <div class="label-sm mb-2">Record the family’s consent</div>
+        <div class="form-grid">
+          <div class="field"><label class="form-label">Given by</label><input class="form-control" name="consent_name" value="{{ d.nok_name }}"></div>
+          <div class="field"><label class="form-label">Relationship</label><input class="form-control" name="consent_relation" value="{{ d.nok_relation }}"></div>
+          <div class="field span-2"><label class="form-label">Scope agreed</label><input class="form-control" name="consent_scope" value="{% if a.kind == 'limited' %}Limited to: {% elif a.kind == 'minimally_invasive' %}Needle biopsies and imaging only{% else %}Full autopsy{% endif %}"></div>
+        </div>
+        <label class="small d-flex gap-2 mb-3"><input type="checkbox" class="form-check-input m-0" name="organ_retention"> The family agrees to organs or tissue being kept for further study</label>
+        <p class="small muted">You are recorded as the witness. Explain what will be done, how long it takes, and that the body will be returned for burial.</p>
+        <button class="btn btn-primary btn-sm"><i class="bi bi-check2-square"></i>Consent given</button>
+      </form>
+      <form method="post" action="{% url 'autopsy_act' a.pk 'decline' %}">{% csrf_token %}
+        <div class="label-sm mb-2">Or: the family declined</div>
+        <textarea class="form-control mb-2" name="note" rows="3" placeholder="Reasons the family gave, if any (helps the hospital understand)"></textarea>
+        <p class="small muted">A verbal autopsy (an interview) can still be requested afterwards.</p>
+        <button class="btn btn-danger-soft btn-sm">Record decline</button>
+      </form>
+    </div>
+    {% else %}<p class="mb-0 small muted">Waiting for the clinical team to record the family’s decision.</p>{% endif %}
+  {% elif can_autopsy %}
+    {% if a.consent_at %}<p class="small"><i class="bi bi-check-circle-fill text-success"></i> Consent: {{ a.consent_name }} ({{ a.consent_relation }}) · {{ a.consent_scope }}{% if a.organ_retention %} · organ retention agreed{% endif %} · {{ a.consent_at|date:'j M H:i' }}</p>{% endif %}
+    {% if a.legal_authority %}<p class="small"><i class="bi bi-bank"></i> Ordered by {{ a.legal_authority }}</p>{% endif %}
+    <div class="d-flex gap-3 flex-wrap align-items-end">
+      {% if a.status != 'requested' %}<form method="post" action="{% url 'autopsy_act' a.pk 'schedule' %}" class="d-flex gap-2 align-items-end">{% csrf_token %}
+        <div><label class="form-label small">Pathologist</label><select class="form-select form-select-sm" name="pathologist">{% for u in pathologists %}<option value="{{ u.pk }}" {% if a.pathologist_id == u.pk or not a.pathologist_id and u.pk == request.user.pk %}selected{% endif %}>{{ u|display_name }}</option>{% endfor %}</select></div>
+        <div><label class="form-label small">When</label><input class="form-control form-control-sm" type="datetime-local" name="scheduled_at" value="{{ a.scheduled_at|date:'Y-m-d\TH:i'|default:now }}"></div>
+        <button class="btn btn-sm btn-ghost">{% if a.scheduled_at %}Reschedule{% else %}Schedule{% endif %}</button></form>{% endif %}
+      <form method="post" action="{% url 'autopsy_act' a.pk 'start' %}">{% csrf_token %}<button class="btn btn-sm btn-primary"><i class="bi bi-play-fill"></i>{% if a.kind == 'verbal' %}Start the interview{% else %}Start the examination{% endif %}</button></form>
+    </div>
+  {% else %}<p class="small muted mb-0">Waiting for pathology.</p>{% endif %}
+  {% if can_autopsy or a.requested_by_id == request.user.pk %}<form method="post" action="{% url 'autopsy_act' a.pk 'cancel' %}" class="mt-3" onsubmit="return confirm('Cancel this autopsy request?')">{% csrf_token %}<button class="btn btn-sm btn-ghost text-danger">Cancel request</button></form>{% endif %}
+</section>
+{% endif %}
+
+{% if a.status == 'declined' %}<div class="alert-mf mb-3"><i class="bi bi-info-circle"></i><div><b>The family declined.</b> {{ a.correlation_notes }}</div></div>{% endif %}
+
+{# ---------------------------------------------------------- what the team thought #}
+<section class="panel mb-3">
+  <div class="panel-head"><h2><i class="bi bi-question-diamond"></i> Questions and clinical picture</h2></div>
+  <div class="compare">
+    <div><h4>The team asks</h4><p class="mb-0" style="white-space:pre-line">{{ a.questions }}</p></div>
+    <div class="vs">vs</div>
+    <div><h4>Believed at death</h4><p class="mb-2">{{ a.clinical_diagnosis|default:'—' }}</p>
+      {% if enc and enc.diagnosis %}<p class="small muted mb-1">Last visit: {{ enc.diagnosis|truncatechars:120 }}</p>{% endif %}
+      {% if labs %}<div class="d-flex flex-wrap gap-1">{% for v in labs %}<span class="tag {% if v.flag == 'HH' or v.flag == 'LL' %}red{% else %}amber{% endif %}" title="{{ v.order.test.name }} · {{ v.order.created_at|date:'j M' }}">{{ v.parameter.name }} {{ v.display }} {{ v.flag }}</span>{% endfor %}</div>{% endif %}
+    </div>
+  </div>
+</section>
+
+{# ---------------------------------------------------------- the report #}
+{% if can_write %}
+<form method="post" id="au-form" novalidate>{% csrf_token %}
+<div class="grid g-main">
+  <div class="stack">
+    {% if a.kind == 'verbal' %}
+    <section class="panel"><div class="panel-head"><h2><i class="bi bi-chat-square-text"></i> Interview</h2><span class="hint">The family’s account: symptoms, their order, care sought, where and when</span></div>
+      <textarea class="form-control" name="interview" rows="8">{{ a.interview }}</textarea></section>
+    {% else %}
+    <section class="panel"><div class="panel-head"><h2><i class="bi bi-person-standing"></i> External examination</h2></div>
+      <div class="form-grid"><div class="field"><label class="form-label">Height (cm)</label><input class="form-control" name="height_cm" value="{{ a.height_cm|default_if_none:'' }}" inputmode="decimal"></div>
+        <div class="field"><label class="form-label">Weight (kg)</label><input class="form-control" name="weight_kg" value="{{ a.weight_kg|default_if_none:'' }}" inputmode="decimal"></div></div>
+      <textarea class="form-control" name="external_exam" rows="4" placeholder="Build and nutrition, rigor and livor, marks, injuries, lines, drains, wounds">{{ a.external_exam }}</textarea>
+    </section>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-grid-3x3-gap"></i> Organ by organ</h2><span class="hint">{{ examined_n }} examined · {{ abnormal_n }} abnormal — click a tile to write</span></div>
+      <div class="organ-board">{% for o in organs %}<button type="button" class="organ-tile {% if o.abnormal %}abn{% elif o.finding or o.weight_g %}seen{% endif %}" data-organ="{{ o.key }}"><i class="bi {{ o.icon }} ic"></i><b>{{ o.label }}</b><small>{% if o.weight_g %}{{ o.weight_g }} g · {% endif %}{{ o.finding|default:'Not examined' }}</small></button>{% endfor %}</div>
+      <div class="organ-legend"><span style="--c:var(--line-2)">Not examined</span><span style="--c:var(--teal)">Examined, normal</span><span style="--c:var(--red)">Abnormal</span></div>
+      <div class="mt-3">{% for o in organs %}
+        <div class="organ-row" id="org-{{ o.key }}">
+          <span class="nm"><i class="bi {{ o.icon }}"></i> {{ o.label }}</span>
+          <input class="form-control form-control-sm" name="organ_{{ o.key }}_weight_g" value="{{ o.weight_g|default:'' }}" placeholder="g" inputmode="decimal" aria-label="{{ o.label }} weight in grams">
+          <textarea class="form-control form-control-sm" name="organ_{{ o.key }}_finding" rows="2" placeholder="Findings" data-finding="{{ o.key }}">{{ o.finding|default:'' }}</textarea>
+          <label class="abn"><input type="checkbox" class="form-check-input m-0" name="organ_{{ o.key }}_abnormal" {% if o.abnormal %}checked{% endif %}> Abnormal</label>
+        </div>{% endfor %}</div>
+    </section>
+
+    <section class="panel"><div class="panel-head"><h2><i class="bi bi-eyedropper"></i> Further studies</h2></div>
+      <div class="field"><label class="form-label">Histology</label><textarea class="form-control" name="histology" rows="3">{{ a.histology }}</textarea></div>
+      <div class="form-grid"><div class="field"><label class="form-label">Microbiology</label><textarea class="form-control" name="microbiology" rows="2">{{ a.microbiology }}</textarea></div>
+        <div class="field"><label class="form-label">Toxicology</label><textarea class="form-control" name="toxicology" rows="2">{{ a.toxicology }}</textarea></div></div>
+    </section>
+  </div>
+
+  <aside class="stack">
+    <section class="panel"><div class="panel-head"><h2><i class="bi bi-clipboard2-check"></i> Conclusion</h2></div>
+      {% if a.kind != 'verbal' %}<div class="field"><label class="form-label">Pathological diagnoses</label><textarea class="form-control" name="anatomical_diagnosis" rows="4" placeholder="Most important first">{{ a.anatomical_diagnosis }}</textarea></div>{% endif %}
+      <label class="form-label">Cause of death</label>
+      {% for k in 'abcd' %}<div class="d-flex gap-2 align-items-center mb-1"><span class="small fw-bold muted" style="width:24px">({{ k }})</span><input class="form-control form-control-sm" name="cause_{{ k }}" value="{% if k == 'a' %}{{ a.cause_a }}{% elif k == 'b' %}{{ a.cause_b }}{% elif k == 'c' %}{{ a.cause_c }}{% else %}{{ a.cause_d }}{% endif %}"></div>{% if k != 'd' %}<div class="small muted" style="margin-left:32px;font-size:.7rem">due to</div>{% endif %}{% endfor %}
+      <div class="field mt-2"><label class="form-label">Contributing (Part II)</label><input class="form-control form-control-sm" name="contributing" value="{{ a.contributing }}"></div>
+    </section>
+    <section class="panel"><div class="panel-head"><h2><i class="bi bi-arrow-left-right"></i> Did life and death agree?</h2></div>
+      <div class="g-pick">{% for k, l in goldman %}<label><input type="radio" class="form-check-input m-0" name="goldman" value="{{ k }}" {% if a.goldman == k %}checked{% endif %}><span class="gc">{{ k }}</span><span>{{ l }}</span></label>{% endfor %}</div>
+      <div class="field mt-2"><label class="form-label">What was missed or confirmed, and why</label><textarea class="form-control" name="correlation_notes" rows="3">{{ a.correlation_notes }}</textarea></div>
+      <div class="field"><label class="form-label">Learning points <span class="muted">(one per line — they go to the library)</span></label><textarea class="form-control" name="learning_points" rows="3">{{ a.learning_points }}</textarea></div>
+    </section>
+    <section class="panel">
+      <button class="btn btn-ghost w-100"><i class="bi bi-save"></i>Save</button>
+      {% if a.status == 'in_progress' %}<button class="btn btn-ghost w-100 mt-2" formaction="{% url 'autopsy_act' a.pk 'preliminary' %}"><i class="bi bi-send"></i>Issue preliminary report</button>{% endif %}
+      <button class="btn btn-primary w-100 mt-2" formaction="{% url 'autopsy_act' a.pk 'sign' %}" onclick="return confirm('Sign and seal the report? It can only be extended with addenda afterwards.')"><i class="bi bi-pen"></i>Sign the final report</button>
+      <p class="small muted mt-2 mb-0">Saving also happens when you issue or sign. A signed report is sealed with a SHA-256 fingerprint.</p>
+    </section>
+  </aside>
+</div>
+</form>
+
+{% elif a.status == 'in_progress' or a.status == 'preliminary' or a.signed %}
+<div class="grid g-main">
+  <div class="stack">
+    {% if a.signed %}<div class="sealed {% if not intact %}broken{% endif %}"><i class="bi {% if intact %}bi-patch-check-fill{% else %}bi-exclamation-octagon-fill{% endif %}"></i><div>{% if intact %}Signed by <b>{{ a.signed_by|display_name }}</b> on {{ a.signed_at|date:'j M Y H:i' }} · content unchanged since signing{% else %}The stored report no longer matches its signature. Contact the administrator.{% endif %}</div></div>
+    {% elif a.status == 'preliminary' %}<div class="alert-mf warn"><i class="bi bi-hourglass-split"></i><div><b>Preliminary report.</b> Findings may change when histology and other studies are complete.</div></div>{% endif %}
+    {% if a.interview %}<section class="panel"><div class="panel-head"><h2>Interview</h2></div><p class="mb-0" style="white-space:pre-line">{{ a.interview }}</p></section>{% endif %}
+    {% if a.external_exam %}<section class="panel"><div class="panel-head"><h2>External examination</h2>{% if a.height_cm or a.weight_kg %}<span class="hint">{{ a.height_cm|default_if_none:'—' }} cm · {{ a.weight_kg|default_if_none:'—' }} kg</span>{% endif %}</div><p class="mb-0" style="white-space:pre-line">{{ a.external_exam }}</p></section>{% endif %}
+    {% if examined_n %}<section class="panel"><div class="panel-head"><h2>Organs</h2><span class="hint">{{ abnormal_n }} abnormal of {{ examined_n }} examined</span></div>
+      <table class="mini-table"><tbody>{% for o in organs %}{% if o.finding or o.weight_g %}<tr><td style="width:150px"><b>{{ o.label }}</b>{% if o.abnormal %} <span class="tag red">abnormal</span>{% endif %}</td><td style="width:70px">{{ o.weight_g|default:'' }}{% if o.weight_g %} g{% endif %}</td><td>{{ o.finding }}</td></tr>{% endif %}{% endfor %}</tbody></table></section>{% endif %}
+    {% if a.histology or a.microbiology or a.toxicology %}<section class="panel"><div class="panel-head"><h2>Further studies</h2></div><dl class="mort-kv">{% if a.histology %}<dt>Histology</dt><dd>{{ a.histology|linebreaksbr }}</dd>{% endif %}{% if a.microbiology %}<dt>Microbiology</dt><dd>{{ a.microbiology|linebreaksbr }}</dd>{% endif %}{% if a.toxicology %}<dt>Toxicology</dt><dd>{{ a.toxicology|linebreaksbr }}</dd>{% endif %}</dl></section>{% endif %}
+  </div>
+  <aside class="stack">
+    <section class="panel"><div class="panel-head"><h2>Conclusion</h2></div>
+      {% if a.anatomical_diagnosis %}<p style="white-space:pre-line">{{ a.anatomical_diagnosis }}</p>{% endif %}
+      {% if a.chain %}<ul class="cause-chain">{% for l, c in a.chain %}<li><span class="ln">{{ l }}</span>{% if forloop.last %}<span class="uc">Underlying cause</span>{% endif %}{{ c }}</li>{% endfor %}</ul>{% endif %}
+      {% if a.contributing %}<div class="mort-sub">Contributing</div><p class="mb-0">{{ a.contributing }}</p>{% endif %}
+    </section>
+    {% if a.goldman %}<section class="panel"><div class="panel-head"><h2>Life vs death</h2></div><p><b>{{ a.get_goldman_display }}</b></p>{% if a.correlation_notes %}<p class="small mb-0">{{ a.correlation_notes|linebreaksbr }}</p>{% endif %}</section>{% endif %}
+    {% if a.learning_list %}<section class="panel"><div class="panel-head"><h2>Learning points</h2></div><ul class="mb-0">{% for l in a.learning_list %}<li>{{ l }}</li>{% endfor %}</ul></section>{% endif %}
+    {% if a.signed %}<section class="panel"><div class="panel-head"><h2>Addenda</h2></div>
+      {% for x in a.addenda %}<div class="addendum"><div class="small muted">{{ x.by }} · {{ x.at|slice:':10' }} {{ x.at|slice:'11:16' }}</div>{{ x.text|linebreaksbr }}</div>{% empty %}<p class="small muted">None.</p>{% endfor %}
+      {% if can_autopsy %}<form method="post" action="{% url 'autopsy_act' a.pk 'addendum' %}">{% csrf_token %}<textarea class="form-control mb-2" name="text" rows="2" placeholder="e.g. Late histology result"></textarea><button class="btn btn-sm btn-ghost">Add addendum</button></form>{% endif %}
+    </section>{% endif %}
+  </aside>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script>
+document.querySelectorAll('[data-organ]').forEach(t => t.addEventListener('click', () => {
+  const row = document.getElementById('org-' + t.dataset.organ);
+  if (!row) return;
+  row.scrollIntoView({behavior: 'smooth', block: 'center'});
+  row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash');
+  setTimeout(() => row.querySelector('textarea').focus({preventScroll: true}), 350);
+}));
+// keep each tile in step with what is typed
+document.querySelectorAll('[data-finding]').forEach(ta => {
+  const key = ta.dataset.finding, row = document.getElementById('org-' + key), tile = document.querySelector('[data-organ="' + key + '"]');
+  const sync = () => {
+    const w = row.querySelector('input[name$="_weight_g"]').value.trim(), f = ta.value.trim(), abn = row.querySelector('input[type=checkbox]').checked;
+    tile.classList.toggle('abn', abn && !!(f || w)); tile.classList.toggle('seen', !abn && !!(f || w));
+    tile.querySelector('small').textContent = (w ? w + ' g · ' : '') + (f || 'Not examined');
+  };
+  row.querySelectorAll('input, textarea').forEach(el => el.addEventListener('input', sync));
+  row.querySelector('input[type=checkbox]').addEventListener('change', sync);
+});
+</script>{% endblock %}

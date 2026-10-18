@@ -1,0 +1,111 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Mortuary & mortality{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/mortality.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}Mortuary &amp; mortality{% endblock %}
+{% block subheading %}<p class="sub">Every death: the certificate, the family, the body, autopsy, the M&amp;M review — and what the hospital learns from it.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'mortality_archive' %}"><i class="bi bi-archive"></i>Archive</a>{% if 'library' in caps %}<a class="btn btn-ghost" href="{% url 'library_cases' %}"><i class="bi bi-book"></i>Study cases</a>{% endif %}{% endblock %}
+{% block content %}
+<div class="mort-kpis">
+  <div class="kpi"><b>{{ s.n30 }}</b><span>deaths · last 30 days</span><small>{{ s.n_year }} this year</small></div>
+  <div class="kpi {% if s.rate and s.rate > 8 %}abn{% endif %}"><b>{% if s.rate is not None %}{{ s.rate }}%{% else %}—{% endif %}</b><span>in-hospital mortality</span><small>{{ s.adm_deaths }} of {{ s.adm_ended }} admissions · 90 days</small></div>
+  <div class="kpi {% if s.within_24h %}abn{% endif %}"><b>{{ s.within_24h }}</b><span>within 24 h of arrival</span><small>12 months</small></div>
+  <div class="kpi {% if s.maternal %}crit{% endif %}"><b>{{ s.maternal }}</b><span>maternal deaths</span><small>this year · {{ s.perinatal }} perinatal (12 mo)</small></div>
+  <div class="kpi {% if s.uncertified %}abn{% endif %}"><b>{{ s.uncertified }}</b><span>awaiting certificate</span><small>{{ s.in_mortuary }} in the mortuary</small></div>
+  <div class="kpi good"><b>{{ s.autopsy_rate }}%</b><span>autopsy rate</span><small>{{ s.n_autopsy }} signed · {{ s.open_autopsies }} open</small></div>
+</div>
+
+<nav class="tabs-lite">
+  <a href="?tab=overview" class="{% if tab == 'overview' %}on{% endif %}"><i class="bi bi-speedometer2"></i> Today</a>
+  <a href="?tab=mortuary" class="{% if tab == 'mortuary' %}on{% endif %}"><i class="bi bi-snow"></i> Mortuary <span class="n">{{ board|length }}</span></a>
+  <a href="?tab=learning" class="{% if tab == 'learning' %}on{% endif %}"><i class="bi bi-mortarboard"></i> Learning</a>
+</nav>
+
+{% if tab == 'overview' %}
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Needs attention</h2><span class="hint">Certificates, families, bodies held, consent and reviews</span></div>
+      {% for x in alerts %}<a class="mort-alert {{ x.level }}" href="{% url 'death_detail' x.d.pk %}"><i class="bi {{ x.icon }}"></i><span><b>{{ x.d.patient.full_name }}</b> <span class="muted small">· {{ x.d.patient.mrn }}</span><br><span class="small">{{ x.text }}</span></span><i class="bi bi-chevron-right ms-auto" style="background:none;width:auto"></i></a>
+      {% empty %}<div class="empty"><i class="bi bi-check2-circle"></i>Nothing outstanding.</div>{% endfor %}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Recent deaths</h2><a class="more" href="{% url 'mortality_archive' %}">Archive</a></div>
+      <div class="table-responsive"><table class="mini-table"><thead><tr><th>Died</th><th>Patient</th><th>Place</th><th>Underlying cause</th><th>Status</th></tr></thead><tbody>
+      {% for d in recent %}<tr>
+        <td class="small">{{ d.died_at|date:'j M, H:i' }}</td>
+        <td><a href="{% url 'death_detail' d.pk %}"><b>{{ d.patient.full_name }}</b></a><br><span class="small muted">{{ d.patient.mrn }}{% if d.patient.age is not None %} · {{ d.patient.get_sex_display }}{% endif %}</span></td>
+        <td class="small">{{ d.get_place_display }}{% if d.within_24h %} <span class="tag amber">&lt;24 h</span>{% endif %}{% if d.is_maternal %} <span class="tag red">maternal</span>{% endif %}</td>
+        <td class="small">{{ d.underlying_cause|default:'—' }}</td>
+        <td><span class="tag {% if d.status == 'pronounced' %}amber{% elif d.status == 'closed' %}teal{% else %}indigo{% endif %}">{{ d.get_status_display }}</span></td></tr>
+      {% empty %}<tr><td colspan="5"><div class="empty">No deaths recorded.</div></td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+  </div>
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Autopsies</h2><span class="hint">{{ autopsies|length }} open</span></div>
+      {% for a in autopsies %}<a class="mort-case-row" href="{% url 'autopsy_detail' a.pk %}"><span class="code">{{ a.number }}</span><span><b>{{ a.death.patient.full_name }}</b><br><span class="small muted">{{ a.get_kind_display }}{% if a.scheduled_at %} · {{ a.scheduled_at|date:'j M H:i' }}{% endif %}{% if a.pathologist %} · {{ a.pathologist|display_name }}{% endif %}</span></span><span class="tag ms-auto {% if a.status == 'requested' %}amber{% else %}plum{% endif %}">{{ a.get_status_display }}</span></a>
+      {% empty %}<div class="empty small"><i class="bi bi-clipboard2-pulse"></i>No autopsy in progress.</div>{% endfor %}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Leading causes</h2><span class="hint">Underlying cause · 12 months, autopsy-confirmed where available</span></div>
+      <div class="m-bars">{% for c in s.causes %}<div>{% if 'library' in caps %}<a href="{% url 'library_detail' c.slug %}" title="{{ c.title }}">{{ c.title }}</a>{% else %}<span>{{ c.title }}</span>{% endif %}<i style="--w:{% widthratio c.n s.cause_peak 100 %}%"></i><b>{{ c.n }}</b></div>
+      {% empty %}<p class="small muted mb-0">Causes appear as certificates are written.</p>{% endfor %}</div>
+      <div class="m-trend">{% for t in s.trend %}<i style="--h:{% widthratio t.n s.peak 100 %}%" title="{{ t.label }}: {{ t.n }}"><span>{{ t.n|default:'' }}</span></i>{% endfor %}</div>
+      <div class="m-trend-l"><span>{{ s.trend.0.label }}</span><span>deaths per month</span><span>{{ s.trend.11.label }}</span></div>
+    </section>
+  </div>
+</div>
+
+{% elif tab == 'mortuary' %}
+<section class="panel">
+  <div class="panel-head"><h2>Bodies in our care</h2><span class="hint">Amber: still on the ward · blue: in the mortuary · purple: in pathology · red: family asked for rapid release</span></div>
+  <div class="cabinets">
+  {% for d in board %}
+    <a class="cabinet {{ d.body_status }}{% if d.rapid_release %} rapid{% endif %}" href="{% url 'death_detail' d.pk %}#body">
+      <span class="slot">{% if d.mortuary_slot %}{{ d.mortuary_slot }}{% else %}{{ d.place_detail|default:'On the ward'|truncatechars:18 }}{% endif %}</span>
+      {% if d.days_in_mortuary is not None %}<span class="days {% if d.days_in_mortuary >= 7 %}long{% endif %}">{{ d.days_in_mortuary }} d</span>{% else %}<span class="days">{{ d.died_at|ago }}</span>{% endif %}
+      <span class="nm">{{ d.patient.full_name }}</span>
+      <span class="small muted">{{ d.patient.mrn }} · died {{ d.died_at|date:'j M H:i' }}</span>
+      <span class="row">
+        {% if d.certified %}<span class="tag teal">Certified</span>{% else %}<span class="tag amber">No certificate</span>{% endif %}
+        {% if not d.nok_informed_at %}<span class="tag amber">Family?</span>{% endif %}
+        {% if d.open_autopsy %}<span class="tag plum">{{ d.open_autopsy.get_status_display }}</span>{% endif %}
+        {% if d.rapid_release %}<span class="tag red"><i class="bi bi-hourglass-split"></i>Rapid release</span>{% endif %}
+      </span>
+    </a>
+  {% empty %}<div class="empty"><i class="bi bi-snow"></i>The mortuary is empty.</div>{% endfor %}
+  </div>
+</section>
+
+{% else %}
+<div class="grid g-2">
+  <section class="panel">
+    <div class="panel-head"><h2>Clinical vs autopsy diagnosis</h2><span class="hint">Goldman classes · {{ s.n_final }} signed autopsies, 12 months</span></div>
+    <div class="goldman">{% for g in s.goldman %}<div class="g-{{ g.key }}" title="{{ g.desc }}"><b>{{ g.n }}</b><span>{{ g.label }}</span></div>{% endfor %}</div>
+    <p class="small muted mt-3 mb-0">{% if s.n_final %}<b>{{ s.major_missed }}</b> major diagnos{{ s.major_missed|pluralize:'is,es' }} missed in life (class I–II). Every class I case should be discussed at the M&amp;M meeting.{% else %}Autopsy findings will show here how often the team’s diagnosis in life was confirmed.{% endif %}</p>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>Who and where</h2><span class="hint">12 months</span></div>
+    <div class="m-bars">{% for a in s.ages %}<div><span>{{ a.label }}</span><i style="--w:{% widthratio a.n s.age_peak 100 %}%"></i><b>{{ a.n }}</b></div>{% endfor %}</div>
+    <div class="mort-sub">Place of death</div>
+    <div class="d-flex flex-wrap gap-2">{% for p in s.places %}<span class="tag">{{ p.label }} · {{ p.n }}</span>{% empty %}<span class="small muted">—</span>{% endfor %}</div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>Study cases waiting</h2><span class="hint">{{ s.cases_published }} published in the library</span></div>
+    {% for c in drafts %}<a class="mort-case-row" href="{% url 'death_detail' c.death.pk %}#library"><span class="code">{{ c.code }}</span><b>{{ c.title }}</b><span class="tag amber ms-auto">Draft</span></a>
+    {% empty %}<div class="empty small"><i class="bi bi-journal-check"></i>No drafts waiting for an anonymisation check.</div>{% endfor %}
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>How the learning loop works</h2></div>
+    <ol class="small mb-0">
+      <li>A death is <b>pronounced</b>: the patient is archived and every open order, reminder and booking stops.</li>
+      <li>A doctor writes the <b>WHO certificate</b>; a draft study case is prepared automatically.</li>
+      <li>Where the family agrees (or the law requires), <b>pathology</b> performs an autopsy and compares its findings with the team’s diagnosis.</li>
+      <li>The <b>M&amp;M meeting</b> decides whether the death was preventable and what to change.</li>
+      <li>A reviewer checks the anonymised case and <b>publishes</b> it to the clinical library — unless the family declined.</li>
+    </ol>
+  </section>
+</div>
+{% endif %}
+{% endblock %}

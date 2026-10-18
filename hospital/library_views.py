@@ -12,7 +12,10 @@ from .views import audit
 def index(request):
     require(request, 'library', 'Your access does not include the clinical library.')
     q, cat = request.GET.get('q', '').strip()[:60], request.GET.get('cat', '')[:30]
-    return render(request, 'hospital/library/index.html', {**L.index(q, cat), 'q': q, 'cat': cat, 'total_curated': len(L.DISEASES)})
+    from .mortality import published_cases
+    cases = published_cases()
+    return render(request, 'hospital/library/index.html', {**L.index(q, cat), 'q': q, 'cat': cat, 'total_curated': len(L.DISEASES),
+                                                           'study_n': cases.count(), 'study_latest': cases.first() if not q and not cat else None})
 
 
 @login_required

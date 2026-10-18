@@ -1,0 +1,68 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Record death · {{ p.full_name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/mortality.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}Record a death{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %}</p>{% endblock %}
+{% block content %}
+<form method="post" class="mort-record" novalidate>{% csrf_token %}
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-clock-history"></i> Time and place</h2></div>
+      <div class="form-grid">
+        <div class="field"><label class="form-label" for="died_at">Date and time of death</label>
+          <input class="form-control" type="datetime-local" id="died_at" name="died_at" value="{{ v.died_at|default:now }}" max="{{ now }}" required></div>
+        <div class="field check" style="padding-top:30px"><input class="form-check-input" type="checkbox" id="te" name="time_estimated" {% if v.time_estimated %}checked{% endif %}><label class="form-label" for="te">The time is an estimate (death not witnessed)</label></div>
+      </div>
+      <label class="form-label">Where it happened</label>
+      <div class="place-pick mb-3">{% for k, l in places %}<label><input type="radio" name="place" value="{{ k }}" {% if v.place == k or not v.place and k == suggest_place %}checked{% endif %}><span>{{ l }}</span></label>{% endfor %}</div>
+      <div class="form-grid">
+        <div class="field"><label class="form-label" for="pd">Ward, bed or location</label><input class="form-control" id="pd" name="place_detail" value="{{ place_default }}" placeholder="e.g. Medical ward / B-12"></div>
+        <div class="field"><label class="form-label" for="rs">Resuscitation</label><select class="form-select" id="rs" name="resuscitation"><option value="">—</option>{% for k, l in resus %}<option value="{{ k }}" {% if v.resuscitation == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+        <div class="field span-2"><label class="form-label" for="ci">What happened</label><textarea class="form-control" id="ci" name="circumstances" rows="4" placeholder="The last hours: deterioration, treatment given, resuscitation, who was present.">{{ v.circumstances }}</textarea></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-heart-pulse"></i> Verification of death</h2><span class="hint">Confirm cardiorespiratory arrest by examination. The outlined signs are required.</span></div>
+      <div class="verify-grid">{% for k, l in checks %}<label class="{% if k in core %}core{% endif %}"><input type="checkbox" class="form-check-input m-0" name="check_{{ k }}" {% if k in checked %}checked{% endif %}> {{ l }}</label>{% endfor %}</div>
+      <p class="small muted mt-2 mb-0">For a death at home reported by the family, verification is recorded by whoever examines the body on arrival.</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-people"></i> The family</h2><span class="hint">Can also be completed later on the death record</span></div>
+      <div class="form-grid">
+        <div class="field"><label class="form-label" for="nn">Next of kin</label><input class="form-control" id="nn" name="nok_name" value="{{ v.nok_name|default:p.emergency_contact }}"></div>
+        <div class="field"><label class="form-label" for="nr">Relationship</label><input class="form-control" id="nr" name="nok_relation" value="{{ v.nok_relation }}" placeholder="e.g. son, wife"></div>
+        <div class="field"><label class="form-label" for="np">Phone</label><input class="form-control" id="np" name="nok_phone" value="{{ v.nok_phone }}"></div>
+        <div class="field check" style="padding-top:30px"><input class="form-check-input" type="checkbox" id="rr" name="rapid_release" {% if v.rapid_release %}checked{% endif %}><label class="form-label" for="rr">The family asks for release as soon as possible (e.g. same-day burial)</label></div>
+      </div>
+    </section>
+  </div>
+
+  <aside class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-archive"></i> What will be archived</h2></div>
+      <p class="small">Recording the death removes {{ p.first_name }} from every active list. Nothing in the medical record is deleted.</p>
+      <ul class="plain archive-preview">
+        <li><i class="bi bi-clipboard2-check"></i>Open visits completed as “Died”<b>{{ preview.visits }}</b></li>
+        <li><i class="bi bi-hospital"></i>{% if preview.admission %}Bed {{ preview.admission.bed.code }} released for terminal cleaning{% else %}No current admission{% endif %}<b>{% if preview.admission %}1{% else %}0{% endif %}</b></li>
+        <li><i class="bi bi-people"></i>Queue tickets cancelled<b>{{ preview.tickets }}</b></li>
+        <li><i class="bi bi-droplet-half"></i>Uncollected lab tests cancelled<b>{{ preview.labs }}</b></li>
+        <li><i class="bi bi-capsule"></i>Prescriptions stopped<b>{{ preview.rx }}</b></li>
+        <li><i class="bi bi-scissors"></i>Planned operations cancelled<b>{{ preview.ops }}</b></li>
+        <li><i class="bi bi-calendar2-heart"></i>Care programmes ended, reminders stopped<b>{{ preview.enrolments|length }}</b></li>
+      </ul>
+      {% if preview.enrolments %}<p class="small muted mb-0">{% for e in preview.enrolments %}{{ e.programme.name }}{% if not forloop.last %}, {% endif %}{% endfor %}: no further appointment messages will be sent to the family.</p>{% endif %}
+    </section>
+    <section class="panel confirm">
+      <label class="form-label" for="cn"><b>Confirm the right person</b></label>
+      <p class="small mb-2">Type the family name <b>{{ p.last_name }}</b> as on the wristband.</p>
+      <input class="form-control mb-3" id="cn" name="confirm_name" autocomplete="off" required>
+      <button class="btn btn-primary w-100" style="background:var(--mort);border-color:var(--mort)"><i class="bi bi-flower1"></i>Record death and archive</button>
+      <a class="btn btn-ghost w-100 mt-2" href="{% url 'patient_chart' p.pk %}">Cancel</a>
+    </section>
+  </aside>
+</div>
+</form>
+{% endblock %}

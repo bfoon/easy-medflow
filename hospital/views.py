@@ -222,7 +222,8 @@ def search(request):
 def patients(request):
     authorize(request)
     q = request.GET.get('q', '').strip()[:100]
-    qs = Patient.objects.annotate(allergy_count=Count('allergies', filter=Q(allergies__status='active'), distinct=True),
+    # deceased patients are archived: they leave the active list (see hospital/mortality.py and the archive page)
+    qs = Patient.objects.filter(deceased_at__isnull=True).annotate(allergy_count=Count('allergies', filter=Q(allergies__status='active'), distinct=True),
                                   visit_count=Count('encounters', distinct=True)).order_by('-created_at')
     if q:
         from .phones import is_phone_query, phone_q
@@ -231,8 +232,15 @@ def patients(request):
     scoped = visible_patient_ids(request) is not None
     qs = filter_patients(request, qs)
     admitted = set(Admission.objects.filter(discharged_at__isnull=True).values_list('encounter__patient_id', flat=True))
+    archived = Patient.objects.filter(deceased_at__isnull=False)
+    if q:
+        from .phones import is_phone_query, phone_q
+        archived = archived.filter(phone_q(q) if is_phone_query(q) else Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(mrn__icontains=q))
+    from .access import can_mortality, has
     return render(request, 'hospital/patients.html', {'rows': qs[:120], 'q': q, 'admitted': admitted, 'scoped': scoped,
-                                                      'total': qs.count() if scoped else Patient.objects.count()})
+                                                      'total': qs.count() if scoped else Patient.objects.filter(deceased_at__isnull=True).count(),
+                                                      'archived_n': archived.count(),
+                                                      'can_archive': can_mortality(request.user) or has(request.user, 'all_patients')})
 
 
 @login_required
@@ -270,7 +278,11 @@ def patient_chart(request, pk):
     latest = next((e for e in encounters if e.vitals), None)
     vitals = [(lbl, unit, latest.vitals.get(k)) for k, lbl, unit, _ in VITAL_FIELDS if latest.vitals.get(k)] if latest else []
     from .programme_views import chart_panel
+    from .access import can_mortality, has
+    death = p.death_record
     return render(request, 'hospital/chart.html', {
+        'death': death, 'can_record_death': has(request.user, 'mortality') and not death, 'can_mortality': can_mortality(request.user),
+        'death_autopsy': death.autopsies.exclude(status__in=['cancelled']).first() if death else None,
         'programmes': chart_panel(request.user, p),
         'p': p, 'allergies': p.allergies.order_by('status', '-created_at'), 'conditions': p.conditions.order_by('status', '-created_at'),
         'encounters': encounters, 'prescriptions': prescriptions, 'labs': labs, 'referrals': referrals, 'admissions': admissions,
@@ -2189,6 +2201,9 @@ def checkin(request):
     q = request.GET.get('q', '') or request.POST.get('q', '')
     if request.method == 'POST':
         p = get_object_or_404(Patient, pk=request.POST.get('patient'))
+        if p.deceased_at:
+            messages.error(request, f'{p.full_name} is recorded as deceased. The record is archived and cannot be checked in.')
+            return redirect(reverse('checkin') + f'?q={p.mrn}')
         dept = get_object_or_404(Department, pk=request.POST.get('department'))
         try:
             priority = int(request.POST.get('priority') or 3)

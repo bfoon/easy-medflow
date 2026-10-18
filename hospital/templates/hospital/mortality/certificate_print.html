@@ -1,0 +1,68 @@
+{% load medflow %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>{{ d.number }} · Medical certificate of cause of death</title>
+<link href="{% asset 'hospital/vendor/fonts/fonts.css' %}" rel="stylesheet">
+<style>
+  @page{size:A4;margin:14mm}
+  body{font-family:'Public Sans',system-ui,sans-serif;color:#14293A;font-size:12.5px;margin:0;background:#EEF1EF}
+  .sheet{background:#fff;max-width:186mm;margin:16px auto;padding:14mm;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+  h1{font-family:'Bricolage Grotesque',sans-serif;font-size:19px;margin:0}
+  .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0F2C3F;padding-bottom:8px;margin-bottom:12px}
+  .sub{color:#5A6F7D;font-size:11px}
+  table{width:100%;border-collapse:collapse;margin-bottom:12px}
+  td,th{border:1px solid #9AA8A2;padding:6px 8px;vertical-align:top;text-align:left}
+  th{background:#F2F5F3;font-size:11px;font-weight:700}
+  .frame{font-weight:700;font-size:11px;letter-spacing:.06em;text-transform:uppercase;margin:12px 0 4px;color:#4B4A6B}
+  .ln{width:28px;text-align:center;font-weight:700}.iv{width:120px}
+  .uc{background:#EEEDF6}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 18px}
+  .grid div span{color:#5A6F7D;display:block;font-size:10.5px}
+  .foot{display:flex;gap:16px;align-items:flex-end;margin-top:18px;border-top:1px solid #DCE4E0;padding-top:12px}
+  .foot svg{width:96px;height:96px}
+  .sig{flex:1}.sig .line{border-bottom:1px solid #14293A;height:34px;margin-bottom:4px}
+  .warn{background:#FBE3E5;color:#C8323F;padding:8px;border-radius:6px;margin-bottom:10px;font-weight:700}
+  .bar{max-width:186mm;margin:12px auto 0;display:flex;gap:8px}
+  .bar button,.bar a{font:inherit;padding:6px 14px;border-radius:8px;border:1px solid #9AA8A2;background:#fff;color:#14293A;text-decoration:none;cursor:pointer}
+  @media print{body{background:#fff}.sheet{box-shadow:none;margin:0;max-width:none;padding:0}.bar{display:none}}
+</style></head>
+<body>
+<div class="bar"><button onclick="print()">Print</button><a href="{% url 'death_detail' d.pk %}">Back to the death record</a></div>
+<div class="sheet">
+  {% if not intact %}<div class="warn">Warning: the stored certificate no longer matches its signature. Do not issue this copy; contact the administrator.</div>{% endif %}
+  {% if d.status == 'revoked' %}<div class="warn">VOID — entered in error.</div>{% endif %}
+  <div class="head">
+    <div><h1>Medical Certificate of Cause of Death</h1><div class="sub">International form (WHO) · E-MedFlow</div></div>
+    <div style="text-align:right"><b>{{ d.number }}</b><div class="sub">Certified {{ d.certified_at|date:'j M Y H:i' }}</div></div>
+  </div>
+  <div class="grid">
+    <div><span>Name of deceased</span><b>{{ p.full_name }}</b></div>
+    <div><span>Record number</span>{{ p.mrn }}</div>
+    <div><span>Sex</span>{{ p.get_sex_display }}</div>
+    <div><span>Date of birth</span>{{ p.dob|date:'j M Y' }}</div>
+    <div><span>Date and time of death</span>{{ d.died_at|date:'j M Y, H:i' }}{% if d.time_estimated %} (estimated){% endif %}</div>
+    <div><span>Place of death</span>{{ d.get_place_display }}{% if d.place_detail %} · {{ d.place_detail }}{% endif %}</div>
+  </div>
+
+  <div class="frame">Frame A · Medical data, Part I and II</div>
+  <table>
+    <tr><th colspan="2">Reason leading directly to death, and the conditions that led to it</th><th class="iv">Interval from onset to death</th></tr>
+    {% for line, cause, iv in d.chain %}
+    <tr class="{% if forloop.last %}uc{% endif %}"><td class="ln">{{ line|lower }}</td><td>{% if not forloop.first %}<span class="sub">Due to (or as a consequence of) </span>{% endif %}{{ cause }}{% if forloop.last %} <span class="sub">· underlying cause{% if d.icd_underlying %} · ICD {{ d.icd_underlying }}{% endif %}</span>{% endif %}</td><td class="iv">{{ iv }}</td></tr>
+    {% endfor %}
+    <tr><td class="ln">II</td><td colspan="2"><span class="sub">Other significant conditions contributing to death</span><br>{{ d.contributing|default:'—' }}</td></tr>
+  </table>
+
+  <div class="frame">Frame B · Other medical data</div>
+  <table>
+    <tr><th style="width:45%">Operation within 4 weeks of death?</th><td>{% if d.surgery_4w %}Yes · {{ d.surgery_detail }}{% else %}No{% endif %}</td></tr>
+    <tr><th>Autopsy requested?</th><td>{% with a=d.autopsies.all|first %}{% if a %}{{ a.get_kind_display }} · {{ a.get_status_display }}{% else %}No{% endif %}{% endwith %}</td></tr>
+    <tr><th>Manner of death</th><td>{{ d.get_manner_display }}{% if d.legal_referral %} · reported to {{ d.legal_referral }}{% endif %}</td></tr>
+    {% if d.maternal %}<tr><th>Pregnancy status</th><td>{{ d.get_maternal_display }}</td></tr>{% endif %}
+  </table>
+
+  <div class="foot">
+    <div class="sig"><div class="line"></div><b>{{ d.certified_by|display_name }}</b>{% if d.certified_by.hospital_staff.license_number %} · Licence {{ d.certified_by.hospital_staff.license_number }}{% endif %}<div class="sub">Certifying medical practitioner. I certify that, to the best of my knowledge and belief, the cause of death is as stated above.</div></div>
+    <div style="text-align:center">{{ qr }}<div class="sub">Verify online</div></div>
+  </div>
+  <p class="sub" style="margin-top:8px;word-break:break-all">Verification: {{ verify_url }}<br>Fingerprint (SHA-256): {{ d.content_hash }}</p>
+</div>
+</body></html>

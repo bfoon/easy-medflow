@@ -1,0 +1,171 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}{{ d.number }} · {{ p.full_name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/mortality.css' %}" rel="stylesheet">{% endblock %}
+{% block topbar %}{% endblock %}
+{% block content %}
+<section class="mort-hero">
+  <span class="avatar xl {{ p.sex }}">{{ p.initials }}</span>
+  <div>
+    <div class="small muted"><a href="{% url 'mortality' %}">Mortuary &amp; mortality</a> · {{ d.number }}</div>
+    <h1>{{ p.full_name }}</h1>
+    <div class="facts">
+      <span><b>{{ p.mrn }}</b></span><span>{{ p.get_sex_display }}</span><span>Born <b>{{ p.dob|date:'j M Y' }}</b></span>
+      {% if d.hours_in_hospital is not None and d.hours_in_hospital >= 0 %}<span>In hospital <b>{% if d.hours_in_hospital < 48 %}{{ d.hours_in_hospital }} h{% else %}{% widthratio d.hours_in_hospital 24 1 %} days{% endif %}</b></span>{% endif %}
+      <span class="tag {% if d.status == 'revoked' %}red{% elif d.status == 'closed' %}teal{% else %}indigo{% endif %}">{{ d.get_status_display }}</span>
+      {% if d.is_maternal %}<span class="tag red">Maternal death</span>{% endif %}{% if d.is_perinatal %}<span class="tag amber">Perinatal</span>{% endif %}{% if d.within_24h %}<span class="tag amber">Within 24 h of arrival</span>{% endif %}
+    </div>
+  </div>
+  <div class="when"><span class="small muted">Died</span><b>{{ d.died_at|date:'j M Y · H:i' }}</b><span class="small">{% if d.time_estimated %}estimated · {% endif %}{{ d.get_place_display }}{% if d.place_detail %} · {{ d.place_detail }}{% endif %}</span>
+    <div class="d-flex gap-2 mt-2 justify-content-end flex-wrap">
+      <a class="btn btn-sm btn-ghost" href="{% url 'patient_chart' p.pk %}"><i class="bi bi-person-vcard"></i>Medical record</a>
+      {% if d.certified %}<a class="btn btn-sm btn-ghost" href="{% url 'death_print' d.pk %}" target="_blank"><i class="bi bi-printer"></i>Certificate</a>{% endif %}
+    </div>
+  </div>
+</section>
+
+{% if d.status == 'revoked' %}<div class="alert-mf danger mb-3"><i class="bi bi-x-octagon-fill"></i><div><b>Entered in error.</b> {{ d.revoked_reason }} — {{ d.revoked_by|display_name }}, {{ d.revoked_at|date:'j M Y H:i' }}. The patient was restored to the active record.</div></div>{% endif %}
+
+<ol class="mort-journey">{% for s in journey %}<li class="{% if s.done %}done{% elif s.current %}current{% endif %}"><span class="dot">{% if s.done %}<i class="bi bi-check-lg"></i>{% else %}{{ forloop.counter }}{% endif %}</span><b>{{ s.label }}</b>{% if s.at %}<small>{{ s.at|date:'j M H:i' }}</small>{% endif %}</li>{% endfor %}</ol>
+
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel mort-sec" id="certificate">
+      <div class="panel-head"><h2><i class="bi bi-file-earmark-medical"></i> Cause of death</h2><span class="hint">WHO medical certificate</span>
+        {% if can.certify and d.status != 'revoked' and d.body_status != 'released' %}<a class="btn btn-sm {% if d.certified %}btn-ghost{% else %}btn-primary{% endif %} ms-auto" href="{% url 'death_certificate' d.pk %}"><i class="bi bi-pen"></i>{% if d.certified %}Amend{% else %}Write the certificate{% endif %}</a>{% endif %}</div>
+      {% if d.chain %}
+      <ul class="cause-chain">{% for line, cause, iv in d.chain %}<li><span class="ln">{{ line }}</span>{% if iv %}<span class="iv">{{ iv }}</span>{% endif %}{% if forloop.last %}<span class="uc">Underlying cause{% if d.icd_underlying %} · {{ d.icd_underlying }}{% endif %}</span>{% endif %}{{ cause }}</li>{% endfor %}</ul>
+      {% if d.contributing %}<div class="mort-sub">Part II · contributing</div><p class="mb-0">{{ d.contributing }}</p>{% endif %}
+      <div class="mort-sub">Details</div>
+      <dl class="mort-kv"><dt>Manner</dt><dd>{{ d.get_manner_display }}{% if d.legal_referral %} · reported to {{ d.legal_referral }}{% endif %}</dd>
+        {% if d.maternal %}<dt>Pregnancy</dt><dd>{{ d.get_maternal_display }}</dd>{% endif %}
+        {% if d.surgery_4w %}<dt>Recent operation</dt><dd>{{ d.surgery_detail }}</dd>{% endif %}
+        <dt>Certified</dt><dd>{{ d.certified_by|display_name }} · {{ d.certified_at|date:'j M Y H:i' }}</dd></dl>
+      {% else %}
+      <div class="alert-mf warn mb-0"><i class="bi bi-hourglass-split"></i><div>The certificate has not been written. The body cannot be released until it is{% if d.rapid_release %}, and the family has asked for rapid release{% endif %}.</div></div>
+      {% endif %}
+    </section>
+
+    <section class="panel mort-sec" id="pronouncement">
+      <div class="panel-head"><h2><i class="bi bi-heart-pulse"></i> Pronouncement</h2><span class="hint">{{ d.pronounced_by|display_name }} · {{ d.pronounced_at|date:'j M Y H:i' }}</span></div>
+      <div class="mort-checks mb-2">{% for k, l in checks %}<span class="{% if d.verification|get_item:k %}on{% endif %}">{{ l }}</span>{% endfor %}</div>
+      <dl class="mort-kv">{% if d.resuscitation %}<dt>Resuscitation</dt><dd>{{ d.get_resuscitation_display }}</dd>{% endif %}
+        {% if d.encounter %}<dt>Last visit</dt><dd><a href="{% url 'encounter_detail' d.encounter.pk %}">{{ d.encounter.reason }}</a>{% if d.encounter.diagnosis %} · {{ d.encounter.diagnosis|truncatechars:80 }}{% endif %}</dd>{% endif %}</dl>
+      {% if d.circumstances %}<p class="mt-2 mb-0" style="white-space:pre-line">{{ d.circumstances }}</p>{% endif %}
+    </section>
+
+    <section class="panel mort-sec" id="autopsy">
+      <div class="panel-head"><h2><i class="bi bi-clipboard2-pulse"></i> Autopsy</h2></div>
+      {% for a in autopsies %}<a class="mort-case-row" href="{% url 'autopsy_detail' a.pk %}"><span class="code">{{ a.number }}</span><span><b>{{ a.get_kind_display }}</b><br><span class="small muted">{% if a.signed %}{{ a.underlying_cause }} · {{ a.get_goldman_display|truncatechars:40 }}{% else %}{{ a.questions|truncatechars:80 }}{% endif %}</span></span><span class="tag ms-auto {% if a.signed %}teal{% elif a.status == 'declined' or a.status == 'cancelled' %}{% else %}plum{% endif %}">{{ a.get_status_display }}</span></a>{% endfor %}
+      {% if not open_autopsy and d.status != 'revoked' and can.record or not open_autopsy and d.status != 'revoked' and can.certify %}
+      <details {% if not autopsies %}open{% endif %} class="mt-2"><summary class="small fw-semibold">{% if autopsies %}Request another autopsy{% else %}Request an autopsy{% endif %}</summary>
+        <form method="post" action="{% url 'autopsy_new' d.pk %}" class="mt-2">{% csrf_token %}
+          <div class="form-grid">
+            <div class="field"><label class="form-label">Kind</label><select class="form-select" name="kind" id="ak">{% for k, l in kinds %}{% if d.body_status != 'released' or k == 'verbal' %}<option value="{{ k }}" {% if d.place == 'community' and k == 'verbal' %}selected{% endif %}>{{ l }}</option>{% endif %}{% endfor %}</select></div>
+            <div class="field"><label class="form-label">Ordering authority <span class="muted">(medico-legal only)</span></label><input class="form-control" name="legal_authority" placeholder="e.g. Police, Kanifing · ref 214/26"></div>
+            <div class="field span-2"><label class="form-label">What should it answer?</label><textarea class="form-control" name="questions" rows="3" placeholder="e.g. Was there pulmonary embolism? Was the malaria cerebral? Any undiagnosed malignancy?"></textarea></div>
+          </div>
+          <p class="small muted">Except for medico-legal autopsies, the family’s consent is recorded before anything is done. A verbal autopsy is a structured interview when the body has been buried or examination is not possible.</p>
+          <button class="btn btn-primary btn-sm"><i class="bi bi-send"></i>Request</button>
+        </form></details>
+      {% elif not autopsies %}<p class="small muted mb-0">No autopsy requested.</p>{% endif %}
+    </section>
+
+    <section class="panel mort-sec" id="review">
+      <div class="panel-head"><h2><i class="bi bi-people-fill"></i> Morbidity &amp; mortality review</h2>{% if can.review and d.status != 'revoked' %}<a class="btn btn-sm btn-ghost ms-auto" href="{% url 'death_review' d.pk %}">{% if review %}{% if review.status == 'final' %}View{% else %}Continue{% endif %}{% else %}Start the review{% endif %}</a>{% endif %}</div>
+      {% if review %}
+        <dl class="mort-kv"><dt>Status</dt><dd><span class="tag {% if review.status == 'final' %}teal{% else %}amber{% endif %}">{{ review.get_status_display }}</span>{% if review.meeting_date %} · meeting {{ review.meeting_date|date:'j M Y' }}{% endif %}</dd>
+          {% if review.preventability %}<dt>Preventable?</dt><dd><b>{{ review.get_preventability_display }}</b></dd>{% endif %}
+          {% if review.delays %}<dt>Delays</dt><dd>{{ review.delay_labels|join:' · ' }}</dd>{% endif %}
+          {% if review.factors %}<dt>Factors</dt><dd>{% for f in review.factor_labels %}<span class="tag me-1">{{ f }}</span>{% endfor %}</dd>{% endif %}</dl>
+        {% if review.lesson_list %}<div class="mort-sub">Lessons</div><ul class="mb-0">{% for l in review.lesson_list %}<li>{{ l }}</li>{% endfor %}</ul>{% endif %}
+        {% if review.actions %}<div class="mort-sub">Actions</div><ul class="plain small">{% for a in review.actions %}<li>{% if a.done %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-circle"></i>{% endif %} {{ a.text }}{% if a.owner %} · <b>{{ a.owner }}</b>{% endif %}{% if a.due %} · due {{ a.due }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+      {% else %}<p class="small muted mb-0">Every death is discussed at the M&amp;M meeting: was it preventable, which delays happened, and what will change.</p>{% endif %}
+    </section>
+
+    <section class="panel mort-sec" id="library">
+      <div class="panel-head"><h2><i class="bi bi-book"></i> Study case for the library</h2>{% if sc %}<span class="tag {% if sc.status == 'published' %}teal{% elif sc.status == 'draft' %}amber{% endif %}">{{ sc.code }} · {{ sc.get_status_display }}</span>{% endif %}</div>
+      {% if d.teaching_consent == 'declined' %}
+        <div class="alert-mf mb-0"><i class="bi bi-shield-lock"></i><div>The family declined teaching use. No study case is published; the death still counts, anonymously, in the library’s statistics.</div></div>
+      {% elif not sc %}
+        <p class="small">A draft study case is made automatically when the certificate is signed.</p>
+        {% if can.review and d.status != 'revoked' %}<form method="post" action="{% url 'study_case_manage' d.pk %}">{% csrf_token %}<input type="hidden" name="action" value="build"><button class="btn btn-sm btn-ghost"><i class="bi bi-journal-plus"></i>Prepare it now</button></form>{% endif %}
+      {% else %}
+        <p class="mb-2"><b>{{ sc.title }}</b><br><span class="small muted">{% if sc.status == 'published' %}Published {{ sc.published_at|date:'j M Y' }} by {{ sc.published_by|display_name }} · {{ sc.views }} view{{ sc.views|pluralize }}{% else %}Anonymised preview built {{ sc.snapshot_at|date:'j M H:i' }}{% endif %}{% if sc.withdrawn_reason and sc.status == 'withdrawn' %} · withdrawn: {{ sc.withdrawn_reason }}{% endif %}</span></p>
+        <div class="d-flex gap-2 flex-wrap mb-2">
+          <a class="btn btn-sm btn-ghost" href="{% url 'library_case' sc.code %}" target="_blank"><i class="bi bi-eye"></i>{% if sc.status == 'published' %}Open in the library{% else %}Preview as readers will see it{% endif %}</a>
+          {% if can.review and sc.status == 'draft' %}<form method="post" action="{% url 'study_case_manage' d.pk %}">{% csrf_token %}<input type="hidden" name="action" value="refresh"><button class="btn btn-sm btn-ghost"><i class="bi bi-arrow-repeat"></i>Rebuild from the record</button></form>{% endif %}
+          {% if can.review and sc.status == 'withdrawn' %}<form method="post" action="{% url 'study_case_manage' d.pk %}">{% csrf_token %}<input type="hidden" name="action" value="redraft"><button class="btn btn-sm btn-ghost">Make it a draft again</button></form>{% endif %}
+        </div>
+        {% if can.review and sc.status == 'draft' %}
+        <form method="post" action="{% url 'study_case_manage' d.pk %}" class="mt-3">{% csrf_token %}<input type="hidden" name="action" value="publish">
+          <div class="field"><label class="form-label">Title</label><input class="form-control" name="title" value="{{ sc.title }}"></div>
+          <div class="field"><label class="form-label">Question for case-conference mode</label><input class="form-control" name="question" value="{{ sc.question }}"></div>
+          <div class="field"><label class="form-label">Teaching points <span class="muted">(one per line)</span></label><textarea class="form-control" name="teaching_points" rows="3" placeholder="e.g. Check glucose in every child with severe malaria.">{{ sc.teaching_points }}</textarea></div>
+          <div class="label-sm mb-1">Anonymisation check</div>
+          {% for k, l in study_checks %}<label class="small d-flex gap-2 mb-1"><input type="checkbox" class="form-check-input m-0" name="chk_{{ k }}"> {{ l }}</label>{% endfor %}
+          {% if d.teaching_consent == 'not_asked' %}<p class="small text-danger mt-2 mb-1">Record the family’s decision on teaching use first (right).</p>{% endif %}
+          <button class="btn btn-primary btn-sm mt-2" {% if d.teaching_consent == 'not_asked' or not d.certified %}disabled{% endif %}><i class="bi bi-journal-check"></i>Publish to the library</button>
+        </form>
+        {% elif can.review and sc.status == 'published' %}
+        <details class="mt-2"><summary class="small">Withdraw from the library</summary><form method="post" action="{% url 'study_case_manage' d.pk %}" class="d-flex gap-2 mt-2">{% csrf_token %}<input type="hidden" name="action" value="withdraw"><input class="form-control form-control-sm" name="reason" placeholder="Reason"><button class="btn btn-sm btn-danger-soft">Withdraw</button></form></details>
+        {% endif %}
+      {% endif %}
+    </section>
+  </div>
+
+  <aside class="stack">
+    <section class="panel mort-sec" id="family">
+      <div class="panel-head"><h2><i class="bi bi-people"></i> The family</h2>{% if d.nok_informed_at %}<span class="tag teal">Informed</span>{% else %}<span class="tag amber">Not yet informed</span>{% endif %}</div>
+      {% if can.record and d.status != 'revoked' %}
+      <form method="post" action="{% url 'death_family' d.pk %}">{% csrf_token %}
+        <div class="field"><label class="form-label">Next of kin</label><input class="form-control" name="nok_name" value="{{ d.nok_name }}"></div>
+        <div class="form-grid"><div class="field"><label class="form-label">Relationship</label><input class="form-control" name="nok_relation" value="{{ d.nok_relation }}"></div>
+          <div class="field"><label class="form-label">Phone</label><input class="form-control" name="nok_phone" value="{{ d.nok_phone }}"></div></div>
+        {% if d.nok_informed_at %}<p class="small"><i class="bi bi-check-circle-fill text-success"></i> Informed {{ d.get_nok_how_display|lower }} · {{ d.nok_informed_at|date:'j M H:i' }} by {{ d.nok_informed_by|display_name }}</p>
+        {% else %}<div class="border rounded-3 p-2 mb-3"><label class="small d-flex gap-2 mb-2"><input type="checkbox" class="form-check-input m-0" name="informed"> <b>The family has been informed</b></label>
+          <div class="d-flex gap-2"><select class="form-select form-select-sm" name="nok_how"><option value="in_person">In person</option><option value="phone">By phone</option><option value="present">Present at the death</option></select><input class="form-control form-control-sm" type="datetime-local" name="informed_at" value="{{ now }}"></div></div>{% endif %}
+        <div class="field"><label class="form-label">Wishes, faith and customs</label><textarea class="form-control" name="family_notes" rows="2" placeholder="Burial customs, washing, who may view the body, questions asked">{{ d.family_notes }}</textarea></div>
+        <label class="small d-flex gap-2 mb-3"><input type="checkbox" class="form-check-input m-0" name="rapid_release" {% if d.rapid_release %}checked{% endif %}> Rapid release requested (e.g. same-day burial)</label>
+        <div class="label-sm mb-1">Teaching use of the anonymised case</div>
+        {% for k, l in consents %}<label class="small d-flex gap-2 mb-1"><input type="radio" class="form-check-input m-0" name="teaching_consent" value="{{ k }}" {% if d.teaching_consent == k %}checked{% endif %}> {{ l }}</label>{% endfor %}
+        <button class="btn btn-sm btn-primary mt-2">Save</button>
+      </form>
+      {% else %}
+      <dl class="mort-kv"><dt>Next of kin</dt><dd>{{ d.nok_name|default:'—' }}{% if d.nok_relation %} ({{ d.nok_relation }}){% endif %}</dd><dt>Teaching use</dt><dd>{{ d.get_teaching_consent_display }}</dd></dl>
+      {% endif %}
+    </section>
+
+    <section class="panel mort-sec" id="body">
+      <div class="panel-head"><h2><i class="bi bi-snow"></i> The body</h2><span class="tag {% if d.body_status == 'released' %}teal{% elif d.body_status == 'ward' %}amber{% else %}indigo{% endif %}">{{ d.get_body_status_display }}</span></div>
+      {% if d.mortuary_in_at %}<p class="small mb-2">Cabinet <b>{{ d.mortuary_slot }}</b> since {{ d.mortuary_in_at|date:'j M H:i' }}{% if d.days_in_mortuary is not None %} · {{ d.days_in_mortuary }} day{{ d.days_in_mortuary|pluralize }}{% endif %}</p>{% endif %}
+      {% if d.body_status == 'released' %}
+        <dl class="mort-kv"><dt>Released</dt><dd>{{ d.released_at|date:'j M Y H:i' }} by {{ d.released_by|display_name }}</dd><dt>To</dt><dd>{{ d.released_to }}{% if d.released_relation %} ({{ d.released_relation }}){% endif %}</dd><dt>ID shown</dt><dd>{{ d.released_id_doc }}</dd>{% if d.release_notes %}<dt>Notes</dt><dd>{{ d.release_notes }}</dd>{% endif %}</dl>
+      {% elif can.record and d.status != 'revoked' %}
+        {% if d.body_status != 'autopsy' %}<form method="post" action="{% url 'death_body' d.pk %}" class="d-flex gap-2 mb-3">{% csrf_token %}<input type="hidden" name="action" value="mortuary">
+          <input class="form-control form-control-sm" name="mortuary_slot" value="{{ d.mortuary_slot }}" placeholder="Cabinet, e.g. M-04"><button class="btn btn-sm btn-ghost text-nowrap">{% if d.mortuary_in_at %}Move{% else %}To mortuary{% endif %}</button></form>{% endif %}
+        <details {% if d.certified and d.body_status == 'mortuary' %}open{% endif %}><summary class="small fw-semibold">Release the body</summary>
+          <form method="post" action="{% url 'death_body' d.pk %}" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="release">
+            <div class="field"><label class="form-label">Collected by</label><input class="form-control" name="released_to"></div>
+            <div class="form-grid"><div class="field"><label class="form-label">Relationship</label><input class="form-control" name="released_relation"></div>
+              <div class="field"><label class="form-label">ID document</label><input class="form-control" name="released_id_doc" placeholder="Type and number"></div></div>
+            <div class="field"><label class="form-label">Notes</label><input class="form-control" name="release_notes" placeholder="Funeral service, vehicle, belongings handed over"></div>
+            <label class="small d-flex gap-2 mb-2"><input type="checkbox" class="form-check-input m-0" name="identity_confirmed"> The collector identified the body against the wristband and record number</label>
+            <button class="btn btn-sm btn-primary" {% if not d.certified %}disabled title="Certificate required"{% endif %}><i class="bi bi-box-arrow-right"></i>Release</button>
+            {% if not d.certified %}<p class="small text-danger mt-2 mb-0">The certificate must be written first.</p>{% endif %}
+          </form></details>
+      {% endif %}
+    </section>
+
+    {% if can.revoke and d.status != 'revoked' %}
+    <section class="panel">
+      <details><summary class="small fw-semibold text-danger"><i class="bi bi-arrow-counterclockwise"></i> Recorded in error?</summary>
+        <form method="post" action="{% url 'death_revoke' d.pk %}" class="mt-2">{% csrf_token %}
+          <p class="small">Restores {{ p.first_name }} to the active record, with care-programme enrolments and reminders as they were. Cancelled clinical orders are not re-activated. The administrators are notified.</p>
+          <textarea class="form-control mb-2" name="reason" rows="2" placeholder="What happened (at least a sentence)"></textarea>
+          <button class="btn btn-sm btn-danger-soft">Mark as entered in error</button>
+        </form></details>
+    </section>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

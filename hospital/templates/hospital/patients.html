@@ -1,8 +1,8 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}Patients{% endblock %}
 {% block heading %}Patients{% endblock %}
-{% block subheading %}<p class="sub">{{ total }} registered. Search by name, record number or phone.</p>{% endblock %}
-{% block actions %}<a class="btn btn-primary" href="{% url 'patient_new' %}"><i class="bi bi-person-plus"></i>Register patient</a>{% endblock %}
+{% block subheading %}<p class="sub">{{ total }} active. Search by name, record number or phone.{% if archived_n %} {{ archived_n }} deceased patient{{ archived_n|pluralize }} {% if q %}matching “{{ q }}” {% endif %}{{ archived_n|pluralize:'is,are' }} in the archive.{% endif %}</p>{% endblock %}
+{% block actions %}{% if can_archive and archived_n %}<a class="btn btn-ghost" href="{% url 'mortality_archive' %}{% if q %}?q={{ q|urlencode }}{% endif %}"><i class="bi bi-archive"></i>Archive · deceased <span class="n">{{ archived_n }}</span></a>{% endif %}<a class="btn btn-primary" href="{% url 'patient_new' %}"><i class="bi bi-person-plus"></i>Register patient</a>{% endblock %}
 {% block content %}
 {% if scoped %}<div class="alert-mf mb-3"><i class="bi bi-shield-lock"></i><div>Showing patients in your care now: an open visit or a current admission. Others need a visit opened by reception, or emergency access.</div></div>{% endif %}
 <section class="panel flush">

@@ -1,12 +1,13 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}Clinical library{% endblock %}
-{% block head %}<link href="{% asset 'hospital/css/library.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/library.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/mortality.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endblock %}
 {% block heading %}Clinical library{% endblock %}
 {% block subheading %}<p class="sub">General notes on common diseases, and what this hospital has seen and done — anonymous, no names or patient numbers.</p>{% endblock %}
-{% block actions %}<button type="button" class="btn btn-ghost" data-drflow-ask><i class="bi bi-robot"></i>Ask Dr. Flow</button>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'library_cases' %}"><i class="bi bi-flower1"></i>Study cases{% if study_n %} <span class="n">{{ study_n }}</span>{% endif %}</a><button type="button" class="btn btn-ghost" data-drflow-ask><i class="bi bi-robot"></i>Ask Dr. Flow</button>{% endblock %}
 {% block content %}
 <form class="lib-search" method="get"><i class="bi bi-search"></i><input class="form-control" name="q" value="{{ q }}" placeholder="Search a disease, e.g. malaria, cataract, hypertension" autofocus>{% if cat %}<input type="hidden" name="cat" value="{{ cat }}">{% endif %}</form>
 <div class="lib-cats"><a href="?q={{ q|urlencode }}" class="{% if not cat %}on{% endif %}">All</a>{% for c in cats %}<a href="?cat={{ c.key }}&q={{ q|urlencode }}" class="{% if cat == c.key %}on{% endif %}" style="--c:{{ c.color }}"><i class="bi {{ c.icon }}"></i>{{ c.label }}<span>{{ c.n }}</span></a>{% endfor %}</div>
+{% if study_latest %}<a class="mort-lib-hero" href="{% url 'library_case' study_latest.code %}"><i class="bi bi-flower1"></i><div><span class="small">Latest study case · {{ study_latest.code }}</span><b>{{ study_latest.title }}</b><span class="small">{{ study_latest.question }}</span></div><span class="btn btn-sm btn-ink ms-auto">Try the case</span></a>{% endif %}
 <div class="lib-grid">
   {% for r in rows %}
   <a class="lib-card" href="{% url 'library_detail' r.slug %}">

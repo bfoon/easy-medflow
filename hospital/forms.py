@@ -62,6 +62,7 @@ class EncounterForm(StyledModelForm):
 
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
+        self.fields['patient'].queryset = Patient.objects.filter(deceased_at__isnull=True)   # deceased patients are archived
         existing = (self.instance.vitals or {}) if self.instance and self.instance.pk else {}
         for key, label, unit, ph in VITAL_FIELDS:
             self.fields[f'v_{key}'] = forms.CharField(
@@ -92,6 +93,7 @@ class TicketForm(StyledModelForm):
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
         self.fields['encounter'].queryset = Encounter.objects.filter(status='open').select_related('patient')
+        self.fields['patient'].queryset = Patient.objects.filter(deceased_at__isnull=True)   # deceased patients are archived
 
     def clean(self):
         data = super().clean()

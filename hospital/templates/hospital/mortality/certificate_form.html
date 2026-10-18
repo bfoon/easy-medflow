@@ -1,0 +1,57 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block title %}Certificate · {{ p.full_name }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/mortality.css' %}" rel="stylesheet">{% endblock %}
+{% block heading %}Medical certificate of cause of death{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'death_detail' d.pk %}">{{ d.number }}</a> · {{ p.full_name }} · {{ p.get_sex_display }}{% if p.dob %}, born {{ p.dob|date:'j M Y' }}{% endif %} · died {{ d.died_at|date:'j M Y H:i' }}</p>{% endblock %}
+{% block content %}
+<form method="post" novalidate>{% csrf_token %}
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Part I</h2><span class="hint">The chain of events, from the condition that directly caused death down to the one that started it</span></div>
+      {% for k, cause, iv in lines %}
+      <div class="cert-line">
+        <span class="ln">({{ k }})</span>
+        <input class="form-control" name="cause_{{ k }}" id="cause_{{ k }}" value="{{ cause }}" placeholder="{% if k == 'a' %}e.g. Cerebral oedema{% elif k == 'b' %}e.g. Cerebral malaria{% elif k == 'c' %}e.g. Plasmodium falciparum infection{% else %}{% endif %}" data-cause>
+        <input class="form-control" name="interval_{{ k }}" value="{{ iv }}" placeholder="Interval, e.g. 2 days">
+        {% if k != 'd' %}<span class="due">due to (or as a consequence of)</span>{% endif %}
+      </div>
+      {% endfor %}
+      <p class="small muted mb-0"><i class="bi bi-info-circle"></i> The <b>lowest line</b> you fill is the <b>underlying cause</b> — the disease or injury that started the train of events. Do not write only a mode of dying such as “cardiac arrest” or “respiratory failure”.</p>
+      {% if hints %}<div class="mort-sub">From the record — click to place in the next empty line</div><div class="hint-chips">{% for h in hints %}<button type="button" data-hint="{{ h }}">{{ h|truncatechars:60 }}</button>{% endfor %}</div>{% endif %}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Part II</h2><span class="hint">Other significant conditions contributing to death, but not in the chain</span></div>
+      <textarea class="form-control" name="contributing" rows="2" placeholder="e.g. Type 2 diabetes mellitus; chronic kidney disease">{% if v %}{{ v.contributing }}{% else %}{{ d.contributing }}{% endif %}</textarea>
+      <div class="form-grid mt-3">
+        <div class="field"><label class="form-label">ICD code of the underlying cause <span class="muted">(optional)</span></label><input class="form-control" name="icd_underlying" value="{% if v %}{{ v.icd_underlying }}{% else %}{{ d.icd_underlying }}{% endif %}" placeholder="e.g. B50.0"></div>
+      </div>
+    </section>
+  </div>
+  <aside class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Frame B</h2></div>
+      <div class="field"><label class="form-label">Manner of death</label><select class="form-select" name="manner" id="manner">{% for k, l in manners %}<option value="{{ k }}" {% if v and v.manner == k or not v and d.manner == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+      <div class="field" id="legal"><label class="form-label">Reported to <span class="muted">(required unless natural)</span></label><input class="form-control" name="legal_referral" value="{% if v %}{{ v.legal_referral }}{% else %}{{ d.legal_referral }}{% endif %}" placeholder="e.g. Police, Banjul · officer and reference"></div>
+      {% if ask_maternal %}<div class="field"><label class="form-label">Pregnancy <span class="muted">(women 10–54)</span></label><select class="form-select" name="maternal"><option value="">— choose —</option>{% for k, l in maternal_choices %}<option value="{{ k }}" {% if v and v.maternal == k or not v and d.maternal == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>{% endif %}
+      <div class="field check"><input class="form-check-input" type="checkbox" id="s4" name="surgery_4w" {% if v and v.surgery_4w or not v and d.surgery_4w %}checked{% endif %}><label class="form-label" for="s4">An operation was done in the 4 weeks before death</label></div>
+      <div class="field"><input class="form-control" name="surgery_detail" value="{% if v %}{{ v.surgery_detail }}{% else %}{{ d.surgery_detail }}{% endif %}" placeholder="Which operation"></div>
+    </section>
+    <section class="panel">
+      <p class="small">By signing, you certify that to the best of your knowledge and belief the cause of death is as stated. The certificate is sealed with a fingerprint (SHA-256) and a verification code that the registrar can check online.</p>
+      <button class="btn btn-primary w-100"><i class="bi bi-pen"></i>{% if d.certified %}Sign the amended certificate{% else %}Sign the certificate{% endif %}</button>
+      <a class="btn btn-ghost w-100 mt-2" href="{% url 'death_detail' d.pk %}">Cancel</a>
+    </section>
+  </aside>
+</div>
+</form>
+{% endblock %}
+{% block scripts %}<script>
+document.querySelectorAll('[data-hint]').forEach(b => b.addEventListener('click', () => {
+  const empty = [...document.querySelectorAll('[data-cause]')].find(i => !i.value.trim());
+  if (empty) { empty.value = b.dataset.hint; empty.focus(); }
+}));
+const manner = document.getElementById('manner'), legal = document.getElementById('legal');
+const syncLegal = () => legal.style.opacity = (manner.value === 'natural') ? .55 : 1;
+manner.addEventListener('change', syncLegal); syncLegal();
+</script>{% endblock %}

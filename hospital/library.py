@@ -255,8 +255,14 @@ def detail(slug):
         return None
     out = {'slug': slug, 'title': title, 'notes': notes, 'source': source, 'cat': catk, 'n': len(encs), 'enough': len(encs) >= MIN_CASES,
            'min': MIN_CASES}
+    # learning from deaths: published anonymised study cases (shown whatever the case count: each was checked before publishing)
+    from .mortality import deaths_for_slug, published_cases
+    out['study_cases'] = list(published_cases(slug)[:6])
     if not out['enough']:
         return out
+    deaths = deaths_for_slug(slug)
+    out['deaths'] = deaths if deaths >= MIN_CASES or deaths == 0 else None     # small numbers are hidden, like every other figure
+    out['deaths_few'] = 0 < deaths < MIN_CASES
     ids = [e.pk for e in encs]
     outcomes = Counter(e.get_outcome_display() for e in encs if e.outcome)
     out['outcomes'] = [{'label': k, 'n': v, 'pct': round(v * 100 / max(1, sum(outcomes.values())))} for k, v in outcomes.most_common()]
