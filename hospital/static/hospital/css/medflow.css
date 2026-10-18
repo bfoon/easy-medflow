@@ -1344,3 +1344,15 @@ tr.voided td{text-decoration:line-through;opacity:.55}
 .lab-report header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--ink);padding-bottom:10px;margin-bottom:10px}
 .lab-report .rq svg{width:70px;height:70px}.rp-test{margin-top:14px}.rp-test h3{font-size:1rem;margin-bottom:4px}
 .lab-report footer{border-top:1px solid var(--line);margin-top:16px;padding-top:8px}
+
+/* phone search: shortcuts under the search boxes and highlighted matching digits (hospital/phones.py) */
+.searchbar,.checkin-search{flex-wrap:wrap}
+.phone-tips{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:.8rem;margin:2px 0 0}
+.phone-tips>i{color:var(--teal)}
+.phone-tips button{border:1px solid var(--line);background:#fff;border-radius:99px;padding:1px 10px;font-size:.78rem;color:var(--ink);cursor:pointer}
+.phone-tips button:hover{border-color:var(--teal);background:var(--teal-wash)}
+.phone-tips code{font-size:.78rem;color:var(--teal-2);background:none;padding:0}
+.search-page>.phone-tips{margin:-4px 4px 12px}
+mark.ph-hit{background:#FFE58F;color:inherit;padding:0 1px;border-radius:3px;font-weight:700}
+.phone-understood{padding:8px 22px;font-size:.84rem;color:var(--muted);border-top:1px solid var(--line)}
+.phone-understood .bi-exclamation-triangle{color:#8A520B}

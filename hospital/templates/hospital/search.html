@@ -11,6 +11,7 @@
     <input class="form-control form-control-lg" name="q" value="{{ f.q }}" placeholder="e.g. Babucarr, MF-3BB6…, femur fracture, malaria Brikama, penicillin, amoxicillin" autofocus autocomplete="off" aria-label="Search patients">
     <button class="btn btn-primary btn-lg">Search</button>
   </div>
+  {% include 'hospital/_phone_tips.html' %}
   <div class="presets" role="group" aria-label="Quick filters">
     {% for v, l in statuses %}<label class="preset"><input type="checkbox" name="status" value="{{ v }}" {% if v in f.status %}checked{% endif %} onchange="this.form.submit()">
       <span><i class="bi {% if v == 'inpatient' %}bi-hospital{% elif v == 'queue' %}bi-people{% elif v == 'open' %}bi-clipboard2-pulse{% elif v == 'critical' %}bi-exclamation-octagon{% elif v == 'allergy' %}bi-exclamation-triangle{% else %}bi-person-check{% endif %}"></i>{{ l }}</span></label>{% endfor %}
@@ -31,7 +32,7 @@
   </div>
 </form>
 
-<div class="d-flex align-items-baseline gap-2 mb-2"><h2 class="h5 mb-0">{{ total }} patient{{ total|pluralize }}</h2>{% if not active %}<span class="small muted">· most recently seen first</span>{% endif %}
+<div class="d-flex align-items-baseline gap-2 mb-2"><h2 class="h5 mb-0">{{ total }} patient{{ total|pluralize }}</h2>{% if near %}<span class="small text-warning-emphasis"><i class="bi bi-exclamation-triangle"></i> No exact number · one digit different, confirm with the patient</span>{% elif phone_query %}<span class="small muted">· phone {{ phone_query.describe }}, best match first</span>{% elif not active %}<span class="small muted">· most recently seen first</span>{% endif %}
   {% if archived %}<a class="small ms-auto" href="?{{ request.GET.urlencode }}&status=deceased"><i class="bi bi-flower1"></i> {{ archived }} deceased patient{{ archived|pluralize }} also match{{ archived|pluralize:'es,' }} · show the archive</a>{% endif %}</div>
 <div class="results">
   {% for r in results %}{% with p=r.p %}
@@ -40,7 +41,7 @@
       <span class="avatar lg {{ p.sex }}">{{ p.initials }}</span>
       <span class="flex-fill min-w-0">
         <span class="pres-name">{{ p.full_name }}</span>
-        <span class="pres-meta">{{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %}{% if p.location %} · <i class="bi bi-geo-alt"></i>{{ p.location }}{% endif %}{% if p.phone %} · {{ p.phone }}{% endif %}</span>
+        <span class="pres-meta">{{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %}{% if p.location %} · <i class="bi bi-geo-alt"></i>{{ p.location }}{% endif %}{% if p.phone %} · <i class="bi bi-telephone"></i>{% if near %}{{ p.phone }}{% else %}{{ p.phone|phone_mark:f.q }}{% endif %}{% endif %}</span>
         {% if r.last %}<span class="pres-last">{% if r.last_cat %}<i class="cat-dot" style="background:{{ r.last_cat.color }}" title="{{ r.last_cat.label }}"></i>{% endif %}<b>{{ r.last.diagnosis|default:r.last.reason|truncatechars:70 }}</b> <span class="muted">· {{ r.last.created_at|date:'j M Y' }}{% if r.last.department %} · {{ r.last.department }}{% endif %}</span></span>{% endif %}
         {% if r.cat_hit and r.cat_hit.pk != r.last.pk %}<span class="pres-cat"><i class="cat-dot" style="background:{{ r.cat_hit_info.color }}"></i>{{ r.cat_hit_info.label }}: <b>{{ r.cat_hit.diagnosis|truncatechars:60 }}</b> · {{ r.cat_hit.created_at|date:'j M Y' }}</span>{% endif %}
         {% if r.why %}<span class="pres-why"><i class="bi bi-search"></i> Matched on {{ r.why|join:' · ' }}</span>{% endif %}

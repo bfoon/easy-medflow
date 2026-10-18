@@ -179,7 +179,10 @@
       const patients = d.results || [], q = input.value.trim().toLowerCase();
       const match = x => !q || x.name.toLowerCase().includes(q);
       const more = d.all_url ? [{name: `See all ${d.total || ''} results for “${input.value.trim()}”`, url: d.all_url, kind: 'Find patients'}] : [];
-      const groups = [['Patients', patients], ['Disease categories', d.categories || []], ['', more], ['Actions', ACTIONS.filter(match)], ['Navigate', NAV.filter(match)]];
+      // phone searches: label the group with what was understood ("starts with 346"), or flag close numbers after a slip
+      const pLabel = d.near ? 'No exact number · one digit different' : (d.phone_hint ? `Patients · phone ${d.phone_hint}` : 'Patients');
+      const groups = [[pLabel, patients], ['Disease categories', d.categories || []], ['', more], ['Actions', ACTIONS.filter(match)], ['Navigate', NAV.filter(match)]];
+      const phoneHtml = segs => segs.map(([t, hit]) => hit ? `<mark class="ph-hit">${esc(t)}</mark>` : esc(t)).join('');
       items = []; let html = '';
       groups.forEach(([label, arr]) => {
         if (!arr.length) return;
@@ -187,11 +190,11 @@
         arr.forEach(x => {
           const i = items.push(x) - 1;
           html += x.mrn
-            ? `<a class="res" href="${esc(x.url)}" data-i="${i}"><span class="avatar">${esc(x.initials)}</span><span><b>${esc(x.name)}</b><small>${esc(x.mrn)}${x.age != null ? ' · ' + esc(x.age) + ' yrs' : ''}${x.bed ? ' · bed ' + esc(x.bed) : ''}${x.why ? ' · ' + esc(x.why) : ''}</small></span><span class="kind">Chart</span></a>`
+            ? `<a class="res" href="${esc(x.url)}" data-i="${i}"><span class="avatar">${esc(x.initials)}</span><span><b>${esc(x.name)}</b><small>${esc(x.mrn)}${x.age != null ? ' · ' + esc(x.age) + ' yrs' : ''}${x.bed ? ' · bed ' + esc(x.bed) : ''}${x.phone && x.phone.length ? ' · <i class="bi bi-telephone"></i> ' + phoneHtml(x.phone) : ''}${x.why ? ' · ' + esc(x.why) : ''}</small></span><span class="kind">Chart</span></a>`
             : `<a class="res" href="${esc(x.url)}" data-i="${i}"><span>${x.color ? `<i class="cat-dot" style="background:${esc(x.color)}"></i>` : ''}${esc(x.name)}</span><span class="kind">${esc(x.kind)}</span></a>`;
         });
       });
-      list.innerHTML = html || `<div class="empty">No matches. Try a name, number, diagnosis, medicine or town.</div>`;
+      list.innerHTML = html || `<div class="empty">No matches. Try a name, number, diagnosis, medicine or town.<br><small>Phone: <b>346</b> starts with · <b>*778</b> ends with · <b>346*778</b> both</small></div>`;
       sel = 0; highlight();
     };
     const highlight = () => $$('.res', list).forEach(r => r.classList.toggle('sel', +r.dataset.i === sel));
@@ -420,3 +423,23 @@
     });
   });
 })();
+
+/* Phone search shortcuts (hospital/templates/hospital/_phone_tips.html): rewrite what was typed, then search.
+   "778" + ends with → "*778" · "346" + starts with → "346" · "765" + anywhere → "*765*". */
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-phone-tip]');
+  if (!b) return;
+  const form = b.closest('form'), input = form && form.querySelector('input[name="q"]');
+  if (!input) return;
+  const typed = input.value.replace(/[^\d*…+]/g, '').replace(/…/g, '*');
+  const digits = typed.replace(/[^\d]/g, '');
+  if (digits.length < 2) {                       // nothing usable yet: show the pattern and let them type
+    input.value = {start: '', end: '*', contains: '**'}[b.dataset.phoneTip];
+    input.focus();
+    const at = b.dataset.phoneTip === 'contains' ? 1 : input.value.length;
+    input.setSelectionRange(at, at);
+    return;
+  }
+  input.value = {start: digits, end: '*' + digits, contains: '*' + digits + '*'}[b.dataset.phoneTip];
+  form.submit();
+});

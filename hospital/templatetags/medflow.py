@@ -175,3 +175,16 @@ def safe_json(value):
     import json
     from django.utils.safestring import mark_safe
     return mark_safe(json.dumps(value).replace("'", '&#39;').replace('<', '\\u003c'))
+
+
+@register.filter
+def phone_mark(phone, q):
+    """The phone with the digits that matched the search highlighted: {{ p.phone|phone_mark:q }}.
+    "34" marks the start of the number, "*778" the end, "346*778" both (hospital/phones.py). Everything is escaped."""
+    from django.utils.html import escape
+    from django.utils.safestring import mark_safe
+    from ..phones import mark_segments
+    segs = mark_segments(phone or '', q) if phone and q else None
+    if not segs:
+        return escape(phone or '')
+    return mark_safe(''.join(f'<mark class="ph-hit">{escape(t)}</mark>' if hit else escape(t) for t, hit in segs))

@@ -1,0 +1,8 @@
+{# Phone search shortcuts (hospital/phones.py). Include inside a search <form>; the buttons rewrite what was typed and search. #}
+<div class="phone-tips" role="group" aria-label="Phone search shortcuts">
+  <i class="bi bi-telephone"></i><span class="muted">Phone:</span>
+  <button type="button" data-phone-tip="start" title="The number starts with what you typed, e.g. 346">starts with <code>346</code></button>
+  <button type="button" data-phone-tip="end" title="The number ends with what you typed, e.g. *778">ends with <code>*778</code></button>
+  <button type="button" data-phone-tip="contains" title="Anywhere in the number, e.g. *765*">anywhere <code>*765*</code></button>
+  <span class="muted d-none d-md-inline">· both ends <code>346*778</code> · country code not needed</span>
+</div>

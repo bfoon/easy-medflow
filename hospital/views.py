@@ -190,7 +190,9 @@ def api_search(request):
     res = search_patients(request.user, q=q, limit=7, only=visible_patient_ids(request))
     return JsonResponse({
         'results': [{'name': r['p'].full_name, 'mrn': r['p'].mrn, 'initials': r['p'].initials, 'age': r['p'].age, 'url': reverse('patient_chart', args=[r['p'].pk]),
-                     'why': ' · '.join(x for x in r['why'] if x != 'Name')[:80], 'bed': r['bed'].code if r['bed'] else ''} for r in res['results']],
+                     'why': '' if r['phone_segs'] else ' · '.join(x for x in r['why'] if x != 'Name')[:80], 'bed': r['bed'].code if r['bed'] else '',
+                     'phone': r['phone_segs'] or []} for r in res['results']],
+        'near': res['near'], 'phone_hint': res['phone_query'].describe() if res['phone_query'] else '',
         'categories': [{'name': c['label'], 'url': reverse('search') + f"?cat={c['key']}", 'kind': 'Category', 'color': c['color']} for c in category_suggestions(q)],
         'total': res['total'], 'all_url': reverse('search') + '?' + __import__('urllib.parse', fromlist=['urlencode']).urlencode({'q': q})})
 
@@ -225,19 +227,29 @@ def patients(request):
     # deceased patients are archived: they leave the active list (see hospital/mortality.py and the archive page)
     qs = Patient.objects.filter(deceased_at__isnull=True).annotate(allergy_count=Count('allergies', filter=Q(allergies__status='active'), distinct=True),
                                   visit_count=Count('encounters', distinct=True)).order_by('-created_at')
-    if q:
-        from .phones import is_phone_query, phone_q
-        qs = qs.filter(phone_q(q) if is_phone_query(q) else Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(mrn__icontains=q))
     from .access import filter_patients, visible_patient_ids
+    from .phones import best_match, near_matches, parse as parse_phone, phone_q
+    pq = parse_phone(q) if q else None
+    base = filter_patients(request, qs)
+    if q:
+        qs = qs.filter(phone_q(pq) if pq else Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(mrn__icontains=q))
     scoped = visible_patient_ids(request) is not None
     qs = filter_patients(request, qs)
+    near = False
+    if pq:
+        # phone search: the whole number first, then "starts with", "ends with", the middle, then emergency contacts
+        rows = sorted(qs[:400], key=lambda p: (best_match(p.phone_local, p.contact_local, pq) or {'rank': 50})['rank'])[:120]
+        if not rows:                                   # a long number with a slip: one digit misheard, missed or swapped
+            close = [p.pk for p in near_matches(pq, base)]
+            rows, near = list(base.filter(pk__in=close)), bool(close)
+    else:
+        rows = qs[:120]
     admitted = set(Admission.objects.filter(discharged_at__isnull=True).values_list('encounter__patient_id', flat=True))
     archived = Patient.objects.filter(deceased_at__isnull=False)
     if q:
-        from .phones import is_phone_query, phone_q
-        archived = archived.filter(phone_q(q) if is_phone_query(q) else Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(mrn__icontains=q))
+        archived = archived.filter(phone_q(pq) if pq else Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(mrn__icontains=q))
     from .access import can_mortality, has
-    return render(request, 'hospital/patients.html', {'rows': qs[:120], 'q': q, 'admitted': admitted, 'scoped': scoped,
+    return render(request, 'hospital/patients.html', {'rows': rows, 'q': q, 'admitted': admitted, 'scoped': scoped, 'phone_query': pq, 'near': near,
                                                       'total': qs.count() if scoped else Patient.objects.filter(deceased_at__isnull=True).count(),
                                                       'archived_n': archived.count(),
                                                       'can_archive': can_mortality(request.user) or has(request.user, 'all_patients')})
@@ -2186,12 +2198,14 @@ def find_patients(q):
     exact = Patient.objects.filter(mrn__iexact=q).first()
     if exact:
         return [exact], exact
-    from .phones import is_phone_query, phone_q
-    qs = Patient.objects.all()
+    from .phones import best_match, near_matches, parse as parse_phone, phone_q
+    pq = parse_phone(q)
+    if pq:
+        # most people at the desk are found by phone: rank by how well the number matched; offer near misses for slips
+        found = sorted(Patient.objects.filter(phone_q(pq))[:200], key=lambda p: (best_match(p.phone_local, p.contact_local, pq) or {'rank': 50})['rank'])
+        return (found[:15] or near_matches(pq, Patient.objects.all())), None
     cond = Q(mrn__icontains=q) | Q(first_name__icontains=q) | Q(last_name__icontains=q)
-    if is_phone_query(q):
-        cond = phone_q(q)
-    return list(qs.filter(cond).order_by('last_name')[:15]), None
+    return list(Patient.objects.filter(cond).order_by('last_name')[:15]), None
 
 
 @login_required
@@ -2218,8 +2232,12 @@ def checkin(request):
         messages.success(request, f'{p.full_name} checked in · queue number {t.display_code}.')
         return redirect('ticket_slip', pk=t.pk)
     matches, exact = find_patients(q)
+    from .phones import best_match, parse as parse_phone
+    phone_query = parse_phone(q)
+    phone_near = bool(phone_query and matches and not any(best_match(m.phone_local, m.contact_local, phone_query) for m in matches))
     sel = exact or (matches[0] if len(matches) == 1 else None)
-    ctx = {'q': q, 'matches': matches, 'sel': sel, 'departments': Department.objects.order_by('name'), 'priorities': QueueTicket.PRIORITY}
+    ctx = {'q': q, 'matches': matches, 'sel': sel, 'departments': Department.objects.order_by('name'), 'priorities': QueueTicket.PRIORITY,
+           'phone_query': phone_query, 'phone_near': phone_near}
     if sel:
         ctx.update({'open_enc': sel.encounters.filter(status='open').first(), 'last_enc': sel.encounters.order_by('-created_at').first(),
                     'allergies': sel.allergies.filter(status='active'), 'waiting_ticket': QueueTicket.objects.filter(patient=sel, status__in=['waiting', 'called', 'in_service']).first(),

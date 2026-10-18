@@ -11,7 +11,7 @@ from django.db.models import Max, Q
 from django.utils import timezone
 
 from .categories import INFO, classify
-from .phones import LOCAL_LEN, MIN_DIGITS, PHONE_QUERY, digits as phone_digits, is_phone_query, phone_q
+from .phones import PHONE_QUERY, best_match, digits as phone_digits, is_phone_query, mark_segments, near_matches, parse as parse_phone, phone_q
 
 AGE_BANDS = [('child', 'Under 18', 0, 17), ('adult', '18–64', 18, 64), ('older', '65 and over', 65, 200)]
 STATUS = [('inpatient', 'Admitted now'), ('queue', 'In the queue'), ('open', 'Open visit'), ('critical', 'Unreviewed abnormal results'),
@@ -40,16 +40,17 @@ def _token_matches(tok):
             pid, val = row if isinstance(row, tuple) else (row, None)   # (patient id, what matched) or just the id
             if pid not in hits:
                 hits[pid] = f'{label}: {val}' if val else label
-    digits = phone_digits(tok)
+    pq = parse_phone(tok)
     add(Patient.objects.filter(mrn__iexact=tok).values_list('pk', flat=True), 'Patient number')
     add(Patient.objects.filter(Q(first_name__icontains=tok) | Q(last_name__icontains=tok)).values_list('pk', flat=True), 'Name')
-    add(Patient.objects.filter(mrn__icontains=tok).values_list('pk', flat=True), 'Patient number')
-    if len(digits) >= MIN_DIGITS and PHONE_QUERY.match(tok):
-        # compare digits with digits, so "+220 341 5919", "3415919" and "341-5919" all find the same patient
-        for pid, ph, contact, pd in Patient.objects.filter(phone_q(tok)).values_list('pk', 'phone', 'emergency_contact', 'phone_digits')[:400]:
-            if pid not in hits:
-                own = digits in pd or (len(digits) > LOCAL_LEN and pd.endswith(digits[-LOCAL_LEN:]))
-                hits[pid] = f'Phone: {ph}' if own else f'Emergency contact: {contact[:60]}'
+    if not pq or len(phone_digits(tok)) >= 5:          # "34" is the start of a phone number, not a piece of every MF-3B4… record number
+        add(Patient.objects.filter(mrn__icontains=tok).values_list('pk', flat=True), 'Patient number')
+    if pq:
+        # digits with digits, without the country code: "34" = starts with, "*778" = ends with, "346*778" = both (hospital/phones.py)
+        for pid, ph, contact, pl, cl in Patient.objects.filter(phone_q(pq)).values_list('pk', 'phone', 'emergency_contact', 'phone_local', 'contact_local')[:400]:
+            m = best_match(pl, cl, pq)
+            if pid not in hits and m:
+                hits[pid] = f'Phone: {ph}' if m['own'] else f'Emergency contact: {contact[:60]}'
     if len(tok) >= 3:
         add(Encounter.objects.filter(Q(diagnosis__icontains=tok) | Q(reason__icontains=tok)).order_by('-created_at').values_list('patient_id', 'diagnosis'), 'Diagnosis')
         add(Condition.objects.filter(name__icontains=tok).values_list('patient_id', 'name'), 'Condition')
@@ -72,6 +73,8 @@ def search_patients(user, q='', cats=(), dept='', status=(), age='', sex='', tow
     reasons = {}
     # a phone number typed with spaces ("+220 341 5919") is one thing to look for, not three words
     tokens = [q.strip()] if is_phone_query(q) else [t for t in re.split(r'\s+', (q or '').strip()) if t][:6]
+    pq = parse_phone(tokens[0]) if len(tokens) == 1 else None
+    near = False
     if tokens:
         ids = None
         for tok in tokens:
@@ -79,6 +82,12 @@ def search_patients(user, q='', cats=(), dept='', status=(), age='', sex='', tow
             ids = set(m) if ids is None else ids & set(m)
             for pid, why in m.items():
                 reasons.setdefault(pid, []).append(why)
+        if pq and not (ids and qs.filter(pk__in=ids).exists()):
+            # nothing for a long number: offer numbers one keystroke away (a digit misheard, missed or swapped)
+            close = near_matches(pq, qs)
+            ids, near = {p.pk for p in close}, bool(close)
+            for p in close:
+                reasons[p.pk] = [f'Close number (one digit different): {p.phone}']
         qs = qs.filter(pk__in=ids or [])
     # situation filters
     if days in ('7', '30', '90', '365'):
@@ -137,7 +146,12 @@ def search_patients(user, q='', cats=(), dept='', status=(), age='', sex='', tow
         qs = qs.order_by('-last_seen', 'last_name')
     rows = list(qs[:limit * 3 if tokens and sort == 'relevance' else limit])
     if tokens and sort == 'relevance':   # exact number, then name matches, then everything else; most recent first within each
-        rank = lambda p: (0 if any(r.startswith(('Patient number', 'Phone')) for r in reasons.get(p.pk, [])) else 1 if all(r == 'Name' for r in reasons.get(p.pk, [])) else 2)
+        def rank(p):
+            if pq:                                       # phone search: whole number, then starts with, ends with, middle, contacts
+                m = best_match(p.phone_local, p.contact_local, pq)
+                return (m['rank'] if m else 50,)
+            why = reasons.get(p.pk, [])
+            return (0 if any(r.startswith(('Patient number', 'Phone')) for r in why) else 1 if all(r == 'Name' for r in why) else 2,)
         rows = sorted(rows, key=rank)[:limit]
     # enrich the visible rows
     pids = [p.pk for p in rows]
@@ -167,10 +181,12 @@ def search_patients(user, q='', cats=(), dept='', status=(), age='', sex='', tow
         e = last.get(p.pk)
         results.append({'p': p, 'last': e, 'last_cat': INFO.get(e.category) if e and e.category else None, 'bed': beds.get(p.pk), 'ticket': tickets.get(p.pk),
                         'flagged': flagged.get(p.pk, 0), 'allergies': allergies.get(p.pk, []), 'why': list(dict.fromkeys(reasons.get(p.pk, [])))[:3],
+                        'phone_segs': mark_segments(p.phone, pq) if pq else None,
                         'cat_hit': cat_hit.get(p.pk), 'cat_hit_info': INFO.get(cat_hit[p.pk].category) if p.pk in cat_hit else None,
                         'cats': [INFO[c] for c in sorted(pcats.get(p.pk, ()), key=lambda c: (c not in cats, c)) if c in INFO]})   # selected categories first
     facets = sorted(({**INFO[c], 'n': len(ids)} for c, ids in by_cat.items() if c in INFO), key=lambda f: -f['n'])
-    return {'results': results, 'total': total, 'facets': facets, 'departments': Department.objects.order_by('name'), 'archived': archived}
+    return {'results': results, 'total': total, 'facets': facets, 'departments': Department.objects.order_by('name'), 'archived': archived,
+            'phone_query': pq, 'near': near}
 
 
 def category_suggestions(q):

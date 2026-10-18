@@ -25,13 +25,16 @@ class PhoneSearchTests(Base):
         self.assertEqual(contact_digits('Mother: +220 771 2345 / 990 1234, house 12'), '2207712345 9901234')
         self.assertTrue(is_phone_query('+220 341 5919'))
         self.assertFalse(is_phone_query('malaria 2024'))
-        self.assertFalse(is_phone_query('341'))
+        self.assertTrue(is_phone_query('341'))             # short searches are allowed now: the number starts with 341
+        self.assertFalse(is_phone_query('3'))
         self.assertEqual(self.p.phone_digits, '2203415919')
 
     def test_every_way_of_typing_the_number(self):
         for q in ['+220 341 5919', '3415919', '341 5919', '341-5919', '+2203415919', '2203415919', '00220 3415919', '(220) 341 5919', '5919']:
             self.assertTrue(self.found(q), q)
-        self.assertFalse(self.found('341 5918'))
+        wrong = search_patients(self.users['doctor'], q='341 5918')        # one digit off: never an exact match,
+        self.assertTrue(wrong['near'])                                     # only offered as "one digit different"
+        self.assertTrue(all(r['why'][0].startswith('Close number') for r in wrong['results']))
 
     def test_country_code_finds_number_stored_without_it(self):
         self.assertTrue(self.found('+220 990 4411', self.local))

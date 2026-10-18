@@ -10,12 +10,14 @@
     <input class="form-control" name="q" value="{{ q }}" placeholder="Search {{ total }} patients…" aria-label="Search patients" autofocus>
     <button class="btn btn-ink">Search</button>
     {% if q %}<a class="btn btn-ghost" href="{% url 'patients' %}">Clear</a>{% endif %}
+    {% include 'hospital/_phone_tips.html' %}
   </form>
+  {% if phone_query and rows %}<div class="phone-understood">{% if near %}<i class="bi bi-exclamation-triangle"></i> No number matches exactly. These are <b>one digit different</b> — check with the patient.{% else %}<i class="bi bi-telephone"></i> Phone {{ phone_query.describe }} · best matches first{% endif %}</div>{% endif %}
   {% for p in rows %}
   <a class="patient-row" href="{% url 'patient_chart' p.pk %}">
     <span class="avatar lg {{ p.sex }}">{{ p.initials }}</span>
     <span><span class="name">{{ p.full_name }}</span>{% if p.pk in admitted %} <span class="tag ink ms-1">Admitted</span>{% endif %}<br><span class="mrn">{{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %} · {{ p.age }} yrs{% endif %}</span></span>
-    <span class="hide-sm small muted"><i class="bi bi-telephone me-1"></i>{{ p.phone|default:'No phone' }}</span>
+    <span class="hide-sm small muted"><i class="bi bi-telephone me-1"></i>{% if p.phone %}{% if near %}{{ p.phone }}{% else %}{{ p.phone|phone_mark:q }}{% endif %}{% else %}No phone{% endif %}</span>
     <span class="hide-sm">{% if p.allergy_count %}<span class="tag red"><i class="bi bi-exclamation-triangle-fill"></i>{{ p.allergy_count }} allerg{{ p.allergy_count|pluralize:'y,ies' }}</span>{% else %}<span class="tag">No allergies recorded</span>{% endif %}</span>
     <span class="d-flex align-items-center gap-2"><span class="small muted">{{ p.visit_count }} visit{{ p.visit_count|pluralize }}</span><i class="bi bi-chevron-right chev"></i></span>
   </a>

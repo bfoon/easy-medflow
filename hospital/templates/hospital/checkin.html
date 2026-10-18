@@ -8,11 +8,12 @@
   <i class="bi bi-upc-scan"></i>
   <input class="form-control form-control-lg" name="q" value="{{ q }}" placeholder="Patient number, e.g. MF-3BB667BF38, or name / phone" autofocus autocomplete="off" aria-label="Patient number">
   <button class="btn btn-primary btn-lg">Find</button>
+  {% include 'hospital/_phone_tips.html' %}
 </form>
 {% if q and not matches %}<div class="alert-mf warn"><i class="bi bi-search"></i><div>No patient found for “{{ q }}”. Check the number, or <a href="{% url 'patient_new' %}">register a new patient</a>.</div></div>{% endif %}
 {% if matches and not sel %}
-<section class="panel flush"><div class="panel-head"><h2>{{ matches|length }} possible match{{ matches|length|pluralize:'es' }}</h2><span class="hint">Choose the right patient</span></div>
-  {% for m in matches %}<a class="patient-row" href="?q={{ m.mrn }}"><span class="avatar lg {{ m.sex }}">{{ m.initials }}</span><span><span class="name">{{ m.full_name }}</span>{% if m.deceased_at %} <span class="tag"><i class="bi bi-flower1"></i>Deceased</span>{% endif %}<br><span class="mrn">{{ m.mrn }} · {{ m.get_sex_display }}{% if m.age is not None %}, {{ m.age }} yrs{% endif %}</span></span><span class="hide-sm small muted">{{ m.phone }}</span><span></span><i class="bi bi-chevron-right chev"></i></a>{% endfor %}
+<section class="panel flush"><div class="panel-head"><h2>{{ matches|length }} possible match{{ matches|length|pluralize:'es' }}</h2><span class="hint">{% if phone_query %}{% if phone_near %}No exact number · these are one digit different — confirm with the patient{% else %}Phone {{ phone_query.describe }} · best match first{% endif %}{% else %}Choose the right patient{% endif %}</span></div>
+  {% for m in matches %}<a class="patient-row" href="?q={{ m.mrn }}"><span class="avatar lg {{ m.sex }}">{{ m.initials }}</span><span><span class="name">{{ m.full_name }}</span>{% if m.deceased_at %} <span class="tag"><i class="bi bi-flower1"></i>Deceased</span>{% endif %}<br><span class="mrn">{{ m.mrn }} · {{ m.get_sex_display }}{% if m.age is not None %}, {{ m.age }} yrs{% endif %}</span></span><span class="hide-sm small muted"><i class="bi bi-telephone"></i> {{ m.phone|phone_mark:q }}</span><span></span><i class="bi bi-chevron-right chev"></i></a>{% endfor %}
 </section>{% endif %}
 {% if sel %}
 <div class="grid g-main">
