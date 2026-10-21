@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Queue ticket {{ t.display_code }}</title></head>
+<body style="margin:0;padding:0;background:#F2F5F3">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F2F5F3">
+    <tr><td align="center" style="padding:20px 12px">
+      <img src="cid:{{ cid }}" width="360" alt="Queue ticket {{ t.display_code }} · {{ t.department }} · {{ hospital }}" style="display:block;width:360px;max-width:100%;height:auto;border:0">
+      <p style="margin:12px 0 0;font:12px/1.5 Arial,Helvetica,sans-serif;color:#5A6F7D;max-width:360px">
+        Follow your place in the queue: <a href="{{ status_url }}" style="color:#0F7B78">open status page</a>
+      </p>
+    </td></tr>
+  </table>
+</body></html>

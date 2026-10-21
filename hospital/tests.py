@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import Client, TestCase
 from django.urls import reverse
 
 from .models import (CriticalCall, AuditEvent, Notification, Condition, Location, MedicationAdministration, QueueTicket, Allergy, Invoice, Payment, Admission, Bed, NetworkFacility, ReferralTask, Specialist, SpecialistSlot, ImagingOrder, StockRequest, LabRequest, PrescriptionItem, LabParameter, LabResultValue, Admission, Allergy, Bed, Department, Encounter, FormDefinition, FormSubmission, LabOrder, LabTest,
@@ -706,10 +706,64 @@ class TicketSharingTests(Base):
     def test_slip_offers_thermal_whatsapp_and_email(self):
         page = self.as_('reception').get(f'/queue/tickets/{self.t.pk}/slip/')
         self.assertContains(page, 'https://wa.me/2207712345?text=')            # local number gets the Gambia country code
-        self.assertContains(page, 'mailto:awa@example.com')
+        self.assertContains(page, f'/queue/tickets/{self.t.pk}/ticket.png')    # WhatsApp sends the ticket picture
+        self.assertContains(page, 'Email ticket · awa@example.com')
         for w in ('80', '58'):
             r = self.client.get(f'/queue/tickets/{self.t.pk}/thermal/?w={w}')
             self.assertContains(r, f'size: {w}mm auto'); self.assertContains(r, self.t.display_code)
+
+    def test_ticket_picture_matches_slip_and_is_staff_only(self):
+        r = self.as_('reception').get(f'/queue/tickets/{self.t.pk}/ticket.png')
+        self.assertEqual(r['Content-Type'], 'image/png')
+        from io import BytesIO
+        from PIL import Image
+        self.assertEqual(Image.open(BytesIO(r.content)).size[0], 720)
+        self.assertIn('attachment', self.client.get(f'/queue/tickets/{self.t.pk}/ticket.png?download=1')['Content-Disposition'])
+        self.assertEqual(Client().get(f'/queue/tickets/{self.t.pk}/ticket.png').status_code, 302)
+
+    def test_ticket_emailed_as_picture_with_small_link_below(self):
+        from django.core import mail
+        r = self.as_('reception').post(f'/queue/tickets/{self.t.pk}/email/')
+        self.assertRedirects(r, f'/queue/tickets/{self.t.pk}/slip/', fetch_redirect_response=False)
+        m = mail.outbox[-1]
+        self.assertEqual(m.to, ['awa@example.com'])
+        html = m.alternatives[0][0]
+        self.assertLess(html.index('cid:ticket'), html.index('/t/'))           # picture first, link underneath
+        self.assertIn('font:12px', html)
+        img = [a for a in m.attachments if getattr(a, 'get_content_type', lambda: '')() == 'image/png'][0]
+        self.assertEqual(img['Content-ID'], '<ticket>')
+        self.assertEqual(m.message().get_content_subtype(), 'related')
+
+    def test_email_needs_address_and_can_save_it(self):
+        self.patient.email = ''; self.patient.save()
+        c = self.as_('reception')
+        c.post(f'/queue/tickets/{self.t.pk}/email/', {'email': 'not-an-email'})
+        from django.core import mail
+        self.assertEqual(len(mail.outbox), 0)
+        c.post(f'/queue/tickets/{self.t.pk}/email/', {'email': 'omar@example.com', 'save': '1'})
+        self.patient.refresh_from_db()
+        self.assertEqual((len(mail.outbox), self.patient.email), (1, 'omar@example.com'))
+
+    def test_whatsapp_caption_ends_with_link(self):
+        from django.test import RequestFactory
+        from hospital.views import ticket_share
+        share = ticket_share(RequestFactory().get('/'), self.t)
+        self.assertTrue(share['caption'].endswith(share['status_url']))
+        self.assertIn(f'*{self.t.display_code}*', share['caption'])
+
+    def test_link_preview_picture_has_no_name(self):
+        from hospital import ticket_image
+        from hospital.views import ticket_token
+        token = ticket_token(self.t)
+        page = Client().get(f'/t/{token}/')
+        self.assertContains(page, f'og:image" content="http://testserver/t/{token}/ticket.png"', html=False)
+        r = Client().get(f'/t/{token}/ticket.png')
+        self.assertEqual(r['Content-Type'], 'image/png')
+        self.assertEqual(Client().get('/t/forged/ticket.png').status_code, 404)
+        a = ticket_image.render(self.t, qr_data='x', private=False)
+        self.t.patient.first_name = 'Somebody'
+        self.assertEqual(a, ticket_image.render(self.t, qr_data='x', private=False))     # the name is never drawn
+        self.assertNotEqual(ticket_image.render(self.t, qr_data='x', private=True), ticket_image.render(self.t, qr_data='x', private=False))
 
     def test_public_status_page_needs_no_login_and_shows_no_name(self):
         from hospital.views import ticket_token

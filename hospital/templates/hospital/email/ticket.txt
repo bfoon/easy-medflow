@@ -1,0 +1,8 @@
+{{ hospital }}
+
+Your queue ticket: {{ t.display_code }}
+{{ t.department }}
+
+Your ticket is the picture in this email. Show it at the desk and wait until your number is called on the screen.
+
+Follow your place in the queue: {{ status_url }}

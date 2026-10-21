@@ -4,6 +4,7 @@ from decimal import Decimal
 from datetime import date, timedelta
 
 from django import forms
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
@@ -2363,17 +2364,96 @@ def ticket_token(t):
 
 
 def ticket_share(request, t):
-    """Text and links for sending a ticket to the patient. The status link shows no name or medical details."""
+    """What is sent to the patient: the ticket as a picture, with a short caption whose last line is the status link
+    (WhatsApp shows the caption under the picture). The status link shows no name or medical details."""
     from urllib.parse import quote
-    status_url = request.build_absolute_uri(reverse('ticket_status', args=[ticket_token(t)]))
-    text = (f'E-MedFlow Hospital · your queue number is {t.display_code} ({t.department}). '
-            f'Issued {timezone.localtime(t.created_at):%d %b %H:%M}. Follow your place in the queue: {status_url}')
+    token = ticket_token(t)
+    status_url = request.build_absolute_uri(reverse('ticket_status', args=[token]))
+    hospital = getattr(settings, 'HOSPITAL_NAME', '') or 'E-MedFlow Hospital'
+    caption = f'{hospital} · queue ticket *{t.display_code}* · {t.department}\nFollow your place in the queue:\n{status_url}'
     digits = re.sub(r'\D', '', t.patient.phone or '')
     if len(digits) == 7:
         digits = '220' + digits                           # local Gambian number
-    return {'status_url': status_url, 'text': text,
-            'whatsapp': f'https://wa.me/{digits}?text={quote(text)}' if digits else f'https://wa.me/?text={quote(text)}',
-            'email': f'mailto:{t.patient.email}?subject={quote("Your queue number " + t.display_code)}&body={quote(text)}', 'has_phone': bool(digits)}
+    return {'status_url': status_url, 'text': caption, 'caption': caption, 'digits': digits,
+            'image_url': reverse('ticket_image', args=[t.pk]), 'filename': f'ticket-{t.display_code}.png',
+            'whatsapp': f'https://wa.me/{digits}?text={quote(caption)}' if digits else f'https://wa.me/?text={quote(caption)}',
+            'has_phone': bool(digits)}
+
+
+def ticket_png(request, t, private=True):
+    """The ticket picture. Private: name and the slip's QR code. Public: no name, QR code to the status page."""
+    from . import ticket_image
+    ahead, est = queue_position(t)
+    qr = (request.build_absolute_uri(reverse('patient_qr', args=[t.patient.mrn])) if private
+          else request.build_absolute_uri(reverse('ticket_status', args=[ticket_token(t)])))
+    return ticket_image.render(t, ahead=ahead, est=est, qr_data=qr, private=private)
+
+
+@login_required
+def ticket_image_view(request, pk):
+    authorize(request)
+    from django.http import HttpResponse
+    t = get_object_or_404(QueueTicket.objects.select_related('patient', 'department'), pk=pk)
+    resp = HttpResponse(ticket_png(request, t), content_type='image/png')
+    resp['Cache-Control'] = 'private, no-store'
+    if request.GET.get('download'):
+        resp['Content-Disposition'] = f'attachment; filename="ticket-{t.display_code}.png"'
+    return resp
+
+
+@login_required
+@require_POST
+def ticket_email(request, pk):
+    """Email the ticket to the patient: the picture in the message, the status link small underneath."""
+    authorize(request)
+    from email.mime.image import MIMEImage
+
+    from django.core.mail import EmailMultiAlternatives
+    from django.core.validators import validate_email
+    from django.template.loader import render_to_string
+    t = get_object_or_404(QueueTicket.objects.select_related('patient', 'department'), pk=pk)
+    to = (request.POST.get('email') or t.patient.email or '').strip()
+    try:
+        validate_email(to)
+    except Exception:
+        messages.error(request, 'Enter a valid email address for the patient.')
+        return redirect('ticket_slip', pk=t.pk)
+    if request.POST.get('save') == '1' and not t.patient.email:
+        t.patient.email = to
+        t.patient.save(update_fields=['email'])
+    share = ticket_share(request, t)
+    hospital = getattr(settings, 'HOSPITAL_NAME', '') or 'E-MedFlow Hospital'
+    ctx = {'t': t, 'hospital': hospital, 'status_url': share['status_url'], 'cid': 'ticket'}
+    msg = EmailMultiAlternatives(f'Your queue ticket {t.display_code} · {hospital}', render_to_string('hospital/email/ticket.txt', ctx),
+                                 settings.DEFAULT_FROM_EMAIL, [to])
+    msg.attach_alternative(render_to_string('hospital/email/ticket.html', ctx), 'text/html')
+    msg.mixed_subtype = 'related'                       # the picture is shown inside the message, not only as an attachment
+    img = MIMEImage(ticket_png(request, t), 'png')
+    img.add_header('Content-ID', '<ticket>')
+    img.add_header('Content-Disposition', 'inline', filename=f'ticket-{t.display_code}.png')
+    msg.attach(img)
+    try:
+        msg.send()
+    except Exception:
+        messages.error(request, 'The email could not be sent. Check the email settings (EMAIL_HOST) or send it by WhatsApp.')
+        return redirect('ticket_slip', pk=t.pk)
+    audit(request, 'ticket_email', f'queue_ticket:{t.pk}')
+    messages.success(request, f'Ticket {t.display_code} emailed to {to}.')
+    return redirect('ticket_slip', pk=t.pk)
+
+
+def ticket_public_image(request, token):
+    """The picture for link previews (WhatsApp shows it when the status link is shared). No name, no record QR."""
+    from django.core import signing
+    from django.http import Http404, HttpResponse
+    try:
+        pk = signing.loads(token, salt='medflow.ticket', max_age=60 * 60 * 24)
+    except signing.BadSignature:
+        raise Http404
+    t = get_object_or_404(QueueTicket.objects.select_related('patient', 'department'), pk=pk)
+    resp = HttpResponse(ticket_png(request, t, private=False), content_type='image/png')
+    resp['Cache-Control'] = 'public, max-age=120'
+    return resp
 
 
 def queue_position(t):
@@ -2411,6 +2491,7 @@ def ticket_status(request, token):
     t = get_object_or_404(QueueTicket.objects.select_related('department'), pk=pk)
     ahead, est = queue_position(t)
     return render(request, 'hospital/ticket_status.html', {'t': t, 'ahead': ahead, 'est': est,
+                                                           'og_image': request.build_absolute_uri(reverse('ticket_public_image', args=[token])),
                                                            'serving': QueueTicket.objects.filter(department=t.department, status__in=['called', 'in_service']).order_by('-called_at').first()})
 
 

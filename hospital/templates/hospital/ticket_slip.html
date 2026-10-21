@@ -1,6 +1,12 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}Ticket {{ t.display_code }}{% endblock %}
 {% block heading %}Queue ticket{% endblock %}
+{% block head %}<style>
+.ticket-small{display:flex;gap:16px;flex-wrap:wrap;font-size:.82rem}
+.ticket-small a,.ticket-small button{color:var(--muted);background:none;border:0;padding:0;text-decoration:none;display:inline-flex;gap:4px;align-items:center}
+.ticket-small a:hover,.ticket-small button:hover{color:var(--teal)}
+.ticket-hint{margin-top:10px;background:var(--teal-wash,#E3F3EE);color:var(--teal-2,#0B5F5D);border-radius:10px;padding:8px 12px;font-size:.88rem}
+</style>{% endblock %}
 {% block actions %}<a class="btn btn-ghost" href="{% url 'checkin' %}"><i class="bi bi-upc-scan"></i>Next patient</a>{% endblock %}
 {% block content %}
 <article class="slip print-area">
@@ -19,17 +25,55 @@
     <a class="btn btn-ghost" href="{% url 'ticket_thermal' t.pk %}?w=58" target="_blank"><i class="bi bi-receipt-cutoff"></i>Thermal 58 mm</a>
     <button class="btn btn-ghost" onclick="window.print()"><i class="bi bi-printer"></i>Regular printer</button>
   </div>
-  <div class="label-sm mb-2">Send to the patient</div>
-  <div class="d-flex gap-2 flex-wrap">
-    <a class="btn btn-wa" href="{{ share.whatsapp }}" target="_blank" rel="noopener"><i class="bi bi-whatsapp"></i>WhatsApp{% if share.has_phone %} {{ p.phone }}{% endif %}</a>
-    <a class="btn btn-ghost" href="{{ share.email }}"><i class="bi bi-envelope"></i>Email{% if p.email %} {{ p.email }}{% endif %}</a>
-    <button class="btn btn-ghost" type="button" data-copy="{{ share.status_url }}"><i class="bi bi-link-45deg"></i>Copy status link</button>
+  <div class="label-sm mb-2">Send the ticket to the patient</div>
+  <div class="d-flex gap-2 flex-wrap align-items-start">
+    <button class="btn btn-wa" type="button" id="wa-ticket" data-img="{{ share.image_url }}" data-file="{{ share.filename }}" data-wa="{{ share.whatsapp }}" data-caption="{{ share.caption }}">
+      <i class="bi bi-whatsapp"></i>WhatsApp ticket{% if share.has_phone %} · {{ p.phone }}{% endif %}</button>
+    <form method="post" action="{% url 'ticket_email' t.pk %}" class="d-flex gap-2 flex-wrap">{% csrf_token %}
+      {% if p.email %}<button class="btn btn-ghost"><i class="bi bi-envelope"></i>Email ticket · {{ p.email }}</button>
+      {% else %}<input class="form-control" style="max-width:230px" type="email" name="email" required placeholder="patient@email.com" aria-label="Patient email">
+        <input type="hidden" name="save" value="1"><button class="btn btn-ghost"><i class="bi bi-envelope"></i>Email ticket</button>{% endif %}
+    </form>
   </div>
-  <p class="form-text mt-2 mb-0">The message has the queue number and a link where the patient can follow their place in the queue. It shows no name or medical details and expires after 24 hours.</p>
+  <div class="ticket-hint" id="wa-hint" hidden></div>
+  <div class="ticket-small mt-2">
+    <a href="{{ share.image_url }}?download=1"><i class="bi bi-download"></i>Download picture</a>
+    <button type="button" data-copy="{{ share.status_url }}"><i class="bi bi-link-45deg"></i>Copy status link</button>
+    <a href="{{ share.whatsapp }}" target="_blank" rel="noopener"><i class="bi bi-chat-text"></i>Text only</a>
+  </div>
+  <p class="form-text mt-2 mb-0">The patient receives this ticket as a picture, with a small link underneath to follow their place in the queue. The link shows no name or medical details and expires after 24 hours.</p>
 </section>
 {% endblock %}
 {% block scripts %}<script>
-document.querySelector('[data-copy]')?.addEventListener('click', async e => {
-  const b = e.currentTarget; try { await navigator.clipboard.writeText(b.dataset.copy); mfToast('Status link copied.'); } catch (_) { prompt('Copy this link:', b.dataset.copy); }
-});
+(() => {
+  document.querySelector('[data-copy]')?.addEventListener('click', async e => {
+    const b = e.currentTarget; try { await navigator.clipboard.writeText(b.dataset.copy); mfToast('Status link copied.'); } catch (_) { prompt('Copy this link:', b.dataset.copy); }
+  });
+  // WhatsApp cannot receive a picture through a link, so: on a phone, the share sheet sends the picture with its caption;
+  // on a computer, the picture is copied and the patient's chat opens with the caption, ready to paste (Ctrl+V).
+  const btn = document.getElementById('wa-ticket'), hint = document.getElementById('wa-hint');
+  if (!btn) return;
+  let blob = null;
+  const load = () => fetch(btn.dataset.img, {credentials: 'same-origin'}).then(r => r.ok ? r.blob() : null).then(b => (blob = b)).catch(() => null);
+  const ready = load();                                     // fetched in advance so the click stays a direct user action
+  const say = html => { hint.innerHTML = html; hint.hidden = false; };
+  const download = b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = btn.dataset.file; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); };
+  btn.addEventListener('click', async () => {
+    if (!blob) await ready;
+    if (!blob) { window.open(btn.dataset.wa, '_blank', 'noopener'); return; }
+    const file = new File([blob], btn.dataset.file, {type: 'image/png'});
+    const mobile = navigator.userAgentData ? navigator.userAgentData.mobile : /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (mobile && navigator.canShare && navigator.canShare({files: [file]})) {
+      try { await navigator.share({files: [file], text: btn.dataset.caption}); return; } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    let copied = false;
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      try { await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]); copied = true; } catch (_) {}
+    }
+    if (!copied) download(blob);
+    window.open(btn.dataset.wa, '_blank', 'noopener');
+    say(copied ? '<i class="bi bi-clipboard-check"></i> Ticket picture copied. In the WhatsApp chat that opened, press <b>Ctrl+V</b> (<b>⌘V</b> on Mac) to paste it: the link goes underneath as the caption. Then press Send.'
+               : '<i class="bi bi-download"></i> Ticket picture downloaded. In the WhatsApp chat that opened, attach it with the <b>+</b> / paperclip button, then press Send.');
+  });
+})();
 </script>{% endblock %}
