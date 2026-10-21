@@ -15,8 +15,13 @@ class Command(BaseCommand):
         seed_who_references()     # WHO reference values beside the hospital ranges; never overwrites lab edits
         layout = [('General Ward', 'GW', 10, 'general'), ('Maternity Ward', 'MW', 6, 'maternity'),
                   ('Pediatric Ward', 'PW', 6, 'pediatric'), ('Intensive Care', 'ICU', 4, 'icu')]
-        for ward_name, prefix, n, kind in layout:
-            ward, _ = Ward.objects.get_or_create(name=ward_name)
+        details = {'GW': {'kind': 'general', 'age_group': 'adult', 'floor': 'Ground floor'},
+                   'MW': {'kind': 'maternity', 'sex_policy': 'female', 'floor': 'Level 1', 'visiting_note': 'Partners welcome at any time'},
+                   'PW': {'kind': 'paediatric', 'age_group': 'children', 'floor': 'Level 1', 'visiting_note': 'One parent may stay overnight'},
+                   'ICU': {'kind': 'icu', 'floor': 'Ground floor', 'visiting_note': 'Two visitors at a time; ask at the desk first'}}
+        from datetime import time as _t
+        for i, (ward_name, prefix, n, kind) in enumerate(layout):
+            ward, _ = Ward.objects.get_or_create(name=ward_name, defaults=dict(code=prefix, sort_order=i, visiting_from=_t(16), visiting_to=_t(18), **details[prefix]))
             for i in range(1, n + 1):
                 Bed.objects.get_or_create(code=f'{prefix}-{i:02d}', defaults={'ward': ward, 'kind': kind})
         meds = [('Paracetamol', 'paracetamol', 'Tablet', '500 mg'), ('Amoxicillin', 'amoxicillin', 'Capsule', '500 mg'),

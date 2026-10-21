@@ -1,0 +1,30 @@
+{% load medflow %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="60"><meta name="robots" content="noindex">
+<title>{{ ward.short }} · station</title>
+<link href="{% asset 'hospital/vendor/fonts/fonts.css' %}" rel="stylesheet">
+<link href="{% asset 'hospital/vendor/bootstrap-icons/bootstrap-icons.min.css' %}" rel="stylesheet">
+<link href="{% asset 'hospital/css/wards.css' %}" rel="stylesheet"></head>
+<body class="wd-screen" style="--wc:{{ ward.color }}">
+<header>
+  <span class="wd-hero-ico"><i class="bi {{ ward.icon }}"></i></span>
+  <div><b>{{ ward.name }}</b><small>{{ stats.occupied }} patients · {{ stats.free }} free · {{ visiting.label }}</small></div>
+  <div class="clock" id="clock">{{ now|date:'H:i' }}</div>
+</header>
+<main class="wd-screen-grid">
+  {% for r in rows %}
+  {% if r.a %}
+  <div class="tile a-{{ r.acuity }}{% if r.obs_overdue %} overdue{% endif %}">
+    <div class="t-top"><b>{{ r.bed.code }}</b><span class="news n-{{ r.acuity }}">{% if r.news %}{{ r.news.total }}{% else %}?{% endif %}</span></div>
+    <div class="t-init">{{ r.p.initials }}</div>
+    <div class="t-due"><i class="bi bi-{% if r.obs_overdue %}alarm{% else %}clock{% endif %}"></i>obs {{ r.obs_label }}</div>
+    <div class="t-icons">{% if r.allergies %}<i class="bi bi-exclamation-diamond-fill"></i>{% endif %}{% if r.meds_late %}<i class="bi bi-capsule"></i>{{ r.meds_late }}{% endif %}</div>
+  </div>
+  {% else %}
+  <div class="tile s-{{ r.bed.state }}"><div class="t-top"><b>{{ r.bed.code }}</b></div><div class="t-state">{% if r.bed.state == 'available' %}Free{% elif r.bed.state == 'cleaning' %}Cleaning{% else %}Out of service{% endif %}</div></div>
+  {% endif %}
+  {% endfor %}
+</main>
+<footer>{% for k, label in acuity_keys %}<span><i class="a-{{ k }}"></i>{{ label }}</span>{% endfor %}<span class="ms-auto">Initials only · refreshes every minute</span></footer>
+<script>setInterval(() => { const d = new Date(); document.getElementById('clock').textContent = d.toTimeString().slice(0, 5); }, 15000);</script>
+</body></html>

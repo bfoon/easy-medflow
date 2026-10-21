@@ -6,6 +6,7 @@
   <link href="{% asset 'hospital/vendor/fonts/fonts.css' %}" rel="stylesheet">
   <link href="{% asset 'hospital/vendor/bootstrap-icons/bootstrap-icons.min.css' %}" rel="stylesheet">
   <link href="{% asset 'hospital/css/print-docs.css' %}" rel="stylesheet">
+  {% block head %}{% endblock %}
   <style>@page{size:{% if size == 'a5' %}A5{% else %}A4{% endif %};margin:{% if size == 'a5' %}9mm{% else %}12mm{% endif %}}</style>
 </head>
 <body class="pd size-{{ size }}">

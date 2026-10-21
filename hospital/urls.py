@@ -18,6 +18,7 @@ from . import library_views as libv
 from . import programme_views as pgv
 from . import mortality_views as mv
 from . import extlab_views as xv
+from . import ward_views as wv
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -254,6 +255,13 @@ urlpatterns = [
     path('prescriptions/<int:pk>/dispense/', v.prescription_dispense, name='prescription_dispense'),
 
     path('beds/', v.beds, name='beds'),
+    path('wards/', wv.wards_index, name='wards'),
+    path('wards/new/', wv.ward_edit, name='ward_new'),
+    path('wards/<int:pk>/', wv.ward_detail, name='ward_detail'),
+    path('wards/<int:pk>/edit/', wv.ward_edit, name='ward_edit'),
+    path('wards/<int:pk>/handover/', wv.ward_handover, name='ward_handover'),
+    path('wards/<int:pk>/notes/', wv.ward_note, name='ward_note'),
+    path('wards/<int:pk>/notes/<int:note_pk>/resolve/', wv.ward_note_resolve, name='ward_note_resolve'),
     path('beds/<int:pk>/ready/', v.bed_ready, name='bed_ready'),
     path('admissions/new/', v.admission_new, name='admission_new'),
     path('admissions/<int:pk>/discharge/', v.admission_discharge, name='admission_discharge'),

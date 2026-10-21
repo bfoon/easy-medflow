@@ -1,0 +1,141 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block head %}<link href="{% asset 'hospital/css/wards.css' %}" rel="stylesheet">{% endblock %}
+{% block title %}{{ ward.name }}{% endblock %}
+{% block heading %}{{ ward.name }}{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'wards' %}">Wards</a> · {{ ward.short }} · {{ ward.get_kind_display }}</p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="?screen=1" target="_blank"><i class="bi bi-tv"></i>Station screen</a>
+  <a class="btn btn-ghost" href="{% url 'ward_handover' ward.pk %}"><i class="bi bi-printer"></i>Handover sheet</a>
+  {% if can_edit %}<a class="btn btn-ghost" href="{% url 'ward_edit' ward.pk %}"><i class="bi bi-pencil"></i>Edit</a>{% endif %}
+  {% if stats.free %}<a class="btn btn-primary" href="{% url 'admission_new' %}"><i class="bi bi-hospital"></i>Admit</a>{% endif %}
+{% endblock %}
+{% block content %}
+<section class="wd-hero" style="--wc:{{ ward.color }}">
+  <span class="wd-hero-ico"><i class="bi {{ ward.icon }}"></i></span>
+  <div class="flex-fill min-w-0">
+    <div class="wd-chips light">
+      <span><i class="bi bi-tag"></i>{{ ward.get_kind_display }}</span>
+      <span><i class="bi bi-gender-ambiguous"></i>{{ ward.get_sex_policy_display }}</span>
+      <span><i class="bi bi-people"></i>{{ ward.get_age_group_display }}</span>
+      {% if ward.building or ward.floor %}<span><i class="bi bi-geo-alt"></i>{{ ward.building }}{% if ward.building and ward.floor %} · {% endif %}{{ ward.floor }}</span>{% endif %}
+      <span class="vis-{{ visiting.state }}"><i class="bi bi-clock"></i>{{ visiting.label }}</span>
+    </div>
+    {% if ward.description %}<p class="wd-desc">{{ ward.description }}</p>{% endif %}
+  </div>
+  <svg class="wd-ring big" viewBox="0 0 80 80" aria-label="{{ stats.pct }}% of beds in use">
+    <circle cx="40" cy="40" r="34" class="bg"/><circle cx="40" cy="40" r="34" class="fg" stroke-dasharray="{{ ring.c }}" stroke-dashoffset="{{ ring.off }}"/>
+    <text x="40" y="43">{{ stats.pct }}%</text><text x="40" y="56" class="lbl">in use</text></svg>
+</section>
+
+{% for n in alerts %}
+<div class="wd-alert"><i class="bi bi-exclamation-octagon-fill"></i>
+  <div class="flex-fill"><b>Safety alert</b>{% if n.patient %} · {{ n.patient.full_name }}{% endif %} · {{ n.text }}<div class="small">{{ n.author|display_name }} · {{ n.created_at|date:'j M H:i' }}</div></div>
+  {% if can_note %}<form method="post" action="{% url 'ward_note_resolve' ward.pk n.pk %}">{% csrf_token %}<button class="btn btn-sm btn-ghost">Resolved</button></form>{% endif %}
+</div>
+{% endfor %}
+
+<section class="wd-kpis">
+  <div><b>{{ stats.free }}</b><span>free of {{ stats.total }}</span></div>
+  <div><b>{{ stats.cleaning }}</b><span>cleaning{% if stats.maintenance %} · {{ stats.maintenance }} out of service{% endif %}</span></div>
+  <div><b>{{ moves.admitted }}<small> in</small> · {{ moves.discharged }}<small> out</small></b><span>today</span></div>
+  <div><b>{{ stats.avg_stay|default:'—' }}{% if stats.avg_stay %}<small> d</small>{% endif %}</b><span>average stay so far</span></div>
+  <div class="{% if stats.overdue %}warm{% endif %}"><b>{{ stats.overdue }}</b><span>observations overdue</span></div>
+  <div class="{% if stats.meds_late %}warm{% endif %}"><b>{{ stats.meds_late }}</b><span>medicine doses late</span></div>
+  <div class="wd-acuity-bar" title="How sick the patients are (NEWS2)">
+    <span class="label-sm">Acuity</span>
+    <div class="bar">{% for k, label in acuity_keys %}{% with n=stats.acuity|get_item:k %}{% if n %}<i class="a-{{ k }}" style="flex:{{ n }}" title="{{ label }}: {{ n }}">{{ n }}</i>{% endif %}{% endwith %}{% empty %}{% endfor %}{% if not stats.occupied %}<i class="empty">no patients</i>{% endif %}</div>
+  </div>
+</section>
+
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-grid-3x3-gap me-1"></i>Floor</h2><span class="hint">coloured by each patient's latest NEWS2</span></div>
+      <div class="wd-floor" style="--wc:{{ ward.color }}">
+        {% for r in rows %}{% include 'hospital/wards/_bed.html' %}{% empty %}<div class="empty">No beds yet.{% if can_edit %} <a href="{% url 'ward_edit' ward.pk %}#beds">Add beds</a>.{% endif %}</div>{% endfor %}
+      </div>
+      <div class="wd-legend mt-2">{% for k, label in acuity_keys %}<span><i class="a-{{ k }}"></i>{{ label }}</span>{% endfor %}</div>
+    </section>
+
+    {% if occupied_patients %}
+    <section class="panel flush">
+      <div class="panel-head"><h2><i class="bi bi-list-ul me-1"></i>Patients</h2><span class="hint">{{ stats.occupied }} · {{ stats.female }} women, {{ stats.male }} men</span></div>
+      <div class="scroll-x"><table class="table-mf wd-table">
+        <thead><tr><th>Bed</th><th>Patient</th><th>Day</th><th>NEWS2</th><th>Next obs</th><th>Meds</th><th>Labs</th><th>Doctor</th></tr></thead>
+        <tbody>{% for r in rows %}{% if r.a %}
+        <tr class="a-row-{{ r.acuity }}">
+          <td><a href="{% url 'bed_detail' r.bed.pk %}"><b>{{ r.bed.code }}</b></a></td>
+          <td><a href="{% url 'patient_chart' r.p.pk %}">{{ r.p.full_name }}</a> <span class="small muted">{{ r.p.sex }}{% if r.p.age is not None %} · {{ r.p.age }}{% endif %}</span>
+            {% if r.allergies %}<i class="bi bi-exclamation-diamond-fill text-danger" title="{{ r.allergies }} allerg{{ r.allergies|pluralize:'y,ies' }}"></i>{% endif %}
+            {% for m in r.misfit %}<span class="tag plum" title="{{ m }}"><i class="bi bi-signpost-split"></i></span>{% endfor %}
+            <div class="small muted text-truncate" style="max-width:260px">{{ r.a.encounter.diagnosis|default:r.a.encounter.reason }}</div></td>
+          <td>{{ r.stay_days|floatformat:0|add:1 }}{% if r.long_stay %} <i class="bi bi-calendar2-week text-warning" title="Long stay"></i>{% endif %}</td>
+          <td>{% if r.news %}<span class="news n-{{ r.acuity }}">{{ r.news.total }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td><span class="due {% if r.obs_overdue %}late{% endif %}">{% if r.obs_overdue %}<i class="bi bi-alarm"></i>{% endif %}{{ r.obs_label }}</span></td>
+          <td>{% if r.meds_late %}<span class="tag red">{{ r.meds_late }} late</span>{% elif r.meds_due %}<span class="tag amber">{{ r.meds_due }} due</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>{% if r.labs %}<span class="tag indigo">{{ r.labs }} pending</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td class="small">{% if r.clinician %}{{ r.clinician|display_name }}{% else %}—{% endif %}</td>
+        </tr>{% endif %}{% endfor %}</tbody>
+      </table></div>
+    </section>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-bar-chart me-1"></i>Last 14 days</h2><span class="hint">beds in use each day · arrows: admissions and discharges</span></div>
+      <div class="wd-hist">
+        {% for d in history %}
+        <div class="col" title="{{ d.date|date:'D j M' }}: {{ d.occupied }} beds in use, {{ d.in }} admitted, {{ d.out }} discharged">
+          <div class="moves">{% if d.in %}<span class="in">↑{{ d.in }}</span>{% endif %}{% if d.out %}<span class="out">↓{{ d.out }}</span>{% endif %}</div>
+          <div class="bar-wrap"><i style="height:{% widthratio d.occupied peak 100 %}%"></i></div>
+          <span class="day">{{ d.date|date:'D'|first }}<br>{{ d.date|date:'j' }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <aside class="stack align-self-start">
+    <section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-bell me-1"></i>Needs attention</h2><span class="hint">{{ attention|length }}</span></div>
+      {% for x in attention|slice:':12' %}
+      <a class="wd-att tone-{{ x.tone }}" href="{% url 'bed_detail' x.bed.pk %}"><i class="bi {{ x.icon }}"></i>
+        <span><b>{{ x.bed.code }}</b>{% if x.p %} · {{ x.p.first_name }} {{ x.p.last_name|first }}.{% endif %}<span class="d-block small">{{ x.text }}</span></span></a>
+      {% empty %}<p class="muted small mb-0"><i class="bi bi-check2-circle text-success"></i> Nothing urgent on this ward right now.</p>{% endfor %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-people me-1"></i>People &amp; contacts</h2></div>
+      <div class="wd-person"><span class="avatar">{% if ward.nurse_in_charge %}{{ ward.nurse_in_charge.first_name|first }}{{ ward.nurse_in_charge.last_name|first }}{% else %}<i class="bi bi-person"></i>{% endif %}</span>
+        <div><span class="label-sm">Nurse in charge</span><b>{% if ward.nurse_in_charge %}{{ ward.nurse_in_charge|display_name }}{% else %}Not set{% endif %}</b></div></div>
+      <div class="wd-person"><span class="avatar">{% if ward.lead_clinician %}{{ ward.lead_clinician.first_name|first }}{{ ward.lead_clinician.last_name|first }}{% else %}<i class="bi bi-person"></i>{% endif %}</span>
+        <div><span class="label-sm">Lead clinician</span><b>{% if ward.lead_clinician %}{{ ward.lead_clinician|display_name }}{% else %}Not set{% endif %}</b></div></div>
+      {% if ward.phone %}<a class="btn btn-ghost btn-sm w-100 mt-2" href="tel:{{ ward.phone }}"><i class="bi bi-telephone"></i>Nurses' station · {{ ward.phone }}</a>{% endif %}
+      {% if ward.visiting_note %}<p class="small mt-2 mb-0"><i class="bi bi-info-circle"></i> {{ ward.visiting_note }}</p>{% endif %}
+    </section>
+
+    <section class="panel" id="handover">
+      <div class="panel-head"><h2><i class="bi bi-chat-square-text me-1"></i>Handover board</h2><span class="hint">{% if shift == 'day' %}day shift{% else %}night shift{% endif %}</span></div>
+      {% if can_note %}
+      <form method="post" action="{% url 'ward_note' ward.pk %}" class="wd-note-form">{% csrf_token %}
+        <div class="wd-kind" role="radiogroup" aria-label="Kind of note">
+          <label><input type="radio" name="kind" value="handover" checked><span>Handover</span></label>
+          <label><input type="radio" name="kind" value="info"><span>Info</span></label>
+          <label class="alert"><input type="radio" name="kind" value="alert"><span><i class="bi bi-exclamation-octagon"></i>Safety alert</span></label>
+        </div>
+        <select class="form-select form-select-sm mb-2" name="patient" aria-label="About a patient"><option value="">Whole ward</option>{% for p in occupied_patients %}<option value="{{ p.pk }}">{{ p.full_name }}</option>{% endfor %}</select>
+        <textarea class="form-control form-control-sm" name="text" rows="2" required placeholder="e.g. Bed MW-03 for theatre 08:00, nil by mouth from midnight"></textarea>
+        <button class="btn btn-sm btn-ink w-100 mt-2"><i class="bi bi-send"></i>Post</button>
+      </form>
+      {% endif %}
+      <ul class="plain wd-notes">
+        {% for n in notes %}{% if not n.open_alert %}
+        <li class="k-{{ n.kind }}"><span class="small muted">{{ n.created_at|date:'j M H:i' }} · {{ n.author|display_name }} · {{ n.get_shift_display }}</span>
+          <div>{% if n.kind == 'alert' %}<span class="tag">resolved</span> {% endif %}{% if n.patient %}<b>{{ n.patient.first_name }} {{ n.patient.last_name|first }}.</b> {% endif %}{{ n.text|linebreaksbr }}</div></li>
+        {% endif %}{% empty %}<li class="muted small">Nothing handed over yet.</li>{% endfor %}
+      </ul>
+    </section>
+
+    {% if siblings %}<section class="panel"><div class="label-sm mb-2">Other wards</div><div class="wd-sibs">{% for s in siblings %}<a href="{% url 'ward_detail' s.pk %}" style="--wc:{{ s.color }}"><i class="bi {{ s.icon }}"></i>{{ s.name }}</a>{% endfor %}</div></section>{% endif %}
+  </aside>
+</div>
+{% endblock %}

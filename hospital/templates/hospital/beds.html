@@ -2,7 +2,7 @@
 {% block title %}Beds & wards{% endblock %}
 {% block heading %}Beds &amp; wards{% endblock %}
 {% block subheading %}<p class="sub">After discharge a bed goes to cleaning. Mark it ready once it has been turned over.</p>{% endblock %}
-{% block actions %}<a class="btn btn-primary" href="{% url 'admission_new' %}"><i class="bi bi-hospital"></i>Admit patient</a>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'wards' %}"><i class="bi bi-building"></i>Wards</a><a class="btn btn-primary" href="{% url 'admission_new' %}"><i class="bi bi-hospital"></i>Admit patient</a>{% endblock %}
 {% block content %}
 <div class="d-flex flex-wrap align-items-center gap-3 mb-4">
   <div class="legend">
@@ -14,7 +14,7 @@
 </div>
 {% for w in wards %}
 <section class="ward">
-  <div class="ward-head"><h2>{{ w.ward.name }}</h2><span class="tag {% if w.free == 0 %}red{% elif w.free <= 2 %}amber{% else %}teal{% endif %}">{{ w.free }} of {{ w.total }} free</span></div>
+  <div class="ward-head"><h2><a href="{% url 'ward_detail' w.ward.pk %}" style="color:inherit;text-decoration:none"><i class="bi {{ w.ward.icon }}" style="color:{{ w.ward.color }}"></i> {{ w.ward.name }}</a></h2><span class="tag {% if w.free == 0 %}red{% elif w.free <= 2 %}amber{% else %}teal{% endif %}">{{ w.free }} of {{ w.total }} free</span></div>
   <div class="ward-floor">
     {% for b in w.beds %}
     <div class="bed {{ b.state }}">

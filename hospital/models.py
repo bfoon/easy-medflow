@@ -643,8 +643,42 @@ class ImagingImage(Tracked):
     class Meta: ordering=['id']
 
 class Ward(Tracked):
+    """An inpatient ward: what kind of care, who it is for, where it is, who runs it and when visitors may come."""
+    KIND=[('general','General'),('medical','Medical'),('surgical','Surgical'),('maternity','Maternity'),('paediatric','Paediatric'),
+          ('neonatal','Neonatal (NICU / SCBU)'),('icu','Intensive care'),('hdu','High dependency'),('isolation','Isolation'),
+          ('emergency','Emergency / observation'),('private','Private rooms'),('psychiatric','Mental health'),('orthopaedic','Orthopaedic'),('other','Other')]
+    SEX=[('mixed','Mixed'),('female','Women only'),('male','Men only')]
+    AGE=[('all','All ages'),('adult','Adults'),('children','Children'),('neonates','Newborns')]
     name=models.CharField(max_length=120,unique=True)
+    code=models.CharField(max_length=10,blank=True,help_text='Short code shown on boards, e.g. MW')
+    kind=models.CharField(max_length=12,choices=KIND,default='general')
+    sex_policy=models.CharField(max_length=6,choices=SEX,default='mixed')
+    age_group=models.CharField(max_length=8,choices=AGE,default='all')
+    building=models.CharField(max_length=80,blank=True)
+    floor=models.CharField(max_length=40,blank=True,help_text='e.g. Ground floor, Level 2')
+    phone=models.CharField(max_length=40,blank=True,help_text='Nurses\' station phone or extension')
+    nurse_in_charge=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='wards_in_charge')
+    lead_clinician=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name='wards_led')
+    visiting_from=models.TimeField(null=True,blank=True)
+    visiting_to=models.TimeField(null=True,blank=True)
+    visiting_note=models.CharField(max_length=200,blank=True,help_text='e.g. Two visitors per bed; no children under 12')
+    description=models.TextField(blank=True)
+    active=models.BooleanField(default=True)
+    sort_order=models.PositiveSmallIntegerField(default=0)
+    class Meta: ordering=['sort_order','name']
     def __str__(self):return self.name
+    COLORS={'general':'#0F7B78','medical':'#2F6FB0','surgical':'#5B4FC4','maternity':'#C2477E','paediatric':'#E0912A','neonatal':'#E77FA8',
+            'icu':'#C8323F','hdu':'#D2593A','isolation':'#7A8A2E','emergency':'#B0402F','private':'#8B6B3E','psychiatric':'#3E8E9C',
+            'orthopaedic':'#56708A','other':'#5A6F7D'}
+    ICONS={'general':'bi-hospital','medical':'bi-heart-pulse','surgical':'bi-scissors','maternity':'bi-gender-female','paediatric':'bi-balloon',
+           'neonatal':'bi-emoji-smile','icu':'bi-activity','hdu':'bi-graph-up','isolation':'bi-shield-exclamation','emergency':'bi-lightning-charge',
+           'private':'bi-door-closed','psychiatric':'bi-flower1','orthopaedic':'bi-bandaid','other':'bi-building'}
+    @property
+    def color(self):return self.COLORS.get(self.kind,'#5A6F7D')
+    @property
+    def icon(self):return self.ICONS.get(self.kind,'bi-hospital')
+    @property
+    def short(self):return self.code or ''.join(w[0] for w in self.name.split()[:3]).upper()
 
 class Bed(Tracked):
     ward=models.ForeignKey(Ward,on_delete=models.PROTECT)
@@ -1033,3 +1067,4 @@ from .models_programmes import (Programme, ProgrammeMember, ProgrammeStep, Enrol
                                 TracingAttempt, ProgrammeMessage, ProgrammeAIRun)
 from .models_mortality import DeathRecord, Autopsy, MortalityReview, StudyCase  # noqa: E402,F401
 from .models_extlab import ExternalLabReferral  # noqa: E402,F401
+from .models_wards import WardNote  # noqa: E402,F401

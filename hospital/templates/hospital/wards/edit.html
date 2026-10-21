@@ -1,0 +1,93 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block head %}<link href="{% asset 'hospital/css/wards.css' %}" rel="stylesheet">{% endblock %}
+{% block title %}{% if is_new %}New ward{% else %}Edit {{ w.name }}{% endif %}{% endblock %}
+{% block heading %}{% if is_new %}New ward{% else %}Edit {{ w.name }}{% endif %}{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% if is_new %}{% url 'wards' %}{% else %}{% url 'ward_detail' w.pk %}{% endif %}"><i class="bi bi-arrow-left"></i>Back</a>{% endblock %}
+{% block content %}
+<form method="post" class="grid g-main" id="ward-form">{% csrf_token %}
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>The ward</h2></div>
+      <div class="row g-2">
+        <div class="col-md-8"><label class="form-label" for="name">Name</label><input class="form-control {% if errors.name %}is-invalid{% endif %}" id="name" name="name" value="{{ w.name }}" required placeholder="e.g. Female Medical Ward">{% if errors.name %}<div class="invalid-feedback">{{ errors.name }}</div>{% endif %}</div>
+        <div class="col-md-4"><label class="form-label" for="code">Short code</label><input class="form-control" id="code" name="code" value="{{ w.code }}" maxlength="10" placeholder="e.g. FMW" style="text-transform:uppercase"></div>
+      </div>
+      <label class="form-label mt-3">Type of ward</label>
+      <div class="wd-kinds">
+        {% for k, label in w.KIND %}<label style="--wc:{% for ck, cv in colors.items %}{% if ck == k %}{{ cv }}{% endif %}{% endfor %}">
+          <input type="radio" name="kind" value="{{ k }}" {% if w.kind == k %}checked{% endif %}>
+          <span><i class="bi {% for ik, iv in icons.items %}{% if ik == k %}{{ iv }}{% endif %}{% endfor %}"></i>{{ label }}</span></label>{% endfor %}
+      </div>
+      <div class="row g-2 mt-2">
+        <div class="col-md-6"><label class="form-label" for="sex_policy">Who it is for</label><select class="form-select" id="sex_policy" name="sex_policy">{% for k, l in w.SEX %}<option value="{{ k }}" {% if w.sex_policy == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+        <div class="col-md-6"><label class="form-label" for="age_group">Age group</label><select class="form-select" id="age_group" name="age_group">{% for k, l in w.AGE %}<option value="{{ k }}" {% if w.age_group == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+      </div>
+      <p class="form-text mb-0">Patients who don't match are flagged on the ward page (never blocked: the nurse in charge decides).</p>
+      <label class="form-label mt-3" for="description">About this ward <span class="muted small">(optional)</span></label>
+      <textarea class="form-control" id="description" name="description" rows="2" placeholder="e.g. Adult medical patients; step-down from ICU; two side rooms for isolation">{{ w.description }}</textarea>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Where &amp; who</h2></div>
+      <div class="row g-2">
+        <div class="col-md-4"><label class="form-label" for="building">Building</label><input class="form-control" id="building" name="building" value="{{ w.building }}" placeholder="e.g. Main block"></div>
+        <div class="col-md-4"><label class="form-label" for="floor">Floor</label><input class="form-control" id="floor" name="floor" value="{{ w.floor }}" placeholder="e.g. Level 1"></div>
+        <div class="col-md-4"><label class="form-label" for="phone">Nurses' station phone</label><input class="form-control" id="phone" name="phone" value="{{ w.phone }}" inputmode="tel" placeholder="ext. 214"></div>
+        <div class="col-md-6"><label class="form-label" for="nurse_in_charge">Nurse in charge</label><select class="form-select" id="nurse_in_charge" name="nurse_in_charge"><option value="">—</option>{% for u in nurses %}<option value="{{ u.pk }}" {% if w.nurse_in_charge_id == u.pk %}selected{% endif %}>{{ u|display_name }}</option>{% endfor %}</select></div>
+        <div class="col-md-6"><label class="form-label" for="lead_clinician">Lead clinician</label><select class="form-select" id="lead_clinician" name="lead_clinician"><option value="">—</option>{% for u in clinicians %}<option value="{{ u.pk }}" {% if w.lead_clinician_id == u.pk %}selected{% endif %}>{{ u|display_name }}</option>{% endfor %}</select></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Visiting hours</h2></div>
+      <div class="d-flex gap-2 align-items-center flex-wrap"><input class="form-control" style="max-width:140px" type="time" name="visiting_from" value="{{ w.visiting_from|time:'H:i' }}" aria-label="Visiting from"><span>to</span><input class="form-control" style="max-width:140px" type="time" name="visiting_to" value="{{ w.visiting_to|time:'H:i' }}" aria-label="Visiting to">
+        <div class="wd-chips"><button type="button" class="chip" data-vis="16:00-18:00">16–18</button><button type="button" class="chip" data-vis="12:00-14:00">12–14</button><button type="button" class="chip" data-vis="18:00-20:00">18–20</button></div></div>
+      {% if errors.visiting %}<div class="text-danger small mt-1">{{ errors.visiting }}</div>{% endif %}
+      <input class="form-control mt-2" name="visiting_note" value="{{ w.visiting_note }}" placeholder="e.g. Two visitors per bed; partners any time on maternity">
+    </section>
+
+    <section class="panel" id="beds">
+      <div class="panel-head"><h2>Beds</h2><span class="hint">{% if w.pk %}{{ w.bed_set.count }} now{% endif %}</span></div>
+      {% if w.pk %}<div class="wd-bedlist mb-3">{% for b in w.bed_set.all %}<span class="s-{{ b.state }}">{{ b.code }}</span>{% empty %}<span class="muted">No beds yet</span>{% endfor %}</div>{% endif %}
+      <div class="d-flex gap-2 align-items-end flex-wrap">
+        <div><label class="form-label" for="add_beds">Add beds</label><input class="form-control" style="max-width:110px" type="number" min="0" max="60" id="add_beds" name="add_beds" value="{% if is_new %}6{% else %}0{% endif %}"></div>
+        <div><label class="form-label" for="bed_kind">Bed type</label><select class="form-select" id="bed_kind" name="bed_kind">{% for k, l in bed_kinds %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
+        <div><label class="form-label" for="bed_prefix">Code prefix</label><input class="form-control" style="max-width:120px;text-transform:uppercase" id="bed_prefix" name="bed_prefix" placeholder="{{ w.short|default:'code' }}"></div>
+      </div>
+      <p class="form-text mb-0" id="bed-preview">New beds get the next free numbers, e.g. <b>FMW-01</b>, <b>FMW-02</b>…</p>
+    </section>
+  </div>
+
+  <aside class="stack align-self-start" style="position:sticky;top:16px">
+    <div class="wd-card preview" id="preview" style="--wc:{{ w.color }}">
+      <div class="wd-card-top"><span class="wd-ico"><i class="bi {{ w.icon }}"></i></span><div class="flex-fill min-w-0"><b class="wd-name" data-p="name">{{ w.name|default:'New ward' }}</b><span class="wd-sub" data-p="sub">{{ w.short }} · {{ w.get_kind_display }}</span></div></div>
+      <div class="wd-chips"><span data-p="sex"><i class="bi bi-gender-ambiguous"></i>{{ w.get_sex_policy_display }}</span><span data-p="age"><i class="bi bi-people"></i>{{ w.get_age_group_display }}</span></div>
+      <div class="wd-foot small muted">Preview of the ward card</div>
+    </div>
+    {% if not is_new %}<label class="form-check"><input class="form-check-input" type="checkbox" name="closed" value="1" {% if not w.active %}checked{% endif %}> <span class="form-check-label">Ward closed (hidden from the overview)</span></label>{% endif %}
+    <button class="btn btn-primary w-100"><i class="bi bi-check2"></i>Save ward</button>
+  </aside>
+</form>
+{% endblock %}
+{% block scripts %}{{ colors|json_script:'ward-colors' }}{{ icons|json_script:'ward-icons' }}<script>
+(() => {
+  const f = document.getElementById('ward-form'), pv = document.getElementById('preview');
+  const colors = JSON.parse(document.getElementById('ward-colors').textContent), icons = JSON.parse(document.getElementById('ward-icons').textContent);
+  const label = el => el.options ? el.options[el.selectedIndex].text : '';
+  const short = () => (f.code.value.trim() || f.name.value.trim().split(/\s+/).slice(0, 3).map(w => w[0] || '').join('')).toUpperCase();
+  const paint = () => {
+    const k = f.querySelector('input[name="kind"]:checked');
+    const kl = k ? k.nextElementSibling.textContent.trim() : '';
+    pv.style.setProperty('--wc', colors[k ? k.value : 'general']);
+    pv.querySelector('.wd-ico i').className = 'bi ' + icons[k ? k.value : 'general'];
+    pv.querySelector('[data-p="name"]').textContent = f.name.value.trim() || 'New ward';
+    pv.querySelector('[data-p="sub"]').textContent = short() + ' · ' + kl;
+    pv.querySelector('[data-p="sex"]').lastChild.textContent = label(f.sex_policy);
+    pv.querySelector('[data-p="age"]').lastChild.textContent = label(f.age_group);
+    const pre = (f.bed_prefix.value.trim() || short() || 'W').toUpperCase(), n = +f.add_beds.value || 0;
+    document.getElementById('bed-preview').innerHTML = n ? `Adds <b>${n}</b> bed${n > 1 ? 's' : ''} with the next free numbers, e.g. <b>${pre}-01</b>${n > 1 ? `, <b>${pre}-02</b>…` : ''}` : 'No beds will be added.';
+  };
+  f.addEventListener('input', paint); f.addEventListener('change', paint); paint();
+  f.querySelectorAll('[data-vis]').forEach(b => b.addEventListener('click', () => { const [a, z] = b.dataset.vis.split('-'); f.visiting_from.value = a; f.visiting_to.value = z; }));
+})();
+</script>{% endblock %}

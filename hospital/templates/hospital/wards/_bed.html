@@ -1,0 +1,21 @@
+{% load medflow %}{% if r.a %}
+<a class="wd-bed occ a-{{ r.acuity }}{% if r.obs_overdue %} overdue{% endif %}" href="{% url 'bed_detail' r.bed.pk %}">
+  <span class="wd-bed-top"><b>{{ r.bed.code }}</b>{% if r.news %}<span class="news n-{{ r.acuity }}" title="NEWS2 {{ r.news.total }}">{{ r.news.total }}</span>{% else %}<span class="news n-unknown" title="No observations yet">?</span>{% endif %}</span>
+  <span class="wd-bed-pt"><span class="avatar {{ r.p.sex }}">{{ r.p.initials }}</span><span class="min-w-0"><span class="nm">{{ r.p.first_name }} {{ r.p.last_name|first }}.</span><span class="small">day {{ r.stay_days|floatformat:0|add:1 }}{% if r.p.age is not None %} · {{ r.p.age }} y{% endif %}</span></span></span>
+  <span class="wd-bed-due {% if r.obs_overdue %}late{% endif %}"><i class="bi bi-{% if r.obs_overdue %}alarm{% else %}clock{% endif %}"></i>obs {{ r.obs_label }}</span>
+  <span class="wd-bed-icons">
+    {% if r.allergies %}<i class="bi bi-exclamation-diamond-fill al" title="Allergies"></i>{% endif %}
+    {% if r.meds_late %}<i class="bi bi-capsule ml" title="{{ r.meds_late }} doses late"></i>{% endif %}
+    {% if r.labs %}<i class="bi bi-droplet-half lb" title="{{ r.labs }} lab request(s) pending"></i>{% endif %}
+    {% if r.misfit %}<i class="bi bi-signpost-split mf" title="{{ r.misfit|join:', ' }}"></i>{% endif %}
+    {% if r.long_stay %}<i class="bi bi-calendar2-week ls" title="Long stay"></i>{% endif %}
+  </span>
+</a>
+{% else %}
+<div class="wd-bed s-{{ r.bed.state }}{% if r.slow_clean %} slow{% endif %}">
+  <span class="wd-bed-top"><a href="{% url 'bed_detail' r.bed.pk %}"><b>{{ r.bed.code }}</b></a><span class="small">{{ r.bed.get_kind_display }}</span></span>
+  <span class="wd-bed-state">{% if r.bed.state == 'available' %}<i class="bi bi-check-circle"></i>Free{% elif r.bed.state == 'cleaning' %}<i class="bi bi-stars"></i>Cleaning{% if r.slow_clean %} · {{ r.idle_hours|floatformat:0 }} h{% endif %}{% else %}<i class="bi bi-wrench"></i>Out of service{% endif %}</span>
+  {% if r.bed.state == 'available' %}<a class="btn btn-sm btn-ghost mt-auto" href="{% url 'admission_new' %}?bed={{ r.bed.pk }}">Admit here</a>
+  {% else %}<form method="post" action="{% url 'bed_ready' r.bed.pk %}" class="mt-auto">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="btn btn-sm btn-ghost w-100"><i class="bi bi-stars"></i>Ready</button></form>{% endif %}
+</div>
+{% endif %}

@@ -1,0 +1,55 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block head %}<link href="{% asset 'hospital/css/wards.css' %}" rel="stylesheet">{% endblock %}
+{% block title %}Wards{% endblock %}
+{% block heading %}Wards{% endblock %}
+{% block subheading %}<p class="sub">Every ward at a glance: beds, how sick the patients are, observations due, and who is in charge.</p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="{% url 'beds' %}"><i class="bi bi-grid-3x3-gap"></i>All beds</a>
+  {% if can_edit %}<a class="btn btn-primary" href="{% url 'ward_new' %}"><i class="bi bi-plus-lg"></i>New ward</a>{% endif %}
+{% endblock %}
+{% block content %}
+<section class="wd-totals">
+  <div class="wd-total"><b>{{ totals.pct }}%</b><span>beds in use · {{ totals.occupied }} of {{ totals.total }}</span></div>
+  <div class="wd-total ok"><b>{{ totals.free }}</b><span>beds free now</span></div>
+  <div class="wd-total amber"><b>{{ totals.cleaning }}</b><span>being cleaned</span></div>
+  <div class="wd-total {% if totals.critical %}red{% endif %}"><b>{{ totals.critical }}</b><span>patients NEWS2 5+</span></div>
+  <div class="wd-total {% if totals.overdue %}amber{% endif %}"><b>{{ totals.overdue }}</b><span>observations overdue</span></div>
+</section>
+
+<div class="wd-cards">
+  {% for c in cards %}{% with w=c.ward s=c.stats %}
+  <a class="wd-card {% if not w.active %}inactive{% endif %}" href="{% url 'ward_detail' w.pk %}" style="--wc:{{ w.color }}">
+    <div class="wd-card-top">
+      <span class="wd-ico"><i class="bi {{ w.icon }}"></i></span>
+      <div class="flex-fill min-w-0"><b class="wd-name">{{ w.name }}</b>
+        <span class="wd-sub">{{ w.short }} · {{ w.get_kind_display }}{% if w.floor %} · {{ w.floor }}{% endif %}</span></div>
+      <svg class="wd-ring" viewBox="0 0 80 80" aria-label="{{ s.pct }}% of beds in use">
+        <circle cx="40" cy="40" r="34" class="bg"/><circle cx="40" cy="40" r="34" class="fg" stroke-dasharray="{{ c.ring.c }}" stroke-dashoffset="{{ c.ring.off }}"/>
+        <text x="40" y="45">{{ s.pct }}%</text></svg>
+    </div>
+    <div class="wd-chips">
+      {% if w.sex_policy != 'mixed' %}<span><i class="bi bi-gender-{% if w.sex_policy == 'female' %}female{% else %}male{% endif %}"></i>{{ w.get_sex_policy_display }}</span>{% endif %}
+      {% if w.age_group != 'all' %}<span><i class="bi bi-people"></i>{{ w.get_age_group_display }}</span>{% endif %}
+      <span class="vis-{{ c.visiting.state }}"><i class="bi bi-clock"></i>{{ c.visiting.label }}</span>
+      {% if not w.active %}<span>Closed</span>{% endif %}
+    </div>
+    <div class="wd-dots" aria-hidden="true">{% for r in c.rows %}<i class="{% if r.a %}a-{{ r.acuity }}{% else %}s-{{ r.bed.state }}{% endif %}" title="{{ r.bed.code }}"></i>{% endfor %}</div>
+    <div class="wd-nums">
+      <span><b>{{ s.free }}</b>free</span><span><b>{{ s.occupied }}</b>in use</span>
+      <span class="{% if s.acuity.critical or s.acuity.urgent %}hot{% endif %}"><b>{{ s.acuity.critical|add:s.acuity.urgent }}</b>NEWS2 5+</span>
+      <span class="{% if s.overdue %}warm{% endif %}"><b>{{ s.overdue }}</b>obs due</span>
+      {% if c.alerts %}<span class="hot"><b>{{ c.alerts }}</b>alert{{ c.alerts|pluralize }}</span>{% endif %}
+    </div>
+    <div class="wd-foot"><i class="bi bi-person-badge"></i>{% if w.nurse_in_charge %}{{ w.nurse_in_charge|display_name }}{% else %}<span class="muted">No nurse in charge set</span>{% endif %}
+      {% if w.phone %}<span class="ms-auto"><i class="bi bi-telephone"></i>{{ w.phone }}</span>{% endif %}</div>
+  </a>
+  {% endwith %}{% empty %}
+  <div class="panel empty"><i class="bi bi-hospital"></i>No wards yet.{% if can_edit %} <a href="{% url 'ward_new' %}">Create the first ward</a>.{% endif %}</div>
+  {% endfor %}
+</div>
+<div class="wd-legend mt-3">
+  {% for k, label in acuity_keys %}<span><i class="a-{{ k }}"></i>{{ label }}</span>{% endfor %}
+  <span><i class="s-available"></i>Free</span><span><i class="s-cleaning"></i>Cleaning</span><span><i class="s-maintenance"></i>Out of service</span>
+  <a class="ms-auto small" href="?all={% if show_all %}0{% else %}1{% endif %}">{% if show_all %}Hide closed wards{% else %}Show closed wards too{% endif %}</a>
+</div>
+{% endblock %}

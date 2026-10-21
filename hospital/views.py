@@ -1063,7 +1063,8 @@ def bed_ready(request, pk):
         b.state = 'available'; b.save(update_fields=['state', 'updated_at'])
         audit(request, 'bed_ready', f'bed:{b.pk}')
     messages.success(request, f'Bed {b.code} is ready for the next patient.')
-    return redirect('beds')
+    nxt = request.POST.get('next', '')
+    return redirect(nxt if nxt.startswith('/') and not nxt.startswith('//') else 'beds')
 
 
 # ---------------------------------------------------------------- attendance

@@ -1,0 +1,41 @@
+{% extends 'hospital/print/_base.html' %}{% load medflow %}
+{% block title %}Handover {{ ward.short }}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/wards.css' %}" rel="stylesheet">{% endblock %}
+{% block back %}{% url 'ward_detail' ward.pk %}{% endblock %}
+{% block page %}
+<article class="pd-sheet wd-handover">
+  <header class="pd-head">
+    <div class="pd-org"><b>{{ h.name }}</b><span>{{ ward.name }}{% if ward.floor %} · {{ ward.floor }}{% endif %}{% if ward.phone %} · tel. {{ ward.phone }}{% endif %}</span></div>
+    <div class="pd-title"><span>Shift handover</span><b>{{ ward.short }}</b><em>{% now 'D j M Y H:i' %} · {% if shift == 'day' %}day{% else %}night{% endif %}</em></div>
+    <div></div>
+  </header>
+  <section class="pd-grid">
+    <div><span>Patients</span><b>{{ stats.occupied }} of {{ stats.total }} beds</b></div>
+    <div><span>Free · cleaning</span><b>{{ stats.free }} · {{ stats.cleaning }}</b></div>
+    <div><span>NEWS2 5+</span><b class="{% if stats.acuity.critical or stats.acuity.urgent %}pd-red{% endif %}">{{ stats.acuity.critical|add:stats.acuity.urgent }}</b></div>
+    <div><span>Nurse in charge</span><b>{% if ward.nurse_in_charge %}{{ ward.nurse_in_charge|display_name }}{% else %}—{% endif %}</b></div>
+  </section>
+  <table class="pd-table wd-ho-table">
+    <thead><tr><th>Bed</th><th>Patient</th><th>Problem</th><th>NEWS2 · obs</th><th>Due / pending</th><th style="width:30%">Plan for this shift</th></tr></thead>
+    <tbody>{% for r in rows %}{% if r.a %}
+      <tr class="{% if r.acuity == 'critical' or r.acuity == 'urgent' %}hot{% endif %}">
+        <td><b>{{ r.bed.code }}</b></td>
+        <td><b>{{ r.p.full_name }}</b><small class="d-block">{{ r.p.mrn }} · {{ r.p.sex }}{% if r.p.age is not None %} · {{ r.p.age }} y{% endif %} · day {{ r.stay_days|floatformat:0|add:1 }}</small>
+          {% if r.allergies %}<small class="pd-red d-block">Allergies ({{ r.allergies }})</small>{% endif %}</td>
+        <td>{{ r.a.encounter.diagnosis|default:r.a.encounter.reason|truncatechars:90 }}</td>
+        <td>{% if r.news %}<b>{{ r.news.total }}</b>{% else %}—{% endif %}<small class="d-block">obs {{ r.obs_label }}</small></td>
+        <td><small>{% if r.meds_late %}{{ r.meds_late }} dose(s) late<br>{% endif %}{% if r.meds_due %}{{ r.meds_due }} due<br>{% endif %}{% if r.labs %}{{ r.labs }} lab(s) pending{% endif %}{% for m in r.misfit %}<br>{{ m }}{% endfor %}</small></td>
+        <td class="write"></td>
+      </tr>{% endif %}{% endfor %}
+      {% for r in rows %}{% if not r.a %}<tr class="empty-bed"><td><b>{{ r.bed.code }}</b></td><td colspan="5"><small>{{ r.bed.get_state_display }}</small></td></tr>{% endif %}{% endfor %}
+    </tbody>
+  </table>
+  {% if notes %}<div class="label-sm wd-ho-h">Board · last 24 hours</div>
+  <ul class="wd-ho-notes">{% for n in notes %}<li>{% if n.open_alert %}<b class="pd-red">ALERT</b> {% endif %}<small>{{ n.created_at|date:'j M H:i' }} · {{ n.author|display_name }}</small> {% if n.patient %}<b>{{ n.patient.first_name }} {{ n.patient.last_name|first }}.</b> {% endif %}{{ n.text }}</li>{% endfor %}</ul>{% endif %}
+  <footer class="pd-sign">
+    <div class="pd-sigline"><i></i><span>Handed over by · time</span></div>
+    <div class="pd-sigline"><i></i><span>Received by · time</span></div>
+  </footer>
+  <p class="pd-small pd-foot">Confidential patient information. Printed {% now 'j M Y H:i' %} by {{ request.user|display_name }}. Shred after the shift.</p>
+</article>
+{% endblock %}
