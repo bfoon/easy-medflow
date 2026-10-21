@@ -27,6 +27,7 @@
         {% if nav_role == 'specialist' %}<a class="nav-link {% nav_active '/specialist/' %}" href="{% url 'specialist_portal' %}"><i class="bi bi-person-badge"></i>My portal</a>{% endif %}
         <a class="nav-link {% nav_active '/referrals/' '/network/inbox/' %}" href="{% url 'referrals' %}"><i class="bi bi-inbox"></i>{% if nav_role == 'specialist' %}Requests{% else %}Referrals{% endif %}</a>
         {% if nav_role == 'specialist' %}<a class="nav-link {% nav_active '/specialist/slots/' %}" href="{% url 'specialist_slots' %}"><i class="bi bi-calendar-week"></i>My slots</a>{% endif %}
+        {% if nav_role == 'partner' %}<a class="nav-link {% nav_active '/network/lab-work/' %}" href="{% url 'xl_network' %}"><i class="bi bi-droplet-half"></i>Lab requests</a>{% endif %}
         <a class="nav-link {% nav_active '/network/lookup/' %}" href="{% url 'network_lookup' %}"><i class="bi bi-search-heart"></i>Record lookup</a>
         <a class="nav-link {% nav_active '/network/learning/' %}" href="{% url 'network_learning' %}"><i class="bi bi-mortarboard"></i>Learning</a>
       </div>

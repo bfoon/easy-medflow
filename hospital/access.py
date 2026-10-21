@@ -246,6 +246,8 @@ PATIENT_PAGES = {
     'autopsy_new': _p('DeathRecord'), 'death_review': _p('DeathRecord'), 'study_case_manage': _p('DeathRecord'),
     'autopsy_detail': _p('Autopsy', 'death__patient_id'), 'autopsy_act': _p('Autopsy', 'death__patient_id'),
     'autopsy_print': _p('Autopsy', 'death__patient_id'),
+    'lab_request_print': _p('LabRequest', ENC), 'prescription_print': _p('Prescription', ENC), 'extlab_new': _p('LabRequest', ENC),
+    'extlab_detail': _p('ExternalLabReferral', 'lab_request__encounter__patient_id'),
 }
 # Pages that are part of a job and open for that job even without patient-record access
 JOB_PAGES = {'prescription_detail': 'pharmacy', 'lab_request_detail': 'lab', 'imaging_detail': 'imaging', 'imaging_file': 'imaging',
@@ -253,7 +255,9 @@ JOB_PAGES = {'prescription_detail': 'pharmacy', 'lab_request_detail': 'lab', 'im
              # the mortuary looks after every body, whoever the clinical team was
              'death_detail': 'mortality', 'death_family': 'mortality', 'death_body': 'mortality', 'death_print': 'mortality',
              'death_certificate': 'death_certify', 'autopsy_detail': 'autopsy', 'autopsy_act': 'autopsy', 'autopsy_print': 'autopsy',
-             'death_review': 'mortality_review', 'study_case_manage': 'mortality_review'}
+             'death_review': 'mortality_review', 'study_case_manage': 'mortality_review',
+             # outside labs and printouts belong to the lab and pharmacy jobs too
+             'lab_request_print': 'lab', 'extlab_new': 'lab', 'extlab_detail': 'lab', 'prescription_print': 'pharmacy'}
 
 
 class PatientScopeMiddleware:

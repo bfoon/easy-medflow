@@ -280,6 +280,43 @@ The **Laboratory** pages share a bar: Work board, **Command centre**, **Specimen
 - Blood-disease tests: sickling screen, haemoglobin electrophoresis (HbA/S/F/A2 and genotype), reticulocytes,
   ferritin, blood film, G6PD and clotting profile.
 
+## Outside laboratories and printouts
+
+When a test is done at a laboratory outside the hospital, the patient goes there and the results come back into the
+same lab request.
+
+- **Send out:** lab request page → *Send to outside lab*, or choose *An outside lab* when ordering tests. Pick a lab
+  from the network directory or type another lab, confirm the **patient's phone number**, and add instructions for the
+  patient (quick buttons: fasting, morning urine, go today…). The request gets a reference such as `XL-7KQ4M2` and leaves
+  the lab work board until results come back. **Laboratory → Outside labs** shows every send-out: waiting for the
+  patient, at the lab, results back, and problems (expired or locked).
+- **Labs on E-MedFlow** (a network facility with a `partner` login): they are notified that a patient is expected (first
+  name and initial only). When the patient arrives they open **Lab requests** and type the phone number; only requests
+  addressed to their facility can be found. Searches are rate-limited and logged.
+- **Other labs** get a **one-time link** (WhatsApp, SMS, email, or a QR code scanned from the screen). Opening it asks for
+  the patient's phone number. The first correct number ties the link to that device; any other device is refused, five
+  wrong numbers lock it (the doctor is notified), and it closes once results are sent. Only a SHA-256 fingerprint of the
+  link is stored, so it is shown once: *Re-issue link* makes a new one and the old one stops working at once.
+- **Results:** the lab enters values per test (flagged high/low/critical as they type, using the hospital ranges)
+  and/or attaches its own report (PDF or photo, checked to be a real file, served only to signed-in staff). Critical
+  values create the usual call-back task and alert. The hospital laboratory then verifies the results as usual.
+- The patient gets a WhatsApp/SMS with where to go, what to bring and the reference: no link and no results.
+
+**Printouts**
+
+- **Lab request form** (lab request page → *Print request*, A4 or A5): patient, allergies, clinical details, each test with
+  a container colour chip, boxes for who took the sample and when, and a QR code of the request number (scan it under
+  Specimens). When the request is with an outside lab, the bottom is a **patient slip** to cut off: the lab, the
+  reference, the last digits of the phone number to give, instructions, and that the results go straight to the doctor.
+- **Prescription** (prescription page → *Print*, A5 or A4, or a *patient copy* that may not be dispensed): allergies,
+  each medicine with directions and the quantity also **in words** ("15 (fifteen)"), prescriber and licence number,
+  e-signature, *DRAFT* watermark until signed and a *DISPENSED* stamp afterwards.
+- **Prescription check** (`/rx/<code>/`, the QR code on the printout, no sign-in): any pharmacy can see whether the paper
+  is genuine, still valid (30 days from signing), cancelled or already (partly) dispensed, and compare the medicines and
+  quantities. Only the patient's initials and birth year are shown.
+
+Optional `.env` settings for the printed header: `HOSPITAL_NAME`, `HOSPITAL_PHONE`, `HOSPITAL_ADDRESS`.
+
 ## Result guidance: hospital and WHO ranges, sources and AI
 
 When results are reported, the lab request page (and *Lab insights* → any result → **WHO range, sources & AI**) shows a

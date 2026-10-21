@@ -17,6 +17,7 @@ from . import access_views as av
 from . import library_views as libv
 from . import programme_views as pgv
 from . import mortality_views as mv
+from . import extlab_views as xv
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -166,6 +167,16 @@ urlpatterns = [
     path('reports/assist/<int:pk>/', rv.report_assist_status, name='report_assist_status'),
     path('reports/verify/<str:token>/', rv.report_verify, name='report_verify'),
     path('labs/requests/<int:pk>/report/', lv.lab_report, name='lab_report'),
+    path('labs/requests/<int:pk>/print/', xv.lab_request_print, name='lab_request_print'),
+    path('labs/requests/<int:pk>/send-out/', xv.extlab_new, name='extlab_new'),
+    path('labs/outside/', xv.extlab_list, name='extlab_list'),
+    path('labs/outside/<int:pk>/', xv.extlab_detail, name='extlab_detail'),
+    path('labs/outside/<int:pk>/report-file/', xv.extlab_file, name='extlab_file'),
+    path('labs/outside/<int:pk>/<str:action>/', xv.extlab_action, name='extlab_action'),
+    path('xl/<str:token>/', xv.xl_open, name='xl_open'),
+    path('xl/<str:token>/work/', xv.xl_work, name='xl_work'),
+    path('network/lab-work/', xv.xl_network, name='xl_network'),
+    path('network/lab-work/<int:pk>/', xv.xl_network_work, name='xl_network_work'),
     path('labs/new/', v.lab_new, name='lab_new'),
     path('labs/mine/', v.lab_mine, name='lab_mine'),
     path('labs/catalog/', v.lab_catalog, name='lab_catalog'),
@@ -216,6 +227,8 @@ urlpatterns = [
     path('prescriptions/new/', v.prescription_new, name='prescription_new'),
     path('prescriptions/<int:pk>/', v.prescription_detail, name='prescription_detail'),
     path('prescriptions/<int:pk>/edit/', v.prescription_edit, name='prescription_edit'),
+    path('prescriptions/<int:pk>/print/', xv.prescription_print, name='prescription_print'),
+    path('rx/<str:token>/', xv.rx_verify, name='rx_verify'),
     path('prescriptions/items/<int:pk>/<str:action>/', v.rx_item_availability, name='rx_item_availability'),
     path('pharmacy/reorder/<int:med_pk>/', v.stock_request_new, name='stock_request_new'),
     path('pharmacy/supplier/<int:pk>/<str:action>/', v.stock_request_action, name='stock_request_action'),

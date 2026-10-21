@@ -1,0 +1,23 @@
+{% load medflow %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Check {{ p.number }} · {{ h.name }}</title>
+<link href="{% asset 'hospital/vendor/fonts/fonts.css' %}" rel="stylesheet">
+<link href="{% asset 'hospital/vendor/bootstrap-icons/bootstrap-icons.min.css' %}" rel="stylesheet">
+<link href="{% asset 'hospital/css/print-docs.css' %}" rel="stylesheet"></head>
+<body class="rxv">
+<main class="rxv-card">
+  <div class="rxv-org">{{ h.name }} · prescription check</div>
+  <div class="rxv-verdict {{ tone }}"><i class="bi {% if tone == 'ok' %}bi-shield-check{% elif tone == 'warn' %}bi-shield-exclamation{% else %}bi-shield-x{% endif %}"></i><b>{{ verdict }}</b></div>
+  <dl class="rxv-kv">
+    <dt>Prescription</dt><dd>{{ p.number }}</dd>
+    <dt>Patient</dt><dd>{{ initials }} · born {{ birth_year }}</dd>
+    <dt>Prescriber</dt><dd>{{ p.signed_by|display_name|default:'—' }}</dd>
+    <dt>Signed</dt><dd>{{ p.signed_at|date:'j M Y H:i'|default:'not signed' }}</dd>
+    {% if valid_until %}<dt>Valid until</dt><dd>{{ valid_until|date:'j M Y' }}</dd>{% endif %}
+  </dl>
+  <div class="rxv-h">Compare with the paper</div>
+  <ul class="rxv-meds">{% for row in items %}<li><b>{{ row.i.medication }}</b><span>{{ row.i.directions }}</span><em>Qty {{ row.i.quantity }}{% if row.given %} · {{ row.given }} already dispensed{% endif %}{% if row.i.availability == 'unavailable' %} · to be bought outside{% endif %}</em></li>{% endfor %}</ul>
+  <p class="rxv-note">If the medicines, quantities or prescriber on the paper differ from this list, do not dispense and contact {{ h.name }}{% if h.phone %} on {{ h.phone }}{% endif %}. Only initials and birth year are shown here for the patient's privacy.</p>
+  <p class="rxv-note muted">Checked {% now 'j M Y H:i' %}</p>
+</main>
+</body></html>

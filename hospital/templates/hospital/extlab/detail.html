@@ -1,0 +1,113 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block head %}<link href="{% asset 'hospital/css/extlab.css' %}" rel="stylesheet">{% endblock %}
+{% block title %}{{ s.reference }}{% endblock %}
+{% block heading %}{{ s.reference }} · {{ s.lab_name }}{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'lab_request_detail' lr.pk %}">{{ lr.number }}</a> · {{ p.full_name }} · {{ p.mrn }} · sent {{ s.created_at|date:'j M Y H:i' }}{% if s.created_by %} by {{ s.created_by|display_name }}{% endif %} · <span class="tag {{ s.tone }}">{{ s.display_status }}</span></p>{% endblock %}
+{% block actions %}
+  <a class="btn btn-ghost" href="{% url 'lab_request_detail' lr.pk %}"><i class="bi bi-arrow-left"></i>Request</a>
+  <a class="btn btn-ghost" href="{% url 'extlab_list' %}"><i class="bi bi-geo-alt"></i>Outside labs</a>
+  <a class="btn btn-ink" href="{% url 'lab_request_print' lr.pk %}"><i class="bi bi-printer"></i>Print request &amp; patient slip</a>
+  {% if s.status == 'reported' and lr.stage == 'resulted' and 'lab' in caps %}<form method="post" action="{% url 'lab_request_action' lr.pk 'verify' %}" data-confirm="Verify and release the results from {{ s.lab_name }}?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="btn btn-primary"><i class="bi bi-patch-check"></i>Verify results</button></form>{% endif %}
+{% endblock %}
+{% block content %}
+<section class="panel xl-journey-panel">
+  <div class="xl-journey" data-state="{{ s.status }}{% if not s.is_open and s.is_active %} stuck{% endif %}">
+    {% for st in s.track %}
+    <div class="xl-stop {{ st.state }}">
+      <span class="xl-dot">{% if st.key == 'sent' %}<i class="bi bi-hospital"></i>{% elif st.key == 'arrived' %}<i class="bi bi-person-walking"></i>{% elif st.key == 'collected' %}<i class="bi bi-droplet-half"></i>{% elif st.key == 'reported' %}<i class="bi bi-clipboard2-pulse"></i>{% else %}<i class="bi bi-patch-check"></i>{% endif %}</span>
+      <b>{{ st.label }}</b><small>{% if st.at %}{{ st.at|date:'j M H:i' }}{% elif st.state == 'current' %}next{% else %}&nbsp;{% endif %}</small>
+    </div>{% if not forloop.last %}<span class="xl-road {{ st.state }}"><i></i></span>{% endif %}
+    {% endfor %}
+  </div>
+  {% if s.status == 'cancelled' %}<div class="alert-mf danger mt-3"><i class="bi bi-x-octagon"></i><div><b>Withdrawn {{ s.cancelled_at|date:'j M H:i' }}.</b> {{ s.cancel_reason }}</div></div>
+  {% elif s.is_locked and s.is_active %}<div class="alert-mf danger mt-3"><i class="bi bi-shield-lock"></i><div><b>Locked.</b> Someone typed a wrong phone number {{ max_attempts }} times. If it was the lab, check the number with the patient and re-issue the link.</div></div>
+  {% elif s.is_expired %}<div class="alert-mf warn mt-3"><i class="bi bi-hourglass-bottom"></i><div><b>Expired {{ s.expires_at|date:'j M' }}.</b> {% if s.channel == 'link' %}Re-issue the link to give it another 14 days, or withdraw it.{% else %}Withdraw it and send a new one if the patient still needs the tests.{% endif %}</div></div>{% endif %}
+</section>
+
+<div class="grid g-main mt-3">
+  <div class="stack">
+    {% if token %}
+    <section class="panel xl-once">
+      <div class="panel-head"><h2><i class="bi bi-key me-1"></i>One-time link for {{ s.lab_name }}</h2><span class="hint">shown only now</span></div>
+      <div class="xl-once-body">
+        <div class="flex-fill min-w-0">
+          <div class="xl-linkbox"><input class="form-control" readonly value="{{ share.link }}" id="xl-link" aria-label="One-time link"><button class="btn btn-ink" type="button" data-copy="{{ share.link }}"><i class="bi bi-clipboard"></i>Copy</button></div>
+          <div class="d-flex gap-2 flex-wrap mt-3">
+            <a class="btn btn-wa" href="{{ share.lab_whatsapp }}" target="_blank" rel="noopener"><i class="bi bi-whatsapp"></i>WhatsApp the lab{% if s.lab_phone %} · {{ s.lab_phone }}{% endif %}</a>
+            {% if share.lab_sms %}<a class="btn btn-ghost" href="{{ share.lab_sms }}"><i class="bi bi-chat-dots"></i>SMS</a>{% endif %}
+            {% if share.lab_email %}<a class="btn btn-ghost" href="{{ share.lab_email }}"><i class="bi bi-envelope"></i>Email {{ s.lab_email }}</a>{% endif %}
+          </div>
+          <p class="small muted mt-3 mb-0"><i class="bi bi-shield-check"></i> The link opens only with the patient's phone number, works on one device, locks after {{ max_attempts }} wrong numbers and closes when results are sent. We keep only a fingerprint of it: once you leave this page it cannot be shown again (use <b>Re-issue link</b>).</p>
+        </div>
+        <div class="xl-qr" title="The lab can scan this from your screen">{{ qr }}<small>scan to open</small></div>
+      </div>
+    </section>
+    {% endif %}
+
+    {% if s.status == 'reported' %}
+    <section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-clipboard2-pulse me-1"></i>Results from {{ s.lab_name }}</h2><span class="hint">{{ s.reported_at|date:'j M Y H:i' }}{% if s.reported_by_name %} · released by {{ s.reported_by_name }}{% endif %}</span></div>
+      {% for o in lr.orders.all %}{% if o.status == 'resulted' or o.status == 'verified' %}
+        <div class="xl-res"><b>{{ o.test.name }}</b> <span class="tag {{ o.status|tone }}">{{ o.get_status_display }}</span>
+          {% if o.values.all %}<div class="scroll-x"><table class="mini-table mt-1"><tbody>{% for v in o.values.all %}<tr class="{% if v.is_critical %}row-crit{% elif v.is_abnormal %}row-abn{% endif %}"><td>{{ v.parameter.name }}</td><td><b>{{ v.display }}</b> <span class="muted">{{ v.parameter.unit }}</span></td><td class="small muted">{{ v.parameter|range_for_sex:p.sex|default:'' }}</td><td>{% include 'hospital/_flag.html' with flag=v.flag %}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+          {% if o.result %}<p class="small muted mb-0 mt-1">{{ o.result|linebreaksbr }}</p>{% endif %}</div>
+      {% endif %}{% endfor %}
+      {% if s.lab_comment %}<div class="alert-mf info mt-2"><i class="bi bi-chat-left-text"></i><div>{{ s.lab_comment }}</div></div>{% endif %}
+      {% if s.report_file %}<a class="btn btn-ghost mt-2" href="{% url 'extlab_file' s.pk %}" target="_blank"><i class="bi bi-paperclip"></i>Open the lab's own report</a>{% endif %}
+      {% if lr.stage == 'resulted' %}<p class="small mt-3 mb-0"><i class="bi bi-info-circle"></i> These results are waiting for our laboratory to verify them. They also appear on the lab board under <i>Awaiting verification</i>.</p>{% endif %}
+    </section>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-person me-1"></i>Tell the patient</h2></div>
+      <div class="xl-msg">{{ share.patient_text }}</div>
+      <div class="d-flex gap-2 flex-wrap mt-3">
+        {% if share.patient_whatsapp %}<a class="btn btn-wa" href="{{ share.patient_whatsapp }}" target="_blank" rel="noopener"><i class="bi bi-whatsapp"></i>WhatsApp {{ s.patient_phone }}</a>{% endif %}
+        <a class="btn btn-ghost" href="{{ share.patient_sms }}"><i class="bi bi-chat-dots"></i>SMS</a>
+        <a class="btn btn-ghost" href="{% url 'lab_request_print' lr.pk %}"><i class="bi bi-printer"></i>Print the slip</a>
+      </div>
+      <p class="small muted mt-2 mb-0">The patient's message has no link and no results: only where to go, what to bring and the reference.</p>
+    </section>
+  </div>
+
+  <aside class="stack align-self-start">
+    <section class="panel">
+      <div class="panel-head"><h2>How the lab gets in</h2></div>
+      {% if s.channel == 'network' %}
+        <div class="xl-mode net"><i class="bi bi-lightning-charge-fill"></i><div><b>On E-MedFlow</b><div class="small">{{ s.lab_name }} signs in and types the patient's phone number ({{ s.masked_phone }}). Nothing to send.</div></div></div>
+      {% else %}
+        <div class="xl-mode"><i class="bi bi-link-45deg"></i><div><b>One-time link + phone number</b><div class="small">Link made {{ s.token_issued_at|date:'j M H:i' }}. {% if s.claimed_at %}Opened by the lab {{ s.claimed_at|date:'j M H:i' }} on one device.{% else %}Not opened yet.{% endif %}{% if s.failed_attempts %} Wrong numbers: {{ s.failed_attempts }} of {{ max_attempts }}.{% endif %}</div></div></div>
+        {% if can_manage and s.is_active %}<form method="post" action="{% url 'extlab_action' s.pk 'reissue' %}" class="mt-2" data-confirm="Make a new link? The current link stops working immediately.">{% csrf_token %}<button class="btn btn-ghost btn-sm w-100"><i class="bi bi-arrow-repeat"></i>Re-issue link</button></form>{% endif %}
+      {% endif %}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Details</h2></div>
+      <dl class="kv">
+        <dt>Laboratory</dt><dd>{{ s.lab_name }}{% if s.facility %} <span class="small muted">(network)</span>{% endif %}</dd>
+        {% if s.lab_address %}<dt>Address</dt><dd>{{ s.lab_address }}</dd>{% endif %}
+        {% if s.lab_phone %}<dt>Phone</dt><dd>{{ s.lab_phone }}</dd>{% endif %}
+        {% if s.lab_email %}<dt>Email</dt><dd>{{ s.lab_email }}</dd>{% endif %}
+        <dt>Patient phone</dt><dd>{{ s.patient_phone }}</dd>
+        <dt>Open until</dt><dd>{{ s.expires_at|date:'j M Y' }}</dd>
+        {% if s.specimen_ref %}<dt>Lab sample no.</dt><dd>{{ s.specimen_ref }}</dd>{% endif %}
+        {% if s.instructions %}<dt>For the patient</dt><dd>{{ s.instructions }}</dd>{% endif %}
+        {% if s.note_to_lab %}<dt>For the lab</dt><dd>{{ s.note_to_lab }}</dd>{% endif %}
+        <dt>Tests</dt><dd>{{ share.tests }}</dd>
+      </dl>
+    </section>
+    {% if can_manage and s.is_active %}
+    <section class="panel">
+      <details><summary class="btn btn-ghost btn-sm w-100"><i class="bi bi-x-circle"></i>Withdraw from {{ s.lab_name }}</summary>
+        <form method="post" action="{% url 'extlab_action' s.pk 'cancel' %}" class="mt-2">{% csrf_token %}
+          <textarea class="form-control form-control-sm mb-2" name="reason" rows="2" required placeholder="e.g. patient will be tested here instead"></textarea>
+          <button class="btn btn-sm btn-ink w-100">Withdraw · bring back to our lab</button></form></details>
+    </section>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(b.dataset.copy); mfToast('Link copied. Paste it to the lab.'); } catch (_) { const i = document.getElementById('xl-link'); i.select(); document.execCommand('copy'); }
+}));
+</script>{% endblock %}

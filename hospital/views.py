@@ -550,12 +550,16 @@ def labs(request):
     lanes = [('ordered', 'Awaiting collection'), ('collected', 'Specimen collected'), ('processing', 'Processing'), ('resulted', 'Awaiting verification')]
     # Every request that still has a test to do, however old: the board used to load the 300 OLDEST requests and pick
     # the open ones from those, so once a hospital passed 300 requests new orders never appeared.
-    reqs = list(lab_requests_qs().filter(orders__status__in=[k for k, _ in lanes]).distinct().order_by('created_at'))
+    # Requests that are with an outside lab leave the board until their results come back (Laboratory → Outside labs).
+    reqs = list(lab_requests_qs().filter(orders__status__in=[k for k, _ in lanes]).exclude(sendouts__status__in=['sent', 'arrived', 'collected'])
+                .distinct().order_by('created_at'))
     rank = {'stat': 0, 'urgent': 1, 'routine': 2}
     board = [{'key': k, 'label': lbl, 'requests': sorted([r for r in reqs if r.stage == k], key=lambda r: (rank[r.priority], r.created_at))} for k, lbl in lanes]
     recent = lab_requests_qs().filter(orders__status='verified').exclude(orders__status__in=[k for k, _ in lanes]).distinct().order_by('-updated_at')[:40]
     done = [r for r in recent if r.stage == 'verified'][:20]
-    return render(request, 'hospital/labs.html', {'board': board, 'done': done})
+    from .models_extlab import ExternalLabReferral
+    outside = ExternalLabReferral.objects.filter(status__in=ExternalLabReferral.ACTIVE).count()
+    return render(request, 'hospital/labs.html', {'board': board, 'done': done, 'outside': outside})
 
 
 @login_required
@@ -578,6 +582,12 @@ def lab_new(request):
                 for t in tests:
                     LabOrder.objects.create(encounter=enc, request=lr, test=t)
                 audit(request, 'create', f'hospital.LabRequest:{lr.pk}', {'tests': len(tests)})
+            if request.POST.get('where') == 'outside':        # straight on to choosing the outside lab
+                url = reverse('extlab_new', args=[lr.pk])
+                if is_embed(request):
+                    return render(request, 'hospital/embed_done.html', {'message': f'Lab request {lr.number} saved. Choose the outside lab.', 'go': url})
+                messages.success(request, f'Lab request {lr.number} saved. Now choose the outside lab.')
+                return redirect(url)
             return finish(request, request.POST.get('next') or reverse('lab_request_detail', args=[lr.pk]),
                           f'Lab request {lr.number}: {len(tests)} test{"s" if len(tests) > 1 else ""} for {enc.patient.full_name}.')
     return render(request, 'hospital/lab_order_form.html', {'encounters': encounters, 'categories': categories, 'priorities': LabRequest.PRIORITY,
@@ -1133,7 +1143,14 @@ def lab_request_detail(request, pk):
     from .report_views import reports_for
     who, _ = who_for_request(lr)      # WHO references beside the hospital range, for the patient's group
     reported = any(o.status in ('resulted', 'verified') for o in lr.orders.all())
+    from .access import has
+    from .models_extlab import ExternalLabReferral
+    sendouts = list(lr.sendouts.all())
+    sendout = next((x for x in sendouts if x.status in ExternalLabReferral.ACTIVE), None)
+    can_send_out = (has(request.user, 'clinical') or has(request.user, 'lab')) and any(o.status in ('ordered', 'collected') for o in lr.orders.all())
     return render(request, 'hospital/lab_request.html', {'lr': lr, 'p': lr.encounter.patient, 'who': who, 'any_who': any(who.values()),
+                                                         'sendout': sendout, 'sendouts_done': [x for x in sendouts if x is not sendout and x.status == 'reported'],
+                                                         'can_send_out': can_send_out and not lr.encounter.patient.is_deceased,
                                                          'can_lab': role_of(request.user) in ROLES['lab'], 'sex': lr.encounter.patient.sex,
                                                          'show_guidance': reported and role_of(request.user) in ('doctor', 'nurse', 'lab', 'admin'),
                                                          'doctor_report': reports_for(lr) if role_of(request.user) in ROLES['clinical'] else None})

@@ -380,7 +380,8 @@
       if (e.origin !== location.origin || !e.data) return;
       if (e.data.type === 'medflow:done') {
         closeDrawer(); sessionStorage.setItem('mf-flash', e.data.message || 'Saved.');
-        setTimeout(() => location.reload(), 250);   // refresh in place; the open tab is kept in the URL hash
+        const next = typeof e.data.url === 'string' && e.data.url.startsWith('/') && !e.data.url.startsWith('//') ? e.data.url : '';
+        setTimeout(() => next ? (location.href = next) : location.reload(), 250);   // refresh in place; the open tab is kept in the URL hash
       }
       if (e.data.type === 'medflow:close') closeDrawer();
     });

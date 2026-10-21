@@ -1,0 +1,126 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block head %}<link href="{% asset 'hospital/css/extlab.css' %}" rel="stylesheet">{% endblock %}
+{% block title %}Send {{ lr.number }} to an outside lab{% endblock %}
+{% block heading %}Send to an outside lab{% endblock %}
+{% block subheading %}<p class="sub"><a href="{% url 'lab_request_detail' lr.pk %}">{{ lr.number }}</a> · {{ p.full_name }} · {{ p.mrn }} · {{ orders|length }} test{{ orders|length|pluralize }}{% if lr.priority != 'routine' %} · <span class="tag {% if lr.priority == 'stat' %}red{% else %}amber{% endif %}">{{ lr.get_priority_display }}</span>{% endif %}</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'lab_request_detail' lr.pk %}"><i class="bi bi-arrow-left"></i>Request</a>{% endblock %}
+{% block content %}
+{% if not orders %}<div class="alert-mf warn"><i class="bi bi-exclamation-triangle"></i><div>Every test in this request is already done or cancelled, so there is nothing to send out.</div></div>{% else %}
+<form method="post" class="grid g-main" id="xl-form">{% csrf_token %}
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2><span class="xl-step">1</span>Which laboratory?</h2></div>
+      <div class="xl-where">
+        <label class="xl-where-opt"><input type="radio" name="where" value="network" {% if form.where != 'other' %}checked{% endif %}>
+          <span><i class="bi bi-diagram-3"></i><b>From the network directory</b><small>Labs on E-MedFlow find the request with the patient's phone number. Others get a one-time link.</small></span></label>
+        <label class="xl-where-opt"><input type="radio" name="where" value="other" {% if form.where == 'other' %}checked{% endif %}>
+          <span><i class="bi bi-shop"></i><b>Another laboratory</b><small>Not in the directory. They receive a one-time link and open it with the patient's phone number.</small></span></label>
+      </div>
+
+      <div class="xl-pane" data-pane="network">
+        <input class="form-control mb-2" id="fac-search" placeholder="Search labs by name, town or test (e.g. hormone, MRI, Kanifing)…" aria-label="Search labs">
+        <div class="xl-facs" role="radiogroup" aria-label="Network laboratories">
+          {% for f in facilities %}
+          <label class="xl-fac" data-search="{{ f.name|lower }} {{ f.location|lower }} {{ f.capabilities|lower }} {{ f.get_kind_display|lower }}">
+            <input type="radio" name="facility" value="{{ f.pk }}" data-platform="{{ f.on_platform|yesno:'1,0' }}" data-phone="{{ f.phone }}" data-email="{{ f.email }}" {% if form.facility == f.pk|stringformat:'s' %}checked{% endif %}>
+            <span class="xl-fac-body">
+              <span class="xl-fac-top"><b>{{ f.name }}</b>{% if f.on_platform %}<span class="tag teal"><i class="bi bi-lightning-charge-fill"></i>On E-MedFlow</span>{% else %}<span class="tag"><i class="bi bi-link-45deg"></i>One-time link</span>{% endif %}</span>
+              <span class="small muted">{{ f.get_kind_display }}{% if f.location %} · {{ f.location }}{% endif %}{% if f.phone %} · {{ f.phone }}{% endif %}</span>
+              {% if f.capability_list %}<span class="xl-caps">{% for c in f.capability_list|slice:':5' %}<em>{{ c }}</em>{% endfor %}</span>{% endif %}
+            </span>
+            <i class="bi bi-check-circle-fill tick"></i>
+          </label>
+          {% empty %}<p class="muted small">No facilities in the directory yet. Choose <b>Another laboratory</b>, or add facilities under Configuration.</p>{% endfor %}
+        </div>
+        <div class="xl-hint mt-2" id="fac-hint" hidden></div>
+      </div>
+
+      <div class="xl-pane" data-pane="other" hidden>
+        <div class="row g-2">
+          <div class="col-md-6"><label class="form-label" for="lab_name">Laboratory name</label><input class="form-control" id="lab_name" name="lab_name" value="{{ form.lab_name }}" placeholder="e.g. Westfield Medical Laboratory"></div>
+          <div class="col-md-6"><label class="form-label" for="lab_address">Address</label><input class="form-control" id="lab_address" name="lab_address" value="{{ form.lab_address }}" placeholder="Street, town"></div>
+          <div class="col-md-6"><label class="form-label" for="lab_phone">Lab WhatsApp / phone</label><input class="form-control" id="lab_phone" name="lab_phone" value="{{ form.lab_phone }}" inputmode="tel" placeholder="+220 …"></div>
+          <div class="col-md-6"><label class="form-label" for="lab_email">Lab email</label><input class="form-control" id="lab_email" name="lab_email" value="{{ form.lab_email }}" type="email" placeholder="lab@example.gm"></div>
+        </div>
+        <p class="form-text mb-0">At least a phone number or an email: that is where the one-time link goes.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2><span class="xl-step">2</span>The patient's phone number</h2><span class="hint">the lab types it to open the request</span></div>
+      <div class="xl-phone">
+        <i class="bi bi-phone"></i>
+        <input class="form-control form-control-lg" name="patient_phone" value="{{ phone|default:'' }}" inputmode="tel" required placeholder="+220 …" aria-label="Patient phone number" id="patient_phone">
+      </div>
+      {% if not p.phone %}<label class="form-check mt-2"><input class="form-check-input" type="checkbox" name="save_phone" value="1" checked> <span class="form-check-label">Also save this number on {{ p.first_name }}'s record</span></label>{% endif %}
+      <p class="form-text mb-0">Check it with the patient now. At the lab they will be asked for this number, so use a phone the patient will have with them. Without it, the lab cannot open the request.</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2><span class="xl-step">3</span>Instructions</h2></div>
+      <label class="form-label" for="instructions">For the patient <span class="muted small">(printed on their slip and sent in their message)</span></label>
+      <div class="xl-chips mb-2" data-target="instructions">
+        <button type="button" class="chip" data-add="Come fasting: nothing to eat for 8–12 hours before the test (water is fine).">Fasting</button>
+        <button type="button" class="chip" data-add="Bring the first urine of the morning in a clean container.">Morning urine</button>
+        <button type="button" class="chip" data-add="Take your usual medicines unless the doctor told you otherwise.">Usual medicines</button>
+        <button type="button" class="chip" data-add="Go today if you can.">Go today</button>
+        <button type="button" class="chip" data-add="Bring this paper and your phone.">Bring slip &amp; phone</button>
+      </div>
+      <textarea class="form-control mb-3" id="instructions" name="instructions" rows="2">{{ form.instructions }}</textarea>
+      <label class="form-label" for="note_to_lab">Note for the laboratory <span class="muted small">(optional)</span></label>
+      <textarea class="form-control mb-3" id="note_to_lab" name="note_to_lab" rows="2" placeholder="e.g. please phone critical results to the ward on +220 …">{{ form.note_to_lab }}</textarea>
+      <label class="form-label" for="days">The request stays open for</label>
+      <div class="d-flex align-items-center gap-2"><input class="form-control" style="max-width:110px" type="number" min="1" max="{{ max_days }}" id="days" name="days" value="{{ form.days|default:days }}"><span>days</span></div>
+    </section>
+  </div>
+
+  <aside class="stack align-self-start xl-side">
+    <section class="panel">
+      <div class="label-sm mb-2"><i class="bi bi-droplet-half me-1"></i>Going out</div>
+      <ul class="plain ruled mb-3">{% for o in orders %}<li class="d-flex gap-2"><span>{{ o.test.name }}</span><span class="ms-auto small muted">{{ o.test.sample_type }}</span></li>{% endfor %}</ul>
+      {% if lr.clinical_notes %}<p class="small"><b>Clinical notes:</b> {{ lr.clinical_notes }}</p>{% endif %}
+      <div class="xl-how" id="xl-how" data-mode="network">
+        <div class="label-sm mb-2">What happens next</div>
+        <ol class="xl-flow">
+          <li><i class="bi bi-send"></i><span data-net="The lab sees it is expected (no name shown)." data-link="You send the lab a one-time link (WhatsApp, SMS or email).">The lab sees it is expected (no name shown).</span></li>
+          <li><i class="bi bi-person-walking"></i><span>The patient goes to the lab with their slip.</span></li>
+          <li><i class="bi bi-phone"></i><span data-net="The lab types the patient's phone number: the request opens." data-link="The lab opens the link and types the patient's phone number. The link then works on that device only.">The lab types the patient's phone number: the request opens.</span></li>
+          <li><i class="bi bi-clipboard2-pulse"></i><span>Results come back here, with flags. Our lab verifies them.</span></li>
+        </ol>
+      </div>
+      <button class="btn btn-primary w-100 mt-2"><i class="bi bi-send-arrow-up"></i>Send to the lab</button>
+    </section>
+    {% if past %}<section class="panel"><div class="label-sm mb-2">Earlier send-outs</div>{% for x in past %}<div class="small"><a href="{% url 'extlab_detail' x.pk %}">{{ x.reference }}</a> · {{ x.lab_name }} · {{ x.display_status }}</div>{% endfor %}</section>{% endif %}
+  </aside>
+</form>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script>
+(() => {
+  const form = document.getElementById('xl-form'); if (!form) return;
+  const panes = form.querySelectorAll('.xl-pane'), how = document.getElementById('xl-how'), hint = document.getElementById('fac-hint');
+  const mode = () => {
+    const where = form.querySelector('input[name="where"]:checked').value;
+    panes.forEach(p => p.hidden = p.dataset.pane !== where);
+    const fac = form.querySelector('input[name="facility"]:checked');
+    const net = where === 'network' && fac && fac.dataset.platform === '1';
+    how.dataset.mode = net ? 'network' : 'link';
+    how.querySelectorAll('[data-net]').forEach(s => s.textContent = net ? s.dataset.net : s.dataset.link);
+    if (where === 'network' && fac) {
+      hint.hidden = false;
+      hint.innerHTML = net ? '<i class="bi bi-lightning-charge-fill"></i> This lab is on E-MedFlow: it only needs the patient\u2019s phone number. No link to send.'
+        : (fac.dataset.phone || fac.dataset.email) ? '<i class="bi bi-link-45deg"></i> This lab has no E-MedFlow login yet: you will send it a one-time link.'
+        : '<i class="bi bi-exclamation-triangle"></i> This lab has no phone or email in the directory. Choose <b>Another laboratory</b> and type them, or add them under Configuration.';
+    } else hint.hidden = true;
+  };
+  form.addEventListener('change', e => { if (e.target.name === 'where' || e.target.name === 'facility') mode(); });
+  mode();
+  const search = document.getElementById('fac-search');
+  search?.addEventListener('input', () => { const q = search.value.trim().toLowerCase(); form.querySelectorAll('.xl-fac').forEach(f => f.hidden = q && !f.dataset.search.includes(q)); });
+  form.querySelectorAll('.xl-chips .chip').forEach(c => c.addEventListener('click', () => {
+    const t = document.getElementById(c.parentElement.dataset.target);
+    if (!t.value.includes(c.dataset.add)) t.value = (t.value.trim() + ' ' + c.dataset.add).trim();
+    c.classList.add('on'); t.focus();
+  }));
+})();
+</script>{% endblock %}

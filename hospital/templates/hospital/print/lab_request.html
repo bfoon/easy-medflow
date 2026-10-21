@@ -1,0 +1,67 @@
+{% extends 'hospital/print/_base.html' %}{% load medflow %}
+{% block title %}Lab request {{ lr.number }}{% endblock %}
+{% block back %}{% url 'lab_request_detail' lr.pk %}{% endblock %}
+{% block sizes %}<a href="?size=a4" class="{% if size == 'a4' %}on{% endif %}">A4</a><a href="?size=a5" class="{% if size == 'a5' %}on{% endif %}">A5</a>{% endblock %}
+{% block page %}
+<article class="pd-sheet">
+  <header class="pd-head">
+    <div class="pd-org"><b>{{ h.name }}</b>{% if h.address %}<span>{{ h.address }}</span>{% endif %}{% if h.phone %}<span>Tel. {{ h.phone }}</span>{% endif %}</div>
+    <div class="pd-title"><span>Laboratory request</span><b>{{ lr.number }}</b>{% if s %}<em>{{ s.reference }}</em>{% endif %}</div>
+    <div class="pd-qr">{{ qr }}</div>
+  </header>
+  {% if lr.priority != 'routine' %}<div class="pd-band {% if lr.priority == 'stat' %}red{% else %}amber{% endif %}"><i class="bi bi-lightning-charge-fill"></i>{{ lr.get_priority_display }}</div>{% endif %}
+
+  <section class="pd-grid">
+    <div><span>Patient</span><b>{{ p.full_name }}</b></div>
+    <div><span>Hospital no.</span><b>{{ p.mrn }}</b></div>
+    <div><span>Sex · age</span><b>{{ p.get_sex_display }}{% if p.age is not None %} · {{ p.age }} y{% endif %}</b></div>
+    <div><span>Date of birth</span><b>{{ p.dob|date:'j M Y' }}</b></div>
+    <div class="wide"><span>Allergies</span><b class="{% if allergies %}pd-red{% endif %}">{% for a in allergies %}{{ a.substance }}{% if not forloop.last %}, {% endif %}{% empty %}None recorded{% endfor %}</b></div>
+    <div><span>Requested</span><b>{{ lr.created_at|date:'j M Y H:i' }}</b></div>
+  </section>
+  {% if lr.clinical_notes %}<p class="pd-notes"><b>Clinical details:</b> {{ lr.clinical_notes }}</p>{% endif %}
+
+  <table class="pd-table">
+    <thead><tr><th></th><th>Test</th><th>Sample · container</th><th>Usual time</th><th class="c">Taken</th></tr></thead>
+    <tbody>{% for row in orders %}{% with t=row.o.test %}
+      <tr><td class="tube">{% if row.tube %}<span class="pd-tube" style="--tube:{{ row.tube.color }}" title="{{ row.tube.name }}"></span>{% endif %}</td>
+        <td><b>{{ t.name }}</b> <small>{{ t.code }}</small></td><td>{{ t.sample_type|default:'—' }}{% if t.container %}<small class="d-block">{{ t.container }}</small>{% endif %}</td>
+        <td>~{{ t.turnaround_hours }} h</td><td class="c"><span class="pd-box"></span></td></tr>
+    {% endwith %}{% endfor %}</tbody>
+  </table>
+
+  <section class="pd-fill">
+    <div><span>Sample taken by</span><i></i></div><div><span>Date · time</span><i></i></div><div><span>Sample no.</span><i>{{ lr.specimen_id }}</i></div>
+  </section>
+
+  <footer class="pd-sign">
+    <div><span>Requested by</span><b>{{ lr.requested_by|display_name|default:'—' }}</b>{% if licence %}<small>Licence {{ licence }}</small>{% endif %}</div>
+    <div class="pd-sigline"><i></i><span>Signature · stamp</span></div>
+  </footer>
+
+  {% if s %}
+  <section class="pd-dest">
+    <i class="bi bi-geo-alt-fill"></i>
+    <div><span>To be done at</span><b>{{ s.lab_name }}</b><small>{% if s.lab_address %}{{ s.lab_address }}{% endif %}{% if s.lab_phone %} · {{ s.lab_phone }}{% endif %}</small></div>
+    <div class="ms-auto text-end"><span>Reference</span><b>{{ s.reference }}</b><small>open until {{ s.expires_at|date:'j M Y' }}</small></div>
+  </section>
+  {% if s.note_to_lab %}<p class="pd-notes"><b>Note for the lab:</b> {{ s.note_to_lab }}</p>{% endif %}
+  <p class="pd-small">Laboratory: {% if s.channel == 'network' %}open this request in E-MedFlow (Lab requests) with the patient's phone number.{% else %}open the secure link sent to you by {{ h.name }} and enter the patient's phone number.{% endif %} Results go straight back to the hospital.</p>
+
+  <div class="pd-cut"><i class="bi bi-scissors"></i><span>Patient copy · cut here</span></div>
+
+  <section class="pd-slip">
+    <div class="pd-slip-head"><div><span>Your laboratory tests</span><b>{{ p.first_name }} {{ p.last_name }}</b></div><div class="pd-slip-ref">{{ s.reference }}</div></div>
+    <ol class="pd-steps">
+      <li><b>Go to {{ s.lab_name }}</b>{% if s.lab_address %}, {{ s.lab_address }}{% endif %}{% if s.lab_phone %} (tel. {{ s.lab_phone }}){% endif %}, before <b>{{ s.expires_at|date:'j F Y' }}</b>.</li>
+      <li>Give them <b>your phone number</b> (the one ending in <b>{{ s.masked_phone|slice:'-3:' }}</b>) and show this paper. That is how they find your request.</li>
+      {% if s.instructions %}<li>{{ s.instructions }}</li>{% elif fasting %}<li>Some of these tests may need you to come <b>fasting</b>. Ask the hospital if you are not sure.</li>{% endif %}
+      <li>Your results go <b>directly to your doctor</b>. You do not need to bring them back.</li>
+    </ol>
+    <p class="pd-small mb-0">Tests: {% for row in orders %}{{ row.o.test.name }}{% if not forloop.last %}, {% endif %}{% endfor %}. Questions: {{ h.name }}{% if h.phone %}, {{ h.phone }}{% endif %}.</p>
+  </section>
+  {% else %}
+  <p class="pd-small pd-foot">For the laboratory of {{ h.name }}. Printed {% now 'j M Y H:i' %}.</p>
+  {% endif %}
+</article>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% load medflow %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} · {{ h.name }}</title>
+  <link href="{% asset 'hospital/vendor/fonts/fonts.css' %}" rel="stylesheet">
+  <link href="{% asset 'hospital/vendor/bootstrap-icons/bootstrap-icons.min.css' %}" rel="stylesheet">
+  <link href="{% asset 'hospital/css/print-docs.css' %}" rel="stylesheet">
+  <style>@page{size:{% if size == 'a5' %}A5{% else %}A4{% endif %};margin:{% if size == 'a5' %}9mm{% else %}12mm{% endif %}}</style>
+</head>
+<body class="pd size-{{ size }}">
+  <nav class="pd-bar">
+    <a href="{% block back %}/{% endblock %}"><i class="bi bi-arrow-left"></i>Back</a>
+    {% block sizes %}{% endblock %}
+    <button onclick="window.print()" class="pd-primary"><i class="bi bi-printer"></i>Print</button>
+  </nav>
+  {% block page %}{% endblock %}
+  <script>if (location.hash === '#print') window.addEventListener('load', () => setTimeout(() => window.print(), 300));</script>
+</body>
+</html>

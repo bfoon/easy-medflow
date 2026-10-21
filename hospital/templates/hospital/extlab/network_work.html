@@ -1,0 +1,8 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block head %}<link href="{% asset 'hospital/css/extlab.css' %}" rel="stylesheet">{% endblock %}
+{% block title %}{{ s.reference }}{% endblock %}
+{% block heading %}Lab request {{ s.reference }}{% endblock %}
+{% block subheading %}<p class="sub">From {{ h.name }}</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'xl_network' %}"><i class="bi bi-arrow-left"></i>Lab requests</a>{% if not done %}<button class="btn btn-ghost" onclick="window.print()"><i class="bi bi-printer"></i>Print</button>{% endif %}{% endblock %}
+{% block content %}{% include 'hospital/extlab/_workbench.html' %}{% endblock %}
+{% block scripts %}{% include 'hospital/extlab/_workbench_js.html' %}{% endblock %}

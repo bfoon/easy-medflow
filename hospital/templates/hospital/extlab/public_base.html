@@ -1,0 +1,29 @@
+{% load medflow %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>{% block title %}Laboratory request{% endblock %} · {{ h.name }}</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230F2C3F'/><path d='M4 17h6l2-5 4 10 3-8 2 3h7' fill='none' stroke='%233FE0B0' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <link href="{% asset 'hospital/vendor/fonts/fonts.css' %}" rel="stylesheet">
+  <link href="{% asset 'hospital/vendor/bootstrap.min.css' %}" rel="stylesheet">
+  <link href="{% asset 'hospital/vendor/bootstrap-icons/bootstrap-icons.min.css' %}" rel="stylesheet">
+  <link href="{% asset 'hospital/css/medflow.css' %}" rel="stylesheet">
+  <link href="{% asset 'hospital/css/extlab.css' %}" rel="stylesheet">
+</head>
+<body class="xl-public">
+  <header class="xl-pub-head">
+    <svg width="34" height="34" viewBox="0 0 38 38" aria-hidden="true"><rect width="38" height="38" rx="11" fill="#18405A"/><path d="M5 20h7l2.5-6 4.5 12 3.5-9 2.5 3H33" fill="none" stroke="#3FE0B0" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div><b>{{ h.name }}</b><small>Laboratory request · secure page</small></div>
+    {% if h.phone %}<a class="ms-auto xl-pub-call" href="tel:{{ h.phone }}"><i class="bi bi-telephone"></i><span>{{ h.phone }}</span></a>{% endif %}
+  </header>
+  <main class="xl-pub-main">
+    {% if messages %}<div class="mb-3">{% for m in messages %}<div class="alert-mf {% if m.tags == 'error' %}danger{% elif m.tags == 'warning' %}warn{% else %}info{% endif %} mb-2"><i class="bi bi-info-circle"></i><div>{{ m }}</div></div>{% endfor %}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="xl-pub-foot">Powered by E-MedFlow · This page contains confidential patient information. Do not share the link.</footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

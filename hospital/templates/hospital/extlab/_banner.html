@@ -1,0 +1,7 @@
+{% load medflow %}<a class="xl-banner tone-{{ s.tone }}" href="{% url 'extlab_detail' s.pk %}">
+  <span class="xl-banner-ico"><i class="bi bi-geo-alt-fill"></i></span>
+  <span class="flex-fill min-w-0"><b>With {{ s.lab_name }}</b> · {{ s.reference }} · <span class="tag {{ s.tone }}">{{ s.display_status }}</span>
+    <span class="d-block small">{% if s.channel == 'network' %}On E-MedFlow: they open it with the patient's phone number.{% else %}One-time link{% if s.claimed_at %}, opened {{ s.claimed_at|date:'j M H:i' }}{% else %}, not opened yet{% endif %}.{% endif %} Open until {{ s.expires_at|date:'j M' }}. Our lab does not collect this sample.</span></span>
+  <span class="xl-banner-steps" aria-hidden="true">{% for st in s.track %}<i class="{{ st.state }}"></i>{% endfor %}</span>
+  <i class="bi bi-chevron-right"></i>
+</a>

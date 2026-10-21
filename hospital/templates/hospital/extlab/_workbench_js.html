@@ -1,0 +1,30 @@
+<script>
+(() => {
+  // Live flags as the lab types, using the hospital's ranges (the server flags again on save).
+  const FLAG = {N: ['Normal', 'n'], L: ['Low', 'l'], H: ['High', 'h'], LL: ['Critical low', 'c'], HH: ['Critical high', 'c'], A: ['Abnormal', 'h']};
+  const num = v => v === '' || v == null ? null : Number(v);
+  const flagOf = el => {
+    const v = el.value.trim(); if (!v) return '';
+    if (el.dataset.kind === 'choice') return (el.dataset.abn || '').split('|').includes(v) ? 'A' : 'N';
+    const x = Number(v.replace(',', '.')); if (Number.isNaN(x)) return '?';
+    const d = el.dataset, clo = num(d.clo), chi = num(d.chi), lo = num(d.lo), hi = num(d.hi);
+    if (clo !== null && x < clo) return 'LL'; if (chi !== null && x > chi) return 'HH';
+    if (lo !== null && x < lo) return 'L'; if (hi !== null && x > hi) return 'H'; return 'N';
+  };
+  const crit = document.getElementById('xl-crit');
+  const paint = el => {
+    const out = document.querySelector(`[data-flag-for="${el.id}"]`); if (!out) return;
+    const f = flagOf(el);
+    out.className = 'xl-flag' + (f && FLAG[f] ? ' f-' + FLAG[f][1] : f === '?' ? ' f-c' : '');
+    out.textContent = f === '?' ? 'Not a number' : f && FLAG[f] ? FLAG[f][0] : '';
+    el.closest('.xl-row')?.classList.toggle('crit', f === 'LL' || f === 'HH');
+    if (crit) crit.hidden = !document.querySelector('.xl-row.crit');
+  };
+  document.querySelectorAll('[data-kind]').forEach(el => { el.addEventListener('input', () => paint(el)); el.addEventListener('change', () => paint(el)); paint(el); });
+  // Enter moves to the next value, like a results sheet.
+  const inputs = [...document.querySelectorAll('.xl-sheet input, .xl-sheet select')];
+  inputs.forEach((el, i) => el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inputs[i + 1]?.focus(); } }));
+  const form = document.getElementById('xl-results');
+  form?.addEventListener('submit', e => { if (!confirm(form.dataset.xlConfirm)) e.preventDefault(); else form.querySelector('button[type="submit"],button:not([type])').disabled = true; });
+})();
+</script>

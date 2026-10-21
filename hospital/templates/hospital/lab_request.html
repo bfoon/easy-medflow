@@ -1,5 +1,5 @@
 {% extends 'hospital/base.html' %}{% load medflow evidence_tags %}
-{% block head %}<link href="{% asset 'hospital/css/guidance.css' %}" rel="stylesheet">{% if show_guidance %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet">{% endif %}{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/guidance.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/extlab.css' %}" rel="stylesheet">{% if show_guidance %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet">{% endif %}{% endblock %}
 {% block title %}{{ lr.number }}{% endblock %}
 {% block heading %}Lab request {{ lr.number }}{% endblock %}
 {% block subheading %}<p class="sub"><a href="{% url 'patient_chart' p.pk %}">{{ p.full_name }}</a> · {{ p.mrn }} · {{ p.get_sex_display }}{% if p.age is not None %}, {{ p.age }} yrs{% endif %} · requested {{ lr.created_at|date:'j M Y H:i' }}{% if lr.requested_by %} by {{ lr.requested_by|display_name }}{% endif %}
@@ -8,10 +8,13 @@
   <a class="btn btn-ghost" href="{% url 'patient_chart' p.pk %}#labs"><i class="bi bi-arrow-left"></i>Patient</a>
   <a class="btn btn-ghost" href="{% url 'patient_labs' p.pk %}"><i class="bi bi-person-arms-up"></i>Body map &amp; trends</a>
   {% if can_lab %}<a class="btn btn-ghost" href="{% url 'lab_label' lr.pk %}" target="_blank"><i class="bi bi-upc"></i>Label</a>{% endif %}
+  <a class="btn btn-ghost" href="{% url 'lab_request_print' lr.pk %}"><i class="bi bi-printer"></i>Print request</a>
   <a class="btn btn-ghost" href="{% url 'lab_report' lr.pk %}"><i class="bi bi-file-earmark-medical"></i>Lab report</a>
+  {% if sendout %}<a class="btn btn-ghost" href="{% url 'extlab_detail' sendout.pk %}"><i class="bi bi-geo-alt"></i>{{ sendout.reference }}</a>
+  {% elif can_send_out %}<a class="btn btn-ghost" href="{% url 'extlab_new' lr.pk %}"><i class="bi bi-send-arrow-up"></i>Send to outside lab</a>{% endif %}
   {% if doctor_report %}<a class="btn btn-ghost" href="{% url 'report_detail' doctor_report.pk %}"><i class="bi bi-file-earmark-person"></i>{{ doctor_report.number }}{% if doctor_report.status == 'draft' %} draft{% endif %}</a>{% endif %}
   {% if show_guidance %}<a class="btn btn-ghost" href="#guidance-panel"><i class="bi bi-signpost-split"></i>Guidance</a>{% endif %}
-  {% if can_lab %}
+  {% if can_lab and not sendout %}
     {% if lr.stage == 'ordered' %}<form method="post" action="{% url 'lab_request_action' lr.pk 'collect' %}" class="d-flex gap-1">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><input class="form-control" name="specimen_id" placeholder="Specimen ID" style="width:150px" aria-label="Specimen ID"><button class="btn btn-ink">Collected</button></form>
     {% elif lr.stage == 'collected' %}<form method="post" action="{% url 'lab_request_action' lr.pk 'process' %}">{% csrf_token %}<button class="btn btn-ink"><i class="bi bi-play-fill"></i>Process &amp; enter results</button></form>
     {% elif lr.stage == 'processing' or lr.stage == 'resulted' %}<a class="btn btn-primary" href="{% url 'lab_results_entry' lr.pk %}"><i class="bi bi-input-cursor-text"></i>{% if lr.stage == 'resulted' %}Review results{% else %}Enter results{% endif %}</a>{% endif %}
@@ -19,6 +22,7 @@
   {% endif %}
 {% endblock %}
 {% block content %}
+{% if sendout %}{% include 'hospital/extlab/_banner.html' with s=sendout %}{% endif %}
 {% if lr.clinical_notes %}<div class="alert-mf info mb-3"><i class="bi bi-chat-left-text"></i><div><b>Clinical notes:</b> {{ lr.clinical_notes }}</div></div>{% endif %}
 <div class="grid g-main">
   <div class="stack">
@@ -50,6 +54,8 @@
       {% for st in lr.STAGES %}<li data-st="{{ st }}">{{ st|title }}</li>{% endfor %}
     </ol>
     <dl class="kv mt-3"><dt>Specimen</dt><dd>{{ lr.specimen_id|default:'—' }}</dd><dt>Collected</dt><dd>{{ lr.collected_at|date:'j M H:i'|default:'—' }}</dd><dt>Tests</dt><dd>{{ lr.orders.all|length }}</dd></dl>
+    {% for x in sendouts_done %}<div class="xl-mini mt-3"><i class="bi bi-geo-alt"></i><div><a href="{% url 'extlab_detail' x.pk %}">{{ x.reference }}</a> · {{ x.lab_name }}<div class="small muted">{{ x.display_status }}{% if x.reported_at %} · {{ x.reported_at|date:'j M H:i' }}{% endif %}</div>
+      {% if x.report_file %}<a class="small" href="{% url 'extlab_file' x.pk %}" target="_blank"><i class="bi bi-paperclip"></i>Lab's own report</a>{% endif %}</div></div>{% endfor %}
   </aside>
 </div>
 {{ lr.stage|json_script:"stage" }}

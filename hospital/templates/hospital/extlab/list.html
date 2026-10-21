@@ -1,0 +1,35 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block head %}<link href="{% asset 'hospital/css/extlab.css' %}" rel="stylesheet">{% endblock %}
+{% block title %}Outside labs{% endblock %}
+{% block heading %}Laboratory{% endblock %}
+{% block subheading %}<p class="sub">Requests that patients take to a laboratory outside the hospital. They come back to the work board when results arrive.</p>{% endblock %}
+{% block content %}
+{% include 'hospital/lab/_nav.html' %}
+<div class="board mb-4">
+  {% for key, label, items in lanes %}
+  <section class="lane xl-lane xl-lane-{{ key }}" style="cursor:default">
+    <div class="lane-head">{{ label }}<span class="count">{{ items|length }}</span></div>
+    {% for s in items %}
+    {% with lr=s.lab_request p=s.lab_request.encounter.patient %}
+    <a class="xl-card prio-{{ lr.priority }}" href="{% url 'extlab_detail' s.pk %}">
+      <div class="d-flex gap-2 align-items-start">
+        <span class="avatar {{ p.sex }}">{{ p.initials }}</span>
+        <div class="flex-fill min-w-0"><b class="d-block text-truncate">{{ p.full_name }}</b>
+          <span class="small muted">{{ s.reference }} · {{ lr.number }} · {{ s.created_at|ago }} ago</span></div>
+        {% if s.channel == 'network' %}<i class="bi bi-lightning-charge-fill xl-ch" title="On E-MedFlow"></i>{% else %}<i class="bi bi-link-45deg xl-ch" title="One-time link"></i>{% endif %}
+      </div>
+      <div class="xl-card-lab"><i class="bi bi-geo-alt"></i>{{ s.lab_name }}</div>
+      <div class="small muted text-truncate">{% for o in lr.orders.all %}{% if o.status != 'cancelled' %}{{ o.test.name }}{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}</div>
+      <div class="xl-card-foot">
+        <span class="xl-banner-steps">{% for st in s.track %}<i class="{{ st.state }}"></i>{% endfor %}</span>
+        {% if s.is_locked %}<span class="tag red">Locked</span>{% elif s.is_expired %}<span class="tag red">Expired</span>{% elif s.status == 'reported' %}<span class="tag plum">Verify</span>{% else %}<span class="small muted">until {{ s.expires_at|date:'j M' }}</span>{% endif %}
+      </div>
+    </a>
+    {% endwith %}
+    {% empty %}<div class="empty">Nothing here.</div>{% endfor %}
+  </section>
+  {% endfor %}
+</div>
+{% if done %}<section class="panel"><div class="panel-head"><h2>Recently verified</h2></div>
+  <ul class="plain ruled">{% for s in done %}<li class="d-flex gap-2 flex-wrap"><a href="{% url 'extlab_detail' s.pk %}">{{ s.reference }}</a><span>{{ s.lab_request.encounter.patient.full_name }}</span><span class="muted">{{ s.lab_name }}</span><span class="ms-auto small muted">{{ s.reported_at|date:'j M H:i' }}</span></li>{% endfor %}</ul></section>{% endif %}
+{% endblock %}

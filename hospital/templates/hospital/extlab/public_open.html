@@ -1,0 +1,16 @@
+{% extends 'hospital/extlab/public_base.html' %}
+{% block title %}{{ s.reference }}{% endblock %}
+{% block content %}
+<section class="xl-gate">
+  <div class="xl-gate-ico"><i class="bi bi-shield-lock"></i></div>
+  <h1>Laboratory request <span>{{ s.reference }}</span></h1>
+  <p class="muted mb-3">{{ h.name }} has sent <b>{{ n_tests }} test{{ n_tests|pluralize }}</b> to <b>{{ s.lab_name }}</b>{% if is_urgent %} · <span class="tag red">{{ priority }}</span>{% endif %}.</p>
+  <form method="post" class="xl-gate-form" autocomplete="off">{% csrf_token %}
+    <label class="form-label" for="phone">Ask the patient for their phone number</label>
+    <div class="xl-phone"><i class="bi bi-phone"></i><input class="form-control form-control-lg" id="phone" name="phone" inputmode="tel" required autofocus placeholder="+220 …" aria-describedby="phone-help"></div>
+    {% if error %}<div class="alert-mf danger mt-2"><i class="bi bi-x-circle"></i><div>{{ error }}</div></div>{% endif %}
+    <button class="btn btn-primary btn-lg w-100 mt-3"><i class="bi bi-unlock"></i>Open the request</button>
+    <p class="form-text mt-3 mb-0" id="phone-help"><i class="bi bi-info-circle"></i> The request opens only when the patient is with you. After it opens, this link works <b>on this device only</b> and closes once you send the results. Open until {{ s.expires_at|date:'j M Y' }}.</p>
+  </form>
+</section>
+{% endblock %}

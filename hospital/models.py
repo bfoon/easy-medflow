@@ -1032,3 +1032,4 @@ from .models_notes import NoteRevision, ClinicalNoteAsk  # noqa: E402,F401
 from .models_programmes import (Programme, ProgrammeMember, ProgrammeStep, Enrolment, ProgrammeVisit,  # noqa: E402,F401
                                 TracingAttempt, ProgrammeMessage, ProgrammeAIRun)
 from .models_mortality import DeathRecord, Autopsy, MortalityReview, StudyCase  # noqa: E402,F401
+from .models_extlab import ExternalLabReferral  # noqa: E402,F401

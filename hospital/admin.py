@@ -74,6 +74,16 @@ class LabRequestAdmin(admin.ModelAdmin):
     inlines = [LabOrderInline]
 
 
+@admin.register(models.ExternalLabReferral)
+class ExternalLabReferralAdmin(admin.ModelAdmin):
+    list_display = ('reference', 'lab_request', 'lab_name', 'channel', 'status', 'expires_at', 'failed_attempts', 'created_at')
+    list_filter = ('status', 'channel')
+    search_fields = ('reference', 'lab_name')
+    readonly_fields = ('reference', 'phone_local', 'token_issued_at', 'claimed_at', 'failed_attempts', 'locked_at', 'arrived_at',
+                       'collected_at', 'reported_at', 'reported_by', 'reported_by_name', 'created_by')
+    exclude = ('token_hash', 'claim_hash')      # link secrets are never shown or edited
+
+
 class SlotInline(admin.TabularInline):
     model = models.SpecialistSlot
     extra = 3

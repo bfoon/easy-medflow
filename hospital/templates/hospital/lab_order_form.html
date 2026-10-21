@@ -1,6 +1,6 @@
 {% extends 'hospital/base.html' %}{% load medflow %}
 {% block title %}Order tests{% endblock %}
-{% block head %}<link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endblock %}
+{% block head %}<link href="{% asset 'hospital/css/extlab.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/drflow.css' %}" rel="stylesheet">{% endblock %}
 {% block heading %}New lab request{% endblock %}
 {% block subheading %}<p class="sub">Pick a visit and tick every test you need. They go to the lab together as one request for this patient.</p>{% endblock %}
 {% block content %}
@@ -40,8 +40,13 @@
       <select class="form-select" id="priority" name="priority">{% for v, l in priorities %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
     <div class="field"><label class="form-label" for="clinical_notes">Clinical notes for the lab</label>
       <textarea class="form-control" id="clinical_notes" name="clinical_notes" rows="2" placeholder="e.g. chest pain 2 h, query ACS"></textarea></div>
+    <div class="field"><span class="form-label d-block">Where will the tests be done?</span>
+      <div class="where-pick">
+        <label><input type="radio" name="where" value="here" checked><span><i class="bi bi-hospital"></i><b>Our laboratory</b><small>Collected and run here</small></span></label>
+        <label><input type="radio" name="where" value="outside"><span><i class="bi bi-geo-alt"></i><b>An outside lab</b><small>The patient goes there; next you choose the lab</small></span></label>
+      </div></div>
     <input type="hidden" name="next" value="{{ request.GET.next }}">
-    <button class="btn btn-primary w-100" id="sum-btn" disabled><i class="bi bi-send"></i>Send request to lab</button>
+    <button class="btn btn-primary w-100" id="sum-btn" disabled><i class="bi bi-send"></i><span id="sum-btn-t">Send request to lab</span></button>
   </aside>
 </form>
 {% endblock %}
@@ -63,6 +68,8 @@
     onAddTest: id => { const b = boxes.find(x => x.value === String(id)); if (b) { b.checked = true; sync(); b.closest('.test-pick').scrollIntoView({behavior: 'smooth', block: 'center'}); } }});
   boxes.forEach(b => b.addEventListener('change', () => { sync(); ds.refresh(); })); sync();
   document.getElementById('enc').addEventListener('change', () => ds.refresh());
+  document.querySelectorAll('input[name="where"]').forEach(r => r.addEventListener('change', () => {
+    document.getElementById('sum-btn-t').textContent = r.value === 'outside' && r.checked ? 'Save and choose the outside lab' : 'Send request to lab'; }));
   let cat = '';
   const filter = () => {
     const q = document.getElementById('test-search').value.trim().toLowerCase();

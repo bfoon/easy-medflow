@@ -1,0 +1,53 @@
+{% extends 'hospital/base.html' %}{% load medflow %}
+{% block head %}<link href="{% asset 'hospital/css/extlab.css' %}" rel="stylesheet">{% endblock %}
+{% block title %}Lab requests{% endblock %}
+{% block heading %}Lab requests for {{ fac.name }}{% endblock %}
+{% block subheading %}<p class="sub">Patients sent to you by the hospital. When a patient arrives, type their phone number to open the request.</p>{% endblock %}
+{% block content %}
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel xl-finder">
+      <form method="post" autocomplete="off">{% csrf_token %}
+        <label class="form-label" for="phone"><b>Patient at the counter?</b> Type their phone number</label>
+        <div class="d-flex gap-2"><div class="xl-phone flex-fill"><i class="bi bi-phone"></i><input class="form-control form-control-lg" id="phone" name="phone" inputmode="tel" required autofocus placeholder="+220 …"></div>
+          <button class="btn btn-primary btn-lg"><i class="bi bi-search"></i>Find</button></div>
+      </form>
+      {% if found|length > 1 %}
+      <div class="label-sm mt-3 mb-2">{{ found|length }} requests for this patient</div>
+      <ul class="plain ruled">{% for s in found %}<li class="d-flex gap-2 align-items-center"><b>{{ s.reference }}</b><span>{{ s.lab_request.encounter.patient.full_name }}</span><span class="small muted">{{ s.created_at|date:'j M' }}</span><a class="btn btn-sm btn-ink ms-auto" href="{% url 'xl_network_work' s.pk %}">Open</a></li>{% endfor %}</ul>
+      {% endif %}
+    </section>
+
+    <section class="panel flush">
+      <div class="panel-head"><h2>Expected patients</h2><span class="hint">names appear once the phone number is given</span></div>
+      {% for s in expected %}{% with lr=s.lab_request p=s.lab_request.encounter.patient %}
+      <div class="xl-exp prio-{{ lr.priority }}">
+        <span class="avatar {{ p.sex }}">{% if s.pk in granted %}{{ p.initials }}{% else %}<i class="bi bi-person"></i>{% endif %}</span>
+        <div class="flex-fill min-w-0">
+          <b>{% if s.pk in granted %}{{ p.full_name }}{% else %}{{ p.first_name }} {{ p.last_name|first }}.{% endif %}</b> <span class="small muted">· {{ s.reference }}</span>
+          {% if lr.priority != 'routine' %}<span class="tag {% if lr.priority == 'stat' %}red{% else %}amber{% endif %}">{{ lr.get_priority_display }}</span>{% endif %}
+          <div class="small muted text-truncate">{% for o in lr.orders.all %}{% if o.status != 'cancelled' %}{{ o.test.name }}{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}</div>
+          <div class="small muted">sent {{ s.created_at|date:'j M' }} · open until {{ s.expires_at|date:'j M' }} · phone ends {{ s.masked_phone|slice:'-3:' }}</div>
+        </div>
+        <span class="tag {{ s.tone }}">{{ s.display_status }}</span>
+        {% if s.pk in granted %}<a class="btn btn-sm btn-ink" href="{% url 'xl_network_work' s.pk %}">Open</a>{% endif %}
+      </div>
+      {% endwith %}{% empty %}<div class="empty">No patients expected right now.</div>{% endfor %}
+    </section>
+  </div>
+  <aside class="stack align-self-start">
+    <section class="panel">
+      <div class="panel-head"><h2>How it works</h2></div>
+      <ol class="xl-flow">
+        <li><i class="bi bi-bell"></i><span>You are notified when the hospital sends a patient.</span></li>
+        <li><i class="bi bi-phone"></i><span>The patient arrives: type their phone number. Only requests addressed to {{ fac.name }} can be found.</span></li>
+        <li><i class="bi bi-droplet-half"></i><span>Record the sample, then enter the results or attach your report.</span></li>
+        <li><i class="bi bi-send-check"></i><span>Results go straight into the patient's hospital record.</span></li>
+      </ol>
+      <p class="small muted mb-0">Every search is recorded. A request stays open for you for 8 hours after the phone number is entered.</p>
+    </section>
+    {% if recent_done %}<section class="panel"><div class="panel-head"><h2>Recently sent</h2></div>
+      <ul class="plain ruled small">{% for s in recent_done %}<li class="d-flex gap-2"><span>{{ s.reference }}</span><span class="muted">{{ s.reported_at|date:'j M H:i' }}</span>{% if s.report_file %}<a class="ms-auto" href="{% url 'extlab_file' s.pk %}" target="_blank"><i class="bi bi-paperclip"></i></a>{% endif %}</li>{% endfor %}</ul></section>{% endif %}
+  </aside>
+</div>
+{% endblock %}

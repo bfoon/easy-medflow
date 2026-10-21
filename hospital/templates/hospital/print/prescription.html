@@ -1,0 +1,46 @@
+{% extends 'hospital/print/_base.html' %}{% load medflow %}
+{% block title %}Prescription {{ p.number }}{% endblock %}
+{% block back %}{% url 'prescription_detail' p.pk %}{% endblock %}
+{% block sizes %}<a href="?size=a5{% if copy %}&copy=1{% endif %}" class="{% if size == 'a5' %}on{% endif %}">A5</a><a href="?size=a4{% if copy %}&copy=1{% endif %}" class="{% if size == 'a4' %}on{% endif %}">A4</a>
+  <a href="?size={{ size }}{% if not copy %}&copy=1{% endif %}" class="{% if copy %}on{% endif %}">Patient copy</a>{% endblock %}
+{% block page %}
+<article class="pd-sheet pd-rx state-{{ p.state }}">
+  {% if p.state == 'draft' %}<div class="pd-water">DRAFT · NOT VALID</div>{% elif p.state == 'cancelled' %}<div class="pd-water">CANCELLED</div>{% elif copy %}<div class="pd-water soft">PATIENT COPY</div>{% endif %}
+  <header class="pd-head">
+    <div class="pd-org"><b>{{ h.name }}</b>{% if h.address %}<span>{{ h.address }}</span>{% endif %}{% if h.phone %}<span>Tel. {{ h.phone }}</span>{% endif %}</div>
+    <div class="pd-title"><span>Prescription</span><b>{{ p.number }}</b><em>{{ p.signed_at|default:p.created_at|date:'j M Y' }}</em></div>
+    <div class="pd-qr">{{ qr }}</div>
+  </header>
+
+  <section class="pd-grid">
+    <div class="wide"><span>Patient</span><b>{{ patient.full_name }}</b></div>
+    <div><span>Hospital no.</span><b>{{ patient.mrn }}</b></div>
+    <div><span>Sex · age</span><b>{{ patient.get_sex_display }}{% if patient.age is not None %} · {{ patient.age }} y{% endif %}</b></div>
+    <div class="wide"><span>Allergies</span><b class="{% if allergies %}pd-red{% endif %}">{% for a in allergies %}{{ a.substance }}{% if a.severity == 'severe' %} (severe){% endif %}{% if not forloop.last %}, {% endif %}{% empty %}None recorded{% endfor %}</b></div>
+  </section>
+
+  <div class="pd-rx-symbol" aria-hidden="true">℞</div>
+  <ol class="pd-meds">
+    {% for row in items %}{% with i=row.i %}
+    <li class="{% if i.availability == 'unavailable' %}elsewhere{% endif %}">
+      <div class="pd-med-top"><b>{{ i.medication }}</b>{% if i.dose %} <span>{{ i.dose }}</span>{% endif %}
+        <span class="pd-qty">Qty <b>{{ i.quantity }}</b> <small>({{ row.words }})</small></span></div>
+      <div class="pd-dir">{{ i.directions }}</div>
+      {% if i.availability == 'unavailable' %}<div class="pd-tag"><i class="bi bi-shop"></i>Not available at our pharmacy · buy at a licensed pharmacy</div>{% endif %}
+      {% if i.dispensed_quantity %}<div class="pd-tag ok"><i class="bi bi-bag-check"></i>{{ i.dispensed_quantity }} dispensed by our pharmacy</div>{% endif %}
+    </li>
+    {% endwith %}{% endfor %}
+  </ol>
+  <p class="pd-small pd-count">{{ items|length }} medicine{{ items|length|pluralize }} on this prescription. Nothing may be added below this line.</p>
+  {% if p.notes %}<p class="pd-notes"><b>Notes:</b> {{ p.notes }}</p>{% endif %}
+
+  <footer class="pd-sign">
+    <div><span>Prescriber</span><b>{{ p.signed_by|display_name|default:'—' }}</b>{% if licence %}<small>Licence {{ licence }}</small>{% endif %}</div>
+    {% if p.signed_at %}<div class="pd-estamp"><i class="bi bi-patch-check-fill"></i><span>Electronically signed<br>{{ p.signed_at|date:'j M Y H:i' }}</span></div>{% endif %}
+    <div class="pd-sigline"><i></i><span>Signature · stamp</span></div>
+  </footer>
+  {% if p.state == 'dispensed' %}<div class="pd-stamp">Dispensed</div>{% elif p.state == 'partial' %}<div class="pd-stamp amber">Partly dispensed</div>{% endif %}
+
+  <p class="pd-small pd-foot">{% if valid_until %}Valid until {{ valid_until|date:'j M Y' }}. {% endif %}Pharmacies: scan the code (or open <span class="pd-url">{{ verify_url }}</span>) to check this prescription is genuine and what has already been dispensed{% if copy %}. This copy is for the patient's information and may not be dispensed{% endif %}.</p>
+</article>
+{% endblock %}

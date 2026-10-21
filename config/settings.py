@@ -149,6 +149,9 @@ EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
 EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='E-MedFlow <no-reply@e-medflow.local>')
 SITE_URL = env('SITE_URL', default='http://localhost:8000')   # used for links in emails
+HOSPITAL_NAME = env('HOSPITAL_NAME', default='E-MedFlow Hospital')       # printed headers and messages to patients and labs
+HOSPITAL_PHONE = env('HOSPITAL_PHONE', default='')
+HOSPITAL_ADDRESS = env('HOSPITAL_ADDRESS', default='')
 # Care programmes: the clinic name in patient reminders, and an optional SMS gateway (JSON POST {"to", "message"} with a
 # Bearer token). Without a gateway, SMS and WhatsApp reminders wait in the programme outbox for staff to send in one tap.
 MEDFLOW_CLINIC_NAME = env('MEDFLOW_CLINIC_NAME', default='')

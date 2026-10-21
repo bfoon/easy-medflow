@@ -1,0 +1,10 @@
+{% extends 'hospital/extlab/public_base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<section class="xl-gate">
+  <div class="xl-gate-ico muted"><i class="bi bi-lock"></i></div>
+  <h1>{{ title }}</h1>
+  <p class="muted">{{ message }}</p>
+  {% if h.phone %}<a class="btn btn-ghost mt-2" href="tel:{{ h.phone }}"><i class="bi bi-telephone"></i>Call {{ h.name }}</a>{% endif %}
+</section>
+{% endblock %}

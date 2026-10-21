@@ -1,0 +1,96 @@
+{% load medflow %}
+{% if done %}
+<section class="xl-gate">
+  <div class="xl-gate-ico ok"><i class="bi bi-check2-circle"></i></div>
+  <h1>{{ message }}</h1>
+  <p class="muted mb-0">{{ s.reference }}{% if s.reported_at %} · sent {{ s.reported_at|date:'j M Y H:i' }}{% endif %}{% if s.reported_by_name %} by {{ s.reported_by_name }}{% endif %}.
+    {% if not is_network %}For privacy this page no longer shows the patient's details. You can close it.{% endif %}</p>
+</section>
+{% else %}
+<div class="xl-wb">
+  {# ---------------------------------------------------------- the request (also what prints) #}
+  <article class="panel xl-req print-area">
+    <header class="xl-req-head">
+      <div><div class="label-sm">{{ h.name }} · laboratory request</div><h2 class="mb-0">{{ s.reference }} <span class="muted fw-normal">· {{ lr.number }}</span></h2></div>
+      <div class="text-end">{% if lr.priority != 'routine' %}<span class="tag {% if lr.priority == 'stat' %}red{% else %}amber{% endif %}">{{ lr.get_priority_display }}</span>{% endif %}
+        <div class="small muted">requested {{ lr.created_at|date:'j M Y H:i' }}</div></div>
+    </header>
+    <div class="xl-pt">
+      <span class="avatar {{ p.sex }}">{{ p.initials }}</span>
+      <div><b class="xl-pt-name">{{ p.full_name }}</b>
+        <div class="small">{{ p.get_sex_display }}{% if p.age is not None %} · {{ p.age }} years{% endif %} · born {{ p.dob|date:'j M Y' }} · hospital no. {{ p.mrn }}</div></div>
+      <span class="xl-verified ms-auto"><i class="bi bi-patch-check-fill"></i>Phone checked</span>
+    </div>
+    <div class="label-sm mt-3 mb-1">Tests</div>
+    <ul class="plain xl-tests">
+      {% for sec in sections %}{% with t=sec.o.test %}<li>
+        {% with tb=tubes|get_item:sec.o.pk %}{% if tb %}<span class="xl-tube" style="--tube:{{ tb.color }}" title="{{ tb.name }}"></span>{% else %}<span class="xl-tube none"></span>{% endif %}{% endwith %}
+        <div class="flex-fill"><b>{{ t.name }}</b> <span class="small muted">{{ t.code }}</span><div class="small muted">{{ t.sample_type|default:'—' }}{% if t.container %} · {{ t.container }}{% endif %} · {{ t.parameters.all|length }} value{{ t.parameters.all|length|pluralize }}</div></div>
+      </li>{% endwith %}{% endfor %}
+    </ul>
+    {% if lr.clinical_notes %}<p class="mb-1"><b>Clinical details:</b> {{ lr.clinical_notes }}</p>{% endif %}
+    {% if s.note_to_lab %}<p class="mb-1"><b>Note for the lab:</b> {{ s.note_to_lab }}</p>{% endif %}
+    {% if s.instructions %}<p class="mb-1"><b>Patient was told:</b> {{ s.instructions }}</p>{% endif %}
+    <p class="small muted mb-0">Requested by {{ lr.requested_by|display_name|default:'the hospital' }}{% if h.phone %} · questions or critical results: {{ h.phone }}{% endif %} · open until {{ s.expires_at|date:'j M Y' }}</p>
+  </article>
+
+  {# ---------------------------------------------------------- step 1: sample #}
+  <section class="panel xl-stepcard {% if s.status == 'collected' %}done{% endif %}">
+    <div class="panel-head"><h2><span class="xl-step">1</span>Sample taken</h2>{% if s.collected_at %}<span class="hint">{{ s.collected_at|date:'j M H:i' }}{% if s.specimen_ref %} · your no. {{ s.specimen_ref }}{% endif %}</span>{% endif %}</div>
+    {% if s.status != 'collected' %}
+    <form method="post" class="d-flex gap-2 flex-wrap">{% csrf_token %}<input type="hidden" name="action" value="collected">
+      <input class="form-control" style="max-width:260px" name="specimen_ref" placeholder="Your sample / accession no. (optional)" aria-label="Your sample number">
+      <button class="btn btn-ink"><i class="bi bi-droplet-half"></i>Sample taken</button></form>
+    <p class="form-text mb-0">Optional, but it lets the hospital see the patient came. You can also go straight to the results.</p>
+    {% else %}<p class="small mb-0"><i class="bi bi-check-circle-fill text-success"></i> Recorded. Come back to this page when the results are ready{% if not is_network %} (on this same device){% endif %}.</p>{% endif %}
+  </section>
+
+  {# ---------------------------------------------------------- step 2: results #}
+  <form method="post" enctype="multipart/form-data" class="panel xl-stepcard" id="xl-results" data-xl-confirm="Send these results to {{ h.name }}? You will not be able to change them afterwards.">{% csrf_token %}
+    <input type="hidden" name="action" value="results">
+    <div class="panel-head"><h2><span class="xl-step">2</span>Results</h2><span class="hint">enter the values, or attach your own report, or both</span></div>
+    {% if errors|get_item:'_' %}<div class="alert-mf danger mb-3"><i class="bi bi-exclamation-octagon"></i><div>{{ errors|get_item:'_' }}</div></div>{% endif %}
+    {% for sec in sections %}
+    <fieldset class="xl-sheet" style="--cat:{{ sec.o.test.category.color|default:'#5A6F7D' }}">
+      <legend><span class="cat-dot"></span>{{ sec.o.test.name }}</legend>
+      {% for r in sec.rows %}
+      <div class="xl-row {% if r.error %}err{% endif %}">
+        <label for="{{ r.key }}">{{ r.p.name }}{% if r.p.kind == 'text' %} <span class="muted small">(optional)</span>{% endif %}</label>
+        <div class="xl-in">
+          {% if r.p.kind == 'choice' %}
+            <select class="form-select" id="{{ r.key }}" name="{{ r.key }}" data-kind="choice" data-abn="{{ r.abn }}"><option value="">—</option>{% for c in r.p.choices %}<option {% if r.value == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+          {% elif r.p.kind == 'number' %}
+            <input class="form-control" id="{{ r.key }}" name="{{ r.key }}" value="{{ r.value }}" inputmode="decimal" autocomplete="off" data-kind="number" data-lo="{{ r.lo }}" data-hi="{{ r.hi }}" data-clo="{{ r.clo }}" data-chi="{{ r.chi }}">
+          {% else %}
+            <input class="form-control" id="{{ r.key }}" name="{{ r.key }}" value="{{ r.value }}" maxlength="500">
+          {% endif %}
+          <span class="xl-unit">{{ r.p.unit }}</span>
+        </div>
+        <span class="xl-ref small muted">{{ r.range }}</span>
+        <span class="xl-flag" data-flag-for="{{ r.key }}"></span>
+        {% if r.error %}<div class="xl-err">{{ r.error }}</div>{% endif %}
+      </div>
+      {% endfor %}
+      <textarea class="form-control form-control-sm mt-2" name="{{ sec.comment_key }}" rows="1" placeholder="Comment on {{ sec.o.test.name }} (optional)">{{ sec.comment }}</textarea>
+    </fieldset>
+    {% endfor %}
+
+    <div class="xl-upload {% if errors|get_item:'report_file' %}err{% endif %}">
+      <i class="bi bi-cloud-arrow-up"></i>
+      <div class="flex-fill"><label class="form-label mb-1" for="report_file"><b>Your lab's report</b> <span class="muted small">(PDF or photo, up to 10 MB)</span></label>
+        <input class="form-control" type="file" id="report_file" name="report_file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" capture="environment">
+        {% if errors|get_item:'report_file' %}<div class="xl-err">{{ errors|get_item:'report_file' }}</div>{% endif %}
+        <div class="form-text">If you attach your report, values you leave empty are taken from it.</div></div>
+    </div>
+    <label class="form-label mt-3" for="lab_comment">Message to the doctor <span class="muted small">(optional)</span></label>
+    <textarea class="form-control" id="lab_comment" name="lab_comment" rows="2">{{ post.lab_comment }}</textarea>
+    {% if not is_network %}
+    <label class="form-label mt-3" for="reported_by_name">Your name and role</label>
+    <input class="form-control {% if errors|get_item:'reported_by_name' %}is-invalid{% endif %}" id="reported_by_name" name="reported_by_name" value="{{ post.reported_by_name }}" placeholder="e.g. Isatou Ceesay, laboratory scientist" required>
+    {% if errors|get_item:'reported_by_name' %}<div class="xl-err">{{ errors|get_item:'reported_by_name' }}</div>{% endif %}
+    {% endif %}
+    <div class="xl-crit-warn" id="xl-crit" hidden><i class="bi bi-telephone-outbound-fill"></i><div><b>Critical value.</b> Send the results, then also telephone {{ h.name }}{% if h.phone %} on {{ h.phone }}{% endif %}.</div></div>
+    <button class="btn btn-primary btn-lg w-100 mt-3"><i class="bi bi-send-check"></i>Send results to {{ h.name }}</button>
+  </form>
+</div>
+{% endif %}
