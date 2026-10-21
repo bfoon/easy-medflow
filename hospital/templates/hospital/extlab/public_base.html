@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <meta name="referrer" content="no-referrer">
+  <meta name="referrer" content="same-origin">{# not no-referrer: browsers then send "Origin: null" on form posts and Django refuses them (CSRF) #}
   <title>{% block title %}Laboratory request{% endblock %} · {{ h.name }}</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230F2C3F'/><path d='M4 17h6l2-5 4 10 3-8 2 3h7' fill='none' stroke='%233FE0B0' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>">
   <link href="{% asset 'hospital/vendor/fonts/fonts.css' %}" rel="stylesheet">
