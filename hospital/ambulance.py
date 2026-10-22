@@ -537,7 +537,12 @@ def _tell_crew(call, amb):
 @transaction.atomic
 def advance(call, to, by, outcome='', note='', at=None):
     """Move the call (and its ambulance) to the next step of the journey."""
-    call = EmergencyCall.objects.select_for_update().select_related('ambulance', 'destination').get(pk=call.pk)
+    # PostgreSQL refuses FOR UPDATE on the nullable side of an outer join (ambulance and
+    # destination are optional), so lock only the call row here...
+    call = EmergencyCall.objects.select_for_update(of=('self',)).select_related('ambulance', 'destination').get(pk=call.pk)
+    # ...and lock the ambulance on its own, in the same order as dispatch() (call, then ambulance).
+    if call.ambulance_id:
+        call.ambulance = Ambulance.objects.select_for_update().get(pk=call.ambulance_id)
     if to not in FLOW.get(call.status, []):
         raise Refused(f'A call that is “{call.get_status_display().lower()}” cannot move to “{dict(EmergencyCall.STATUS).get(to, to).lower()}”.')
     if to == 'dispatched':
