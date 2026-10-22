@@ -48,6 +48,10 @@ CAPABILITIES = [
     ('death_certify', 'Certify the cause of death', 'Mortality', 'Write and sign the WHO medical certificate of cause of death. Usually doctors.'),
     ('autopsy', 'Perform autopsies', 'Mortality', 'Pathology: autopsy reports, organ findings and clinicopathological correlation. Opens the records of deceased patients.'),
     ('mortality_review', 'Mortality reviews and study cases', 'Mortality', 'M&M reviews, mortality statistics and publishing anonymised study cases to the library. Opens the records of deceased patients.'),
+    ('ambulance', 'See the ambulance board', 'Ambulance', 'The live map of ambulances and emergency calls, and patients arriving by ambulance.'),
+    ('ambulance_dispatch', 'Take emergency calls and send ambulances', 'Ambulance', 'The service desk: triage callers, confirm app requests, assign and cancel ambulances.'),
+    ('ambulance_crew', 'Work on an ambulance', 'Ambulance', 'Crew screen: directions, preparation checklist, vital signs, treatment and handover. Shows the known history of the call’s patient.'),
+    ('ambulance_fleet', 'Manage the ambulance fleet', 'Ambulance', 'Vehicles, readiness checks, crews on shift and phone-app devices.'),
     ('library', 'Clinical library', 'Knowledge', 'Anonymous summaries of diseases, treatments and outcomes at this hospital.'),
     ('drflow', 'Dr. Flow assistant', 'Knowledge', 'Ask Dr. Flow about medicines, tests, diseases and patients in your care.'),
     ('access_admin', 'Manage access and roles', 'Organisation', 'Create groups, choose capabilities, allocate staff and change roles.'),
@@ -67,6 +71,7 @@ EXTRA = {
     'radiology': {'patient_records', 'all_patients', 'pharmacy_view'},
     'finance': {'patient_records', 'all_patients', 'pharmacy_view'},
     'management': {'patient_records', 'all_patients', 'pharmacy_view', 'library', 'programme_admin', 'mortality_review'},
+    'paramedic': {'library', 'drflow', 'pharmacy_view'},
 }
 # Standard groups an administrator can create in one click (then edit).
 STANDARD_GROUPS = [
@@ -78,6 +83,8 @@ STANDARD_GROUPS = [
     ('Laboratory', 'lab', 'Laboratory work for any patient.'),
     ('Radiology', 'radiology', 'Imaging for any patient.'),
     ('Finance', 'finance', 'Bills and payments.'),
+    ('Ambulance dispatchers', 'dispatcher', 'The emergency service desk: take calls, send ambulances, manage the fleet.'),
+    ('Ambulance crews', 'paramedic', 'Paramedics and drivers: the crew screen with directions, preparation and handover.'),
     ('Management', 'management', 'Reports and the board; no clinical editing.'),
     ('Hospital administrators', 'admin', 'Everything, including access and roles.'),
 ]

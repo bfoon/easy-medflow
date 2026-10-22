@@ -1888,6 +1888,12 @@ def bed_maintenance(request, pk):
 ROLES['billing'] = {'finance', 'reception', 'admin'}
 ROLES['finance_admin'] = {'finance', 'admin'}
 ROLES['programmes'] = {'doctor', 'nurse', 'admin'}
+# Ambulance service (hospital/ambulance_views.py)
+ROLES['all'] |= {'dispatcher', 'paramedic', 'driver'}
+ROLES['ambulance'] = {'dispatcher', 'paramedic', 'driver', 'doctor', 'nurse', 'reception', 'management', 'admin'}
+ROLES['ambulance_dispatch'] = {'dispatcher', 'reception', 'nurse', 'admin'}
+ROLES['ambulance_crew'] = {'paramedic', 'driver', 'nurse', 'doctor', 'admin'}
+ROLES['ambulance_fleet'] = {'dispatcher', 'management', 'admin'}
 ROLES['programme_admin'] = {'admin'}
 
 

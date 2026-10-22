@@ -19,6 +19,8 @@ from . import programme_views as pgv
 from . import mortality_views as mv
 from . import extlab_views as xv
 from . import ward_views as wv
+from . import ambulance_views as amv
+from . import ambulance_api as ema
 
 urlpatterns = [
     path('', v.dashboard, name='dashboard'),
@@ -255,6 +257,45 @@ urlpatterns = [
     path('prescriptions/<int:pk>/dispense/', v.prescription_dispense, name='prescription_dispense'),
 
     path('beds/', v.beds, name='beds'),
+    # ambulance service (hospital/ambulance_views.py, API in hospital/ambulance_api.py)
+    path('ambulance/', amv.board, name='ems_board'),
+    path('ambulance/calls/new/', amv.call_new, name='ems_call_new'),
+    path('ambulance/calls/caller/', amv.caller_lookup, name='ems_caller_lookup'),
+    path('ambulance/calls/<int:pk>/', amv.call_detail, name='ems_call'),
+    path('ambulance/calls/<int:pk>/<str:action>/', amv.call_action, name='ems_call_action'),
+    path('ambulance/crew/', amv.crew, name='ems_crew'),
+    path('ambulance/crew/shift/', amv.crew_shift, name='ems_crew_shift'),
+    path('ambulance/fleet/', amv.fleet, name='ems_fleet'),
+    path('ambulance/fleet/<int:pk>/<str:action>/', amv.fleet_action, name='ems_fleet_action'),
+    path('ambulance/devices/new/', amv.device_new, name='ems_device_new'),
+    path('ambulance/devices/<int:pk>/revoke/', amv.device_revoke, name='ems_device_revoke'),
+    path('ambulance/insights/', amv.insights, name='ems_insights'),
+    path('ambulance/api/', amv.api_docs, name='ems_api_docs'),
+    path('e/<str:token>/', amv.track, name='ems_track'),
+    path('api/ems/v1/meta/', ema.meta, name='ems_api_meta'),
+    path('api/ems/v1/openapi.json', ema.openapi, name='ems_api_openapi'),
+    path('api/ems/v1/requests/', ema.request_create, name='ems_api_request_create'),
+    path('api/ems/v1/requests/<str:token>/', ema.request_status, name='ems_api_request_status'),
+    path('api/ems/v1/requests/<str:token>/location/', ema.request_location, name='ems_api_request_location'),
+    path('api/ems/v1/requests/<str:token>/message/', ema.request_message, name='ems_api_request_message'),
+    path('api/ems/v1/requests/<str:token>/cancel/', ema.request_cancel, name='ems_api_request_cancel'),
+    path('api/ems/v1/facilities/', ema.facilities, name='ems_api_facilities'),
+    path('api/ems/v1/auth/token/', ema.auth_token, name='ems_api_token'),
+    path('api/ems/v1/crew/me/', ema.crew_me, name='ems_api_crew_me'),
+    path('api/ems/v1/crew/status/', ema.crew_status, name='ems_api_crew_status'),
+    path('api/ems/v1/crew/position/', ema.crew_position, name='ems_api_crew_position'),
+    path('api/ems/v1/crew/observations/', ema.crew_observation, name='ems_api_crew_obs'),
+    path('api/ems/v1/crew/notes/', ema.crew_note, name='ems_api_crew_note'),
+    path('api/ems/v1/crew/prep/', ema.crew_prep, name='ems_api_crew_prep'),
+    path('api/ems/v1/crew/handover/', ema.crew_handover, name='ems_api_crew_handover'),
+    path('api/ems/v1/crew/available/', ema.crew_available, name='ems_api_crew_available'),
+    path('api/ems/v1/dispatch/board/', ema.board, name='ems_api_board'),
+    path('api/ems/v1/dispatch/calls/', ema.calls_create, name='ems_api_calls_create'),
+    path('api/ems/v1/dispatch/calls/<int:pk>/', ema.call_detail, name='ems_api_call'),
+    path('api/ems/v1/dispatch/calls/<int:pk>/recommend/', ema.recommend, name='ems_api_recommend'),
+    path('api/ems/v1/dispatch/calls/<int:pk>/assign/', ema.assign, name='ems_api_assign'),
+    path('api/ems/v1/dispatch/simulate/', ema.simulate, name='ems_api_simulate'),
+
     path('wards/', wv.wards_index, name='wards'),
     path('wards/new/', wv.ward_edit, name='ward_new'),
     path('wards/<int:pk>/', wv.ward_detail, name='ward_detail'),

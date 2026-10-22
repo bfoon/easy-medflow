@@ -16,7 +16,8 @@ class Department(Tracked):
     def __str__(self): return self.name
 
 class StaffProfile(Tracked):
-    ROLE=[(x,x.replace('_',' ').title()) for x in ['admin','doctor','nurse','reception','lab','radiology','pharmacy','finance','management','partner','specialist']]
+    ROLE=[(x,x.replace('_',' ').title()) for x in ['admin','doctor','nurse','reception','lab','radiology','pharmacy','finance','management','partner','specialist',
+                                                   'dispatcher','paramedic','driver']]
     user=models.OneToOneField(settings.AUTH_USER_MODEL,on_delete=models.CASCADE,related_name='hospital_staff')
     role=models.CharField(max_length=20,choices=ROLE)
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
@@ -705,6 +706,9 @@ class NetworkFacility(Tracked):
     email=models.EmailField(blank=True)
     capabilities=models.CharField(max_length=400,blank=True,help_text='Comma-separated, e.g. Cath lab, ICU, MRI')
     accepts_referrals=models.BooleanField(default=True)
+    latitude=models.FloatField(null=True,blank=True,help_text='Map position, so ambulances can be sent there')
+    longitude=models.FloatField(null=True,blank=True)
+    receives_ambulances=models.BooleanField(default=False,help_text='Has an emergency department that takes ambulance patients')
     class Meta: ordering=['name']
     @property
     def capability_list(self):return [c.strip() for c in self.capabilities.split(',') if c.strip()]
@@ -1068,3 +1072,5 @@ from .models_programmes import (Programme, ProgrammeMember, ProgrammeStep, Enrol
 from .models_mortality import DeathRecord, Autopsy, MortalityReview, StudyCase  # noqa: E402,F401
 from .models_extlab import ExternalLabReferral  # noqa: E402,F401
 from .models_wards import WardNote  # noqa: E402,F401
+from .models_ambulance import (EmsStation, Ambulance, CrewShift, EmergencyCall, CallEvent, CallObservation,  # noqa: E402,F401
+                               PositionPing, ApiDevice)

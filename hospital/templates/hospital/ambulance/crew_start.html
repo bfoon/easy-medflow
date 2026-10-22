@@ -1,0 +1,25 @@
+{% extends 'hospital/base.html' %}{% load static medflow %}
+{% block head %}{% include 'hospital/ambulance/_head.html' %}{% endblock %}
+{% block body_attrs %}class="cockpit"{% endblock %}
+{% block title %}Start your shift{% endblock %}
+{% block content %}
+<div class="ck">
+  <div class="ck-head"><div class="ck-unit"><span class="badge-u"><i class="bi bi-person-badge"></i></span><div><b>Start your shift</b><small>Choose your ambulance and your role on board.</small></div></div>
+    <div class="right"><a class="ck-btn" href="{% url 'ems_board' %}"><i class="bi bi-broadcast"></i> Board</a></div></div>
+  <form method="post" action="{% url 'ems_crew_shift' %}">{% csrf_token %}
+    <div class="ck-card mb-3"><h2>Your role on board</h2>
+      <div class="d-flex flex-wrap gap-2">{% for k, l in roles %}<label class="cpick" style="--pc:#3FE0B0"><input type="radio" name="role" value="{{ k }}" {% if forloop.counter == 2 %}checked{% endif %}><span style="min-height:auto;background:#0F2A3D;color:#fff;border-color:#2A5A78;padding:10px 16px">{{ l }}</span></label>{% endfor %}</div></div>
+    <div class="fleet">
+      {% for a in units %}
+      <label class="ck-card d-block" style="cursor:pointer">
+        <div class="d-flex align-items-center gap-2"><input type="radio" name="ambulance" value="{{ a.pk }}" class="form-check-input m-0" required {% if a.status == 'maintenance' %}disabled{% endif %}>
+          <b style="font-family:var(--display);font-size:1.2rem;color:#fff">{{ a.call_sign }}</b><span class="ms-auto small" style="color:#8FB0C2">{{ a.get_status_display }}</span></div>
+        <div class="small mt-1" style="color:#9DB8C8">{{ a.get_level_display }}{% if a.station %} · {{ a.station.name }}{% endif %}{% if a.plate %} · {{ a.plate }}{% endif %}</div>
+        <div class="small mt-1">{% for s in a.crew %}<span class="me-2"><i class="bi bi-person"></i> {{ s.user|display_name }} ({{ s.get_role_display|lower }})</span>{% empty %}<span style="color:#E0912A">No crew yet</span>{% endfor %}</div>
+      </label>
+      {% endfor %}
+    </div>
+    <button class="ck-next mt-3" style="--pc:#0F7B78"><i class="bi bi-play-circle"></i>Start shift</button>
+  </form>
+</div>
+{% endblock %}

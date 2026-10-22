@@ -1,0 +1,74 @@
+{% extends 'hospital/base.html' %}{% load static medflow %}
+{% block head %}{% include 'hospital/ambulance/_head.html' %}{% endblock %}
+{% block title %}New emergency call{% endblock %}
+{% block heading %}New emergency call{% endblock %}
+{% block subheading %}<p class="sub">Choose what happened, ask the questions, put the patient on the map. The priority updates as you go.</p>{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="{% url 'ems_board' %}"><i class="bi bi-broadcast"></i>Back to the board</a>{% endblock %}
+{% block content %}
+<form method="post" id="deskform" class="desk" autocomplete="off">{% csrf_token %}
+  <div class="stack">
+    <section class="panel">
+      <div class="step-h"><b>1</b><h2>What happened?</h2>
+        <select name="source" class="form-select form-select-sm ms-auto" style="width:auto" aria-label="How the call came in">{% for k, l in sources %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
+      <div class="cgrid" role="radiogroup" aria-label="Main complaint">
+        {% for c in complaints %}<label class="cpick pri-{{ c.base }}"><input type="radio" name="complaint" value="{{ c.key }}" {% if prefill.complaint == c.key or not prefill.complaint and forloop.last %}checked{% endif %}>
+          <span><i class="bi {{ c.icon }}"></i>{{ c.label }}</span></label>{% endfor %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="step-h"><b>2</b><h2>Ask the caller</h2><span class="muted small ms-auto">Unanswered questions do not change the priority</span></div>
+      <div class="qlist" id="qlist"></div>
+    </section>
+
+    <section class="panel">
+      <div class="step-h"><b>3</b><h2>Who is calling, and who is the patient?</h2></div>
+      <div class="row g-2">
+        <div class="col-md-5"><label class="form-label" for="caller_phone">Caller’s phone</label>
+          <input class="form-control" name="caller_phone" id="caller_phone" inputmode="tel" value="{{ prefill.caller_phone }}" placeholder="+220 …">
+          <div class="form-text">Known patients with this number appear below.</div></div>
+        <div class="col-md-4"><label class="form-label" for="caller_name">Caller’s name</label><input class="form-control" name="caller_name" id="caller_name"></div>
+        <div class="col-md-3"><label class="form-label" for="caller_relation">Relation</label><input class="form-control" name="caller_relation" id="caller_relation" list="relations" placeholder="Self, son…">
+          <datalist id="relations"><option value="Self"><option value="Husband"><option value="Wife"><option value="Son"><option value="Daughter"><option value="Mother"><option value="Neighbour"><option value="Passer-by"><option value="Police"><option value="Health centre"></datalist></div>
+      </div>
+      <div id="known"></div><input type="hidden" name="patient" id="patient">
+      <div class="row g-2 mt-1">
+        <div class="col-md-5"><label class="form-label" for="patient_name">Patient’s name</label><input class="form-control" name="patient_name" id="patient_name" placeholder="If known"></div>
+        <div class="col-4 col-md-2"><label class="form-label" for="patient_age">Age</label><input class="form-control" name="patient_age" id="patient_age" inputmode="numeric" placeholder="≈"></div>
+        <div class="col-4 col-md-3"><label class="form-label" for="patient_sex">Sex</label><select class="form-select" name="patient_sex" id="patient_sex"><option value="X">Not known</option><option value="F">Female</option><option value="M">Male</option></select></div>
+        <div class="col-4 col-md-2"><label class="form-label" for="patients_count">Patients</label><input class="form-control" name="patients_count" id="patients_count" type="number" min="1" max="99" value="1"></div>
+      </div>
+      <div class="mt-2"><label class="form-label" for="description">What the caller says</label><textarea class="form-control" name="description" id="description" rows="2" placeholder="In the caller’s words"></textarea></div>
+    </section>
+
+    <section class="panel">
+      <div class="step-h"><b>4</b><h2>Where is the patient?</h2></div>
+      <div class="row g-2 mb-2">
+        <div class="col-md-5"><label class="form-label" for="location">Town or area</label>
+          <select class="form-select" name="location" id="location"><option value="">Choose…</option>{% for p in places %}<option value="{{ p.id }}" data-lat="{{ p.lat }}" data-lon="{{ p.lon }}">{{ p.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-7"><label class="form-label" for="landmark">Landmark the crew will see</label><input class="form-control" name="landmark" id="landmark" placeholder="e.g. Behind Westfield mosque, green gate, opposite the bakery"></div>
+      </div>
+      <div class="pickmap" id="pickmap" aria-label="Click the map to place the patient"></div>
+      <div class="form-text" id="pinhint">Click the map where the patient is. Drag the pin to correct it.</div>
+      <input type="hidden" name="latitude" id="lat"><input type="hidden" name="longitude" id="lon">
+    </section>
+  </div>
+
+  <aside class="stack" style="position:sticky;top:12px">
+    <div class="verdict pri-3" id="verdict"><div><div class="big" id="v-p">P3</div><div class="small fw-bold" id="v-word">Urgent</div></div>
+      <div class="flex-fill"><div class="why" id="v-why">Choose what happened.</div><div class="why mt-1" id="v-target"></div></div>
+      <select name="priority" id="override" class="form-select form-select-sm" aria-label="Override priority" title="Change only with a clear reason"><option value="">Auto</option><option value="1">P1</option><option value="2">P2</option><option value="3">P3</option><option value="4">P4</option></select></div>
+    <section class="panel">
+      <div class="panel-head"><h2><i class="bi bi-megaphone me-1"></i>Read to the caller now</h2></div>
+      <ol class="firstaid" id="firstaid"></ol>
+      <p class="small muted mb-0 mt-2">Stay on the line if the patient is not breathing normally. Ask them to send someone to the road to wave the ambulance in.</p>
+    </section>
+    <button class="btn btn-primary btn-lg w-100" type="submit"><i class="bi bi-send"></i>Save and choose the ambulance</button>
+    <p class="small muted">Illustrative protocol: your medical director must approve the questions and instructions before real use.</p>
+  </aside>
+</form>
+{{ rules|json_script:"rules" }}{{ tiles|json_script:"ems-tiles" }}{{ home|json_script:"home" }}
+{{ pmeta|json_script:"pmeta" }}<script>window.DESK = {lookup: "{% url 'ems_caller_lookup' %}"};</script>
+{% endblock %}
+{% block scripts %}<script src="{% static 'hospital/vendor/leaflet/leaflet.js' %}"></script>
+<script src="{% asset 'hospital/js/ambulance-map.js' %}"></script><script src="{% asset 'hospital/js/ambulance-desk.js' %}"></script>{% endblock %}

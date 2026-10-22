@@ -1,0 +1,42 @@
+{% extends 'hospital/base.html' %}{% load static medflow %}
+{% block head %}{% include 'hospital/ambulance/_head.html' %}{% endblock %}
+{% block title %}Ambulance board{% endblock %}
+{% block heading %}Ambulance service{% endblock %}
+{% block subheading %}<p class="sub">Every ambulance and every emergency call, live. Click a call to see the best ambulance to send.</p>{% endblock %}
+{% block actions %}{% with tab='board' %}{% include 'hospital/ambulance/_tabs.html' %}{% endwith %}{% endblock %}
+{% block content %}
+<div class="ems-board">
+  <div class="ems-mapwrap">
+    <div id="emsmap" class="ems-map" role="application" aria-label="Map of ambulances and emergency calls"></div>
+    <div class="ems-kpis" aria-live="polite">
+      <div class="ems-kpi" id="k-wait"><b>–</b><span>waiting for an ambulance</span></div>
+      <div class="ems-kpi"><b id="k-free">–</b><span>ambulances free</span></div>
+      <div class="ems-kpi"><b id="k-active">–</b><span>on a job</span></div>
+      <div class="ems-kpi"><b id="k-resp">–</b><span>median response today</span></div>
+      <div class="ems-kpi"><b id="k-today">–</b><span>calls today</span></div>
+    </div>
+    <div class="ems-maptools">
+      {% if sim and can_dispatch %}<button type="button" id="sim" class="btn btn-ghost btn-sm" aria-pressed="false" title="Moves ambulances 12× faster than real time. For demos and training."><i class="bi bi-arrow-repeat"></i><span>Demo motion</span></button>{% endif %}
+      <button type="button" id="fit" class="btn btn-ghost btn-sm"><i class="bi bi-arrows-fullscreen"></i>Whole country</button>
+    </div>
+  </div>
+  <aside class="ems-side">
+    <section class="ems-sec">
+      <h2>Waiting <span class="n" id="n-wait">0</span>{% if can_dispatch %}<a href="{% url 'ems_call_new' %}"><i class="bi bi-plus-lg"></i> New call</a>{% endif %}</h2>
+      <div id="list-wait"></div>
+    </section>
+    <section class="ems-sec"><h2>On a job <span class="n" id="n-active">0</span></h2><div id="list-active"></div></section>
+    <section class="ems-sec" id="sec-in"><h2>Arriving at this hospital <span class="n" id="n-in">0</span></h2><div id="list-in"></div></section>
+    <section class="ems-sec"><h2>Fleet <a href="{% url 'ems_fleet' %}">Readiness</a></h2><div id="list-units"></div>
+      <div class="ems-legend">{% for p, word, col, target in priorities %}<span><i style="--lc:{{ col }}"></i>P{{ p }} {{ word }} · {{ target }} min</span>{% endfor %}</div>
+    </section>
+  </aside>
+</div>
+{{ payload|json_script:"ems-data" }}{{ tiles|json_script:"ems-tiles" }}
+<script>
+  window.EMS = {board: "{% url 'ems_api_board' %}", simulate: "{% url 'ems_api_simulate' %}", call: "{% url 'ems_call' 0 %}", recommend: "{% url 'ems_api_recommend' 0 %}",
+                assign: "{% url 'ems_api_assign' 0 %}", newCall: "{% url 'ems_call_new' %}", canDispatch: {{ can_dispatch|yesno:'true,false' }}, router: "{{ router|escapejs }}"};
+</script>
+{% endblock %}
+{% block scripts %}<script src="{% static 'hospital/vendor/leaflet/leaflet.js' %}"></script>
+<script src="{% asset 'hospital/js/ambulance-map.js' %}"></script><script src="{% asset 'hospital/js/ambulance-board.js' %}"></script>{% endblock %}

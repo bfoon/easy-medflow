@@ -1,0 +1,8 @@
+<nav class="d-flex gap-2 flex-wrap" aria-label="Ambulance service">
+  <a class="btn btn-ghost btn-sm {% if tab == 'board' %}active{% endif %}" href="{% url 'ems_board' %}"><i class="bi bi-broadcast"></i>Board</a>
+  {% if can_crew %}<a class="btn btn-ghost btn-sm" href="{% url 'ems_crew' %}"><i class="bi bi-phone"></i>Crew screen</a>{% endif %}
+  <a class="btn btn-ghost btn-sm {% if tab == 'fleet' %}active{% endif %}" href="{% url 'ems_fleet' %}"><i class="bi bi-truck-front"></i>Fleet</a>
+  <a class="btn btn-ghost btn-sm {% if tab == 'insights' %}active{% endif %}" href="{% url 'ems_insights' %}"><i class="bi bi-bar-chart"></i>Insights</a>
+  <a class="btn btn-ghost btn-sm {% if tab == 'api' %}active{% endif %}" href="{% url 'ems_api_docs' %}"><i class="bi bi-code-slash"></i>Phone app API</a>
+  {% if can_dispatch %}<a class="btn btn-primary btn-sm" href="{% url 'ems_call_new' %}" accesskey="n"><i class="bi bi-telephone-plus"></i>New emergency call</a>{% endif %}
+</nav>

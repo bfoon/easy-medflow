@@ -1,0 +1,27 @@
+{% extends 'hospital/base.html' %}{% load static medflow %}
+{% block head %}{% include 'hospital/ambulance/_head.html' %}{% endblock %}
+{% block title %}Ambulance API{% endblock %}
+{% block heading %}Phone app API{% endblock %}
+{% block subheading %}<p class="sub">Version 1. For the public app (ask for an ambulance and track it) and the crew app (directions, care and handover). Machine-readable: <a href="{% url 'ems_api_openapi' %}">openapi.json</a>.</p>{% endblock %}
+{% block actions %}{% with tab='api' %}{% include 'hospital/ambulance/_tabs.html' %}{% endwith %}{% endblock %}
+{% block content %}
+<div class="grid g-main">
+  <section class="panel">
+    <div class="panel-head"><h2>Endpoints</h2><span class="hint">Base: <code>{{ base }}</code></span></div>
+    {% for r in routes %}{% ifchanged r.tag %}<h3 class="h6 mt-3 mb-1">{{ r.tag }}</h3>{% endifchanged %}
+    <div class="api-row"><span>{% for m in r.methods %}<span class="meth {{ m|lower }} d-block">{{ m }}</span>{% endfor %}</span>
+      <div><code>{{ r.path }}</code><div class="small muted">{{ r.summary }}</div></div><span class="small muted text-end">{{ r.auth }}</span></div>{% endfor %}
+  </section>
+  <aside class="stack">
+    <section class="panel"><div class="panel-head"><h2>Ask for an ambulance</h2></div>
+      <p class="small">POST <code>/requests/</code> as JSON{% if needs_key %} with the header <code>X-App-Key</code>{% else %}. This server has no app key set (development){% endif %}:</p>
+      <pre class="code">{{ sample }}</pre>
+      <p class="small mt-2">The answer has a <code>token</code> and a <code>tracking_url</code>. Poll <code>/requests/&lt;token&gt;/</code> every 10 seconds for the ambulance position and ETA. The request reaches the service desk as “waiting for call-back”, so keep the phone line free.</p>
+      <p class="small mb-0">Get the complaint list and its questions from <code>/meta/</code> so the app always asks what the service desk asks.</p></section>
+    <section class="panel"><div class="panel-head"><h2>Crew app sign-in</h2></div>
+      <p class="small">Pair from the crew screen (QR code), or POST <code>/auth/token/</code> with <code>username</code>, <code>password</code>, <code>device_name</code>. Send the token as <code>Authorization: Bearer ems_…</code>.</p>
+      <p class="small mb-0">While driving, POST <code>/crew/position/</code> every 5–10 seconds. The first fix above 10 km/h marks the ambulance “on the way”; each fix updates the ETA the caller and the hospital see.</p></section>
+    <section class="panel"><div class="panel-head"><h2>Errors</h2></div><p class="small mb-0">Always JSON: <code>{"ok": false, "error": "…"}</code>. 401 bad key or token, 403 not allowed, 404 unknown, 409 not possible in the current state (e.g. cancelling after the crew arrived), 429 too many requests.</p></section>
+  </aside>
+</div>
+{% endblock %}

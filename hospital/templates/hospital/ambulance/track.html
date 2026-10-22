@@ -1,0 +1,96 @@
+{% load static medflow %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex"><meta name="referrer" content="same-origin"><meta name="theme-color" content="#0F2C3F">
+<title>Your ambulance · {{ hospital }}</title>
+<link href="{% asset 'hospital/vendor/fonts/fonts.css' %}" rel="stylesheet"><link href="{% asset 'hospital/vendor/bootstrap-icons/bootstrap-icons.min.css' %}" rel="stylesheet">
+<link href="{% asset 'hospital/css/medflow.css' %}" rel="stylesheet">{% include 'hospital/ambulance/_head.html' %}
+<style>
+  body{background:var(--paper)}
+  .tk{max-width:620px;margin:0 auto;padding:18px 16px 40px}
+  .tk-top{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.86rem;margin-bottom:14px}
+  .tk-hero{background:var(--ink);color:#fff;border-radius:22px;padding:22px 22px 18px;position:relative;overflow:hidden}
+  .tk-hero::after{content:"";position:absolute;right:-40px;top:-40px;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--pc) 55%,transparent),transparent 70%)}
+  .tk-status{font-family:var(--display);font-size:1.7rem;font-weight:700;line-height:1.15;position:relative;z-index:1}
+  .tk-eta{font-family:var(--display);font-size:4.2rem;font-weight:800;line-height:1;margin-top:10px;position:relative;z-index:1}
+  .tk-eta small{font-size:1.1rem;font-weight:600;color:#9FC0D0;margin-left:6px}
+  .tk-unit{margin-top:10px;color:#C9DCE6;position:relative;z-index:1}
+  .tk-unit b{color:#fff}
+  .tk-steps{display:flex;gap:4px;margin:16px 0 4px;position:relative;z-index:1}
+  .tk-steps i{flex:1;height:6px;border-radius:9px;background:#23506B}
+  .tk-steps i.on{background:var(--trace)}
+  .tk-map{height:300px;border-radius:18px;overflow:hidden;margin-top:14px;border:1px solid var(--line)}
+  .tk-card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px;margin-top:14px}
+  .tk-card h2{font-size:1.05rem;margin:0 0 8px}
+  .tk-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+  .tk-actions .btn{padding:12px}
+  .tk-call{display:block;text-align:center;margin-top:14px;padding:14px;border-radius:14px;background:var(--red);color:#fff;font-weight:700;text-decoration:none}
+  .tk-closed{opacity:.6}
+</style></head>
+<body class="pri-{{ call.priority }}">
+<main class="tk">
+  <div class="tk-top"><i class="bi bi-truck-front"></i><span>{{ hospital }} · ambulance service</span><span class="ms-auto text-nowrap">{{ call.reference }}</span></div>
+  <section class="tk-hero" aria-live="polite">
+    <div class="tk-status" id="t-status">{{ status.status_label }}</div>
+    <div class="tk-eta" id="t-eta" {% if status.eta_minutes is None %}hidden{% endif %}>{{ status.eta_minutes }}<small>min</small></div>
+    <div class="tk-unit" id="t-unit"></div>
+    <div class="tk-steps" id="t-steps" aria-hidden="true"></div>
+  </section>
+  <div class="tk-map" id="tkmap" aria-label="Map showing you and the ambulance"></div>
+  <div class="tk-actions" id="t-actions">
+    <button class="btn btn-ghost" type="button" id="here"><i class="bi bi-crosshair"></i>Send my exact location</button>
+    <button class="btn btn-ghost" type="button" id="msg"><i class="bi bi-chat-text"></i>Message the desk</button>
+  </div>
+  <section class="tk-card"><h2><i class="bi bi-heart-pulse"></i> While you wait</h2><ol class="firstaid" id="t-aid"></ol></section>
+  <section class="tk-card small muted">Send someone to the road to wave the ambulance in. Keep your phone free: the service desk or the crew may call you.
+    <button class="btn btn-link btn-sm text-danger p-0 d-block mt-2" type="button" id="cancel">We no longer need the ambulance</button></section>
+  {% if hospital_phone %}<a class="tk-call" href="tel:{{ hospital_phone }}"><i class="bi bi-telephone"></i> If it gets worse, call {{ hospital_phone }}</a>{% endif %}
+</main>
+<div class="toasts" aria-live="polite"></div>
+{{ status|json_script:"t-data" }}{{ tiles|json_script:"ems-tiles" }}
+<script src="{% static 'hospital/vendor/leaflet/leaflet.js' %}"></script><script src="{% asset 'hospital/js/ambulance-map.js' %}"></script>
+<script>
+(() => {
+  const E = window.EmsMap, esc = E.esc, $ = s => document.getElementById(s);
+  const base = "{% url 'ems_api_request_status' call.token %}";
+  let s = JSON.parse($('t-data').textContent);
+  const toast = m => { const t = document.createElement('div'); t.className = 'toast-mf success'; t.textContent = m; document.querySelector('.toasts').appendChild(t); setTimeout(() => t.remove(), 4000); };
+  const map = E.map('tkmap', JSON.parse($('ems-tiles').textContent), {layers: false, zoomControl: false});
+  let you = null, amb = null, line = null, fitted = false;
+  const call = (path, data) => fetch(base + path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data || {})}).then(r => r.json());
+  const words = {new: 'We have your request. The service desk will call you now.', waiting: 'An ambulance is being found for you.',
+    dispatched: 'An ambulance is assigned to you.', en_route: 'Your ambulance is on the way.', on_scene: 'The crew is with you.',
+    transporting: 'On the way to hospital.', at_hospital: 'Arrived at hospital.', closed: 'This request is finished. Get well soon.', cancelled: 'This request was cancelled.'};
+  function draw() {
+    $('t-status').textContent = words[s.status] || s.status_label;
+    $('t-eta').hidden = s.eta_minutes == null; $('t-eta').innerHTML = `${s.eta_minutes ?? ''}<small>min${s.status === 'transporting' ? ' to hospital' : ' away'}</small>`;
+    const a = s.ambulance;
+    $('t-unit').innerHTML = a ? `Look for <b>${esc(a.call_sign)}</b>${a.plate ? ` (plate ${esc(a.plate)})` : ''} · ${esc(a.type)}${a.crew.length ? `<br>Crew: ${a.crew.map(c => `${esc(c.first_name)} (${esc(c.role.toLowerCase())})`).join(', ')}` : ''}` :
+      s.destination ? `Going to ${esc(s.destination)}` : '';
+    $('t-steps').innerHTML = s.steps.map(x => `<i class="${x.done ? 'on' : ''}" title="${esc(x.label)}"></i>`).join('');
+    $('t-aid').innerHTML = s.first_aid.map(t => `<li>${esc(t)}</li>`).join('');
+    const open = ['new', 'waiting', 'dispatched', 'en_route'].includes(s.status);
+    $('t-actions').hidden = !open; $('cancel').hidden = !open;
+    document.body.classList.toggle('tk-closed', s.closed);
+    if (s.you.lat != null) { const ll = [s.you.lat, s.you.lon]; you ? you.setLatLng(ll) : (you = L.marker(ll, {icon: E.youIcon()}).addTo(map).bindTooltip('You')); }
+    if (a) {
+      const ll = [a.lat, a.lon], u = {status: s.status, color: '#C8323F', heading: a.heading, level: 'als', call_sign: a.call_sign};
+      if (amb) { amb.setLatLng(ll); amb.setIcon(E.unitIcon(u)); } else amb = L.marker(ll, {icon: E.unitIcon(u), zIndexOffset: 900}).addTo(map);
+      if (you) { const pts = [ll, you.getLatLng()]; line ? line.setLatLngs(pts) : (line = L.polyline(pts, {color: '#C8323F', dashArray: '6 8', weight: 3}).addTo(map)); }
+    } else if (amb) { map.removeLayer(amb); amb = null; if (line) { map.removeLayer(line); line = null; } }
+    const pts = [you && you.getLatLng(), amb && amb.getLatLng()].filter(Boolean);
+    if (pts.length && (!fitted || amb)) { map.fitBounds(L.latLngBounds(pts).pad(.35), {maxZoom: 16}); fitted = true; }
+  }
+  async function poll() { if (s.closed) return; try { const r = await fetch(base).then(x => x.json()); if (r.ok) { s = r; draw(); } } catch (e) {} }
+  $('here').addEventListener('click', () => {
+    if (!navigator.geolocation) return toast('This phone cannot share its location here.');
+    navigator.geolocation.getCurrentPosition(async p => { const r = await call('location/', {latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy_m: Math.round(p.coords.accuracy)});
+      if (r.ok) { s = r; draw(); toast('Location sent to the ambulance.'); } else toast(r.error); }, e => toast(e.message), {enableHighAccuracy: true, timeout: 15000});
+  });
+  $('msg').addEventListener('click', async () => { const t = prompt('Message for the service desk (e.g. blue gate, behind the mosque):'); if (!t) return;
+    const r = await call('message/', {text: t}); toast(r.ok ? 'Message sent.' : r.error); });
+  $('cancel').addEventListener('click', async () => { if (!confirm('Cancel the ambulance? Only do this if nobody needs it any more.')) return;
+    const r = await call('cancel/', {reason: 'No longer needed'}); if (r.ok) { s = r; draw(); } else toast(r.error); });
+  draw(); setInterval(poll, 10000);
+})();
+</script>
+</body></html>

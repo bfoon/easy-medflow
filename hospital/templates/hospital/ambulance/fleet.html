@@ -1,0 +1,57 @@
+{% extends 'hospital/base.html' %}{% load static medflow %}
+{% block head %}{% include 'hospital/ambulance/_head.html' %}{% endblock %}
+{% block title %}Ambulance fleet{% endblock %}
+{% block heading %}Fleet and readiness{% endblock %}
+{% block subheading %}<p class="sub">Each vehicle’s readiness comes from today’s check, fuel, oxygen and whether a crew is on board.</p>{% endblock %}
+{% block actions %}{% with tab='fleet' %}{% include 'hospital/ambulance/_tabs.html' %}{% endwith %}{% endblock %}
+{% block content %}
+<div class="fleet">
+  {% for v in cards %}{% with a=v.a %}
+  <article class="vcard" style="--uc:{{ v.color }}">
+    <div class="hd"><span class="ico"><i class="bi {{ v.icon }}"></i></span>
+      <div class="flex-fill min-w-0"><div class="nm">{{ a.call_sign }}</div><div class="small muted">{{ a.get_level_display }}{% if a.plate %} · {{ a.plate }}{% endif %}</div></div>
+      <div class="ring-sm" style="--v:{{ v.score }}" title="Readiness"><span>{{ v.score }}</span></div></div>
+    <div class="d-flex gap-2 flex-wrap align-items-center"><span class="tag" style="background:{{ v.color }};color:#fff;border:0">{{ a.get_status_display }}</span>
+      {% if a.station %}<span class="small muted"><i class="bi bi-house"></i> {{ a.station.name }}</span>{% endif %}
+      {% if v.call %}<a class="small ms-auto" href="{% url 'ems_call' v.call.pk %}">{{ v.call.reference }}</a>{% endif %}</div>
+    <div class="gauges">
+      <div class="gauge">Fuel {{ a.fuel_pct }}%<div class="bar"><i style="--v:{{ a.fuel_pct }}%;{% if a.fuel_pct < 25 %}--gc:var(--red){% endif %}"></i></div></div>
+      <div class="gauge">Oxygen {{ a.oxygen_pct }}%<div class="bar"><i style="--v:{{ a.oxygen_pct }}%;{% if a.oxygen_pct < 40 %}--gc:var(--red){% endif %}"></i></div></div>
+    </div>
+    <div class="crewl">{% for s in a.crew %}<div><i class="bi bi-person-badge"></i> {{ s.user|display_name }} <span class="muted">· {{ s.get_role_display }} since {{ s.started_at|date:"H:i" }}</span></div>{% empty %}<div class="muted">No crew on board</div>{% endfor %}</div>
+    {% if v.why %}<div class="why"><i class="bi bi-exclamation-triangle"></i> {{ v.why|join:" · " }}</div>{% endif %}
+    <div class="small muted">{% if a.checked_at %}Checked {{ a.checked_at|date:"D H:i" }} by {{ a.checked_by|display_name }}{% else %}Never checked{% endif %}{% if a.notes %} · {{ a.notes }}{% endif %}</div>
+    <div class="d-flex gap-2 flex-wrap mt-auto">
+      {% if can_crew or can_fleet %}<details class="flex-fill"><summary class="btn btn-ghost btn-sm">Vehicle check</summary>
+        <form method="post" action="{% url 'ems_fleet_action' a.pk 'check' %}" class="chk mt-2">{% csrf_token %}
+          {% for k, l in checks %}<label class="d-flex gap-2"><input class="form-check-input" type="checkbox" name="c_{{ k }}" {% if a.checklist|get_item:k %}checked{% endif %}>{{ l }}</label>{% endfor %}
+          <div class="d-flex gap-2"><input class="form-control form-control-sm" name="fuel" value="{{ a.fuel_pct }}" aria-label="Fuel %" placeholder="Fuel %"><input class="form-control form-control-sm" name="oxygen" value="{{ a.oxygen_pct }}" aria-label="Oxygen %" placeholder="Oxygen %"></div>
+          <input class="form-control form-control-sm" name="notes" value="{{ a.notes }}" placeholder="Anything missing or broken"><button class="btn btn-primary btn-sm">Save check</button></form></details>{% endif %}
+      {% if can_fleet and not a.is_busy %}<form method="post" action="{% url 'ems_fleet_action' a.pk 'status' %}" class="d-flex gap-1">{% csrf_token %}
+        <select name="status" class="form-select form-select-sm" aria-label="Set status"><option value="available" {% if a.status == 'available' %}selected{% endif %}>Available</option><option value="off_duty" {% if a.status == 'off_duty' %}selected{% endif %}>Off duty</option><option value="maintenance" {% if a.status == 'maintenance' %}selected{% endif %}>Out of service</option></select>
+        <button class="btn btn-ghost btn-sm">Set</button></form>{% endif %}
+      {% if can_fleet %}<a class="btn btn-ghost btn-sm" href="{% url 'ems_crew' %}?unit={{ a.pk }}" title="Open this vehicle’s crew screen"><i class="bi bi-phone"></i></a>{% endif %}
+    </div>
+  </article>
+  {% endwith %}{% empty %}<div class="panel empty"><i class="bi bi-truck-front"></i>No ambulances yet. Add them under Configuration → Ambulances.</div>{% endfor %}
+</div>
+
+<div class="grid g-2 mt-4">
+  <section class="panel">
+    <div class="panel-head"><h2>Stations</h2><span class="hint">Where ambulances wait between jobs</span></div>
+    <div class="ruled">{% for s in stations %}<div class="d-flex gap-2 align-items-center"><span class="mk-station" style="flex:none">{% if s.kind == 'jetty' %}⚓{% else %}S{% endif %}</span>
+      <div><b>{{ s.name }}</b><div class="small muted">{{ s.get_kind_display }}{% if s.address %} · {{ s.address }}{% endif %}{% if s.phone %} · {{ s.phone }}{% endif %}</div></div>
+      <span class="ms-auto small">{% for a in s.ambulances.all %}{{ a.call_sign }}{% if not forloop.last %}, {% endif %}{% endfor %}</span></div>{% empty %}<p class="muted">No stations.</p>{% endfor %}</div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>Phones paired with the crew app</h2><span class="hint">Each phone gets its own token; revoke a lost phone here</span></div>
+    {% if can_fleet %}
+    <div class="ruled small">{% for d in devices %}<div class="d-flex gap-2 align-items-center"><i class="bi bi-phone fs-5"></i><div><b>{{ d.name }}</b><div class="muted">{{ d.user|display_name }} · {{ d.prefix }}… · {% if d.last_used_at %}used {{ d.last_used_at|ago }} ago{% else %}never used{% endif %}</div></div>
+      <form method="post" action="{% url 'ems_device_revoke' d.pk %}" class="ms-auto">{% csrf_token %}<button class="btn btn-danger-soft btn-sm">Revoke</button></form></div>{% empty %}<p class="muted">No phones paired yet.</p>{% endfor %}</div>
+    <form method="post" action="{% url 'ems_device_new' %}" class="d-flex gap-2 mt-3">{% csrf_token %}
+      <select name="user" class="form-select form-select-sm" aria-label="Crew member">{% for u in crew_users %}<option value="{{ u.pk }}">{{ u|display_name }} ({{ u.hospital_staff.get_role_display }})</option>{% endfor %}</select>
+      <input name="name" class="form-control form-control-sm" placeholder="Phone name, e.g. Hornbill 1 tablet"><button class="btn btn-primary btn-sm text-nowrap"><i class="bi bi-qr-code"></i>Pair a phone</button></form>
+    {% else %}<p class="muted small">Fleet managers pair and revoke phones. Crew can pair their own phone from the crew screen.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

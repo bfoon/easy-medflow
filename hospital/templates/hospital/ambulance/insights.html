@@ -1,0 +1,39 @@
+{% extends 'hospital/base.html' %}{% load static medflow %}
+{% block head %}{% include 'hospital/ambulance/_head.html' %}{% endblock %}
+{% block title %}Ambulance insights{% endblock %}
+{% block heading %}How fast do we reach people?{% endblock %}
+{% block subheading %}<p class="sub">{{ s.n }} calls in the last {{ days }} days. Response time is from the call being received to the crew reaching the patient.</p>{% endblock %}
+{% block actions %}{% with tab='insights' %}{% include 'hospital/ambulance/_tabs.html' %}{% endwith %}{% endblock %}
+{% block content %}
+<div class="d-flex gap-2 mb-3">
+  {% for d in day_options %}<a class="btn btn-sm {% if d == days %}btn-ink{% else %}btn-ghost{% endif %}" href="?days={{ d }}">{{ d }} days</a>{% endfor %}</div>
+
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+  {% for r in s.resp %}<div class="respcard pri-{{ r.p }}"><span class="ptag">P{{ r.p }} {{ r.label }}</span>
+    <b class="mt-2">{% if r.median is not None %}{{ r.median }}<small style="font-size:1rem"> min</small>{% else %}–{% endif %}</b>
+    <div class="small muted">median of {{ r.n }} · target {{ r.target }} min</div>
+    {% if r.on_time is not None %}<div class="rclock mt-2" style="--pc:{% if r.on_time >= 80 %}var(--teal){% else %}var(--p1){% endif %}"><i style="--w:{{ r.on_time }}%"></i></div><div class="small mt-1">{{ r.on_time }}% reached within target</div>{% endif %}
+  </div>{% endfor %}
+</div>
+
+<div class="grid g-main mt-3">
+  <section class="panel"><div class="panel-head"><h2>Calls per day</h2></div>
+    <div class="bars" role="img" aria-label="Calls per day">{% for d in s.daily %}<i style="height:{% widthratio d.n s.daily_max 100 %}%" title="{{ d.d|date:'D d M' }}: {{ d.n }}"></i>{% endfor %}</div>
+    <div class="d-flex justify-content-between small muted mt-1"><span>{{ s.daily.0.d|date:"d M" }}</span><span>Today</span></div>
+    <h3 class="h6 mt-4">Busiest hours of the day</h3>
+    <div class="hours" role="img" aria-label="Calls by hour">{% for n in s.hours %}<i style="--v:{% widthratio n s.hours_max 100 %}" title="{{ forloop.counter0 }}:00 · {{ n }} calls"></i>{% endfor %}</div>
+    <div class="d-flex justify-content-between small muted mt-1"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>
+  </section>
+  <section class="panel"><div class="panel-head"><h2>What people call about</h2></div>
+    {% for label, icon, n in s.kinds %}<div class="hbar" style="grid-template-columns:150px 1fr 34px"><span><i class="bi {{ icon }}"></i> {{ label }}</span><div class="t"><i style="--v:{% widthratio n s.kinds_max 100 %}%"></i></div><b class="text-end">{{ n }}</b></div>{% empty %}<p class="muted">No calls yet.</p>{% endfor %}
+    <div class="ruled small mt-3">
+      <div class="d-flex"><span>Median time on scene</span><b class="ms-auto">{% if s.scene_median is not None %}{{ s.scene_median }} min{% else %}–{% endif %}</b></div>
+      <div class="d-flex"><span>Requests from the phone app</span><b class="ms-auto">{{ s.app_share }}%</b></div>
+      {% for label, n in s.outcomes %}<div class="d-flex"><span>{{ label }}</span><b class="ms-auto">{{ n }}</b></div>{% endfor %}
+    </div>
+  </section>
+</div>
+<section class="panel mt-3"><div class="panel-head"><h2>Jobs per ambulance</h2></div>
+  {% for name, n in s.units %}<div class="hbar"><span>{{ name }}</span><div class="t"><i style="--v:{% widthratio n s.units_max 100 %}%;--hc:var(--teal)"></i></div><b class="text-end">{{ n }}</b></div>{% endfor %}
+</section>
+{% endblock %}

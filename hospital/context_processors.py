@@ -25,6 +25,7 @@ def medflow(request):
             'bills': Invoice.objects.filter(status='draft').count(),
             'theatre': __import__('hospital.theatre', fromlist=['active_count']).active_count(),
             'mortality': _mortality_count(request.user),
+            'ambulance': __import__('hospital.models_ambulance', fromlist=['EmergencyCall']).EmergencyCall.objects.filter(status__in=['new', 'waiting']).count(),
             'programmes': __import__('hospital.models_programmes', fromlist=['ProgrammeVisit']).ProgrammeVisit.objects.filter(
                 status='missed', enrolment__status__in=['active', 'lost']).filter(Q(enrolment__clinician=request.user) | Q(enrolment__nurse=request.user)).count(),
         },

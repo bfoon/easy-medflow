@@ -1,0 +1,62 @@
+{% extends 'hospital/base.html' %}{% load static medflow %}
+{% block head %}{% include 'hospital/ambulance/_head.html' %}<meta name="theme-color" content="#0B2333">{% endblock %}
+{% block body_attrs %}class="cockpit"{% endblock %}
+{% block title %}{{ amb.call_sign }} · Crew{% endblock %}
+{% block content %}
+<div class="ck" id="ck">
+  <div class="ck-head">
+    <div class="ck-unit"><span class="badge-u" id="u-badge"><i class="bi bi-truck-front"></i></span>
+      <div><b>{{ amb.call_sign }}</b><small id="u-sub">{{ amb.get_level_display }}{% if shift %} · you are {{ shift.get_role_display|lower }}{% endif %}</small></div></div>
+    <div class="right">
+      <button type="button" class="ck-btn" id="gps" aria-pressed="false" title="Share this phone’s GPS so dispatch and the caller can see you"><i class="bi bi-geo"></i> <span>GPS off</span></button>
+      {% if sim %}<button type="button" class="ck-btn" id="simdrive" title="Drive along the route at 8× speed, for training"><i class="bi bi-joystick"></i> <span>Simulate</span></button>{% endif %}
+      <a class="ck-btn d-none d-md-inline-block" href="{% url 'ems_board' %}"><i class="bi bi-broadcast"></i></a>
+    </div>
+  </div>
+
+  <div id="job"></div>
+
+  <div id="idle" hidden>
+    <div class="ck-card ck-idle">
+      <div class="big" id="idle-title">Ready</div>
+      <p style="color:#9DB8C8" id="idle-sub">Waiting for a job. This screen will alert you when dispatch sends one.</p>
+      <div class="d-flex justify-content-center gap-2 flex-wrap mt-3" id="idle-actions"></div>
+    </div>
+    <div class="ck-grid mt-3">
+      <div class="ck-card">
+        <h2><i class="bi bi-clipboard-check"></i> Vehicle check <span class="ms-auto small" style="color:#8FB0C2">Readiness {{ readiness.0 }}%</span></h2>
+        <form method="post" action="{% url 'ems_fleet_action' amb.pk 'check' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+          {% for k, l in checks %}<label class="prep-i"><input class="form-check-input" type="checkbox" name="c_{{ k }}" {% if amb.checklist|get_item:k %}checked{% endif %}><span>{{ l }}</span></label>{% endfor %}
+          <div class="row g-2 mt-1"><div class="col"><label class="form-label small">Fuel %</label><input class="form-control" name="fuel" value="{{ amb.fuel_pct }}" inputmode="numeric"></div>
+            <div class="col"><label class="form-label small">Oxygen %</label><input class="form-control" name="oxygen" value="{{ amb.oxygen_pct }}" inputmode="numeric"></div></div>
+          <input class="form-control mt-2" name="notes" value="{{ amb.notes }}" placeholder="Anything missing or broken">
+          <button class="ck-btn mt-2 w-100">Save vehicle check</button></form>
+      </div>
+      <div class="ck-card">
+        <h2><i class="bi bi-people"></i> On board</h2>
+        <div id="crewlist"></div>
+        {% if shift %}<form method="post" action="{% url 'ems_crew_shift' %}" class="mt-3">{% csrf_token %}<input type="hidden" name="end" value="1"><button class="ck-btn w-100"><i class="bi bi-box-arrow-right"></i> End my shift</button></form>{% endif %}
+        <form method="post" action="{% url 'ems_device_new' %}" class="mt-2">{% csrf_token %}<input type="hidden" name="name" value="{{ request.user.first_name|default:request.user.username }}’s phone ({{ amb.call_sign }})">
+          <button class="ck-btn w-100"><i class="bi bi-qr-code"></i> Pair a phone with the crew app</button></form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="newjob" hidden style="position:fixed;inset:0;z-index:3000;background:rgba(11,35,51,.94);display:grid;place-items:center;padding:20px">
+  <div class="ck-card ck-job" style="max-width:520px;width:100%;text-align:center" role="alertdialog" aria-labelledby="nj-what">
+    <div style="color:#9DB8C8;font-weight:700">New job</div><div class="what" id="nj-what"></div><div class="where" id="nj-where"></div>
+    <button class="ck-next" id="nj-go"><i class="bi bi-sign-turn-right"></i>Start driving</button>
+    <button class="ck-btn mt-2" id="nj-later">Show me the job first</button>
+  </div>
+</div>
+
+{{ job|json_script:"crew-job" }}{{ tiles|json_script:"ems-tiles" }}
+<script>
+  window.CREW = {me: "{% url 'ems_api_crew_me' %}", status: "{% url 'ems_api_crew_status' %}", position: "{% url 'ems_api_crew_position' %}",
+    obs: "{% url 'ems_api_crew_obs' %}", note: "{% url 'ems_api_crew_note' %}", prep: "{% url 'ems_api_crew_prep' %}", handover: "{% url 'ems_api_crew_handover' %}",
+    available: "{% url 'ems_api_crew_available' %}", unit: "{{ unit_param }}", router: "{{ router|escapejs }}", sim: {{ sim|yesno:'true,false' }}};
+</script>
+{% endblock %}
+{% block scripts %}<script src="{% static 'hospital/vendor/leaflet/leaflet.js' %}"></script>
+<script src="{% asset 'hospital/js/ambulance-map.js' %}"></script><script src="{% asset 'hospital/js/ambulance-crew.js' %}"></script>{% endblock %}

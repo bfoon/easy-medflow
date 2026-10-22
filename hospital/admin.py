@@ -100,8 +100,8 @@ class SpecialistAdmin(admin.ModelAdmin):
 
 @admin.register(models.NetworkFacility)
 class NetworkFacilityAdmin(admin.ModelAdmin):
-    list_display = ('name', 'kind', 'location', 'phone', 'accepts_referrals')
-    list_filter = ('kind', 'accepts_referrals')
+    list_display = ('name', 'kind', 'location', 'phone', 'accepts_referrals', 'receives_ambulances')
+    list_filter = ('kind', 'accepts_referrals', 'receives_ambulances')
 
 
 @admin.register(models.ReferralTask)
@@ -322,3 +322,39 @@ class StudyCaseAdmin(admin.ModelAdmin):
     search_fields = ('code', 'title')
     readonly_fields = ('code', 'snapshot', 'snapshot_at', 'checklist', 'views')
     raw_id_fields = ('death',)
+
+
+# ------------------------------------------------------------------ ambulance service
+@admin.register(models.EmsStation)
+class EmsStationAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'kind', 'latitude', 'longitude', 'phone', 'active')
+    list_filter = ('kind', 'active')
+
+
+@admin.register(models.Ambulance)
+class AmbulanceAdmin(admin.ModelAdmin):
+    list_display = ('call_sign', 'level', 'plate', 'station', 'status', 'fuel_pct', 'oxygen_pct', 'active')
+    list_filter = ('level', 'status', 'station', 'active')
+    search_fields = ('call_sign', 'plate')
+    readonly_fields = ('position_at', 'checked_at', 'checked_by')
+
+
+@admin.register(models.EmergencyCall)
+class EmergencyCallAdmin(admin.ModelAdmin):
+    list_display = ('reference', 'priority', 'complaint', 'status', 'source', 'ambulance', 'received_at', 'outcome')
+    list_filter = ('status', 'priority', 'source', 'complaint')
+    search_fields = ('reference', 'caller_phone', 'caller_name', 'patient_name')
+    raw_id_fields = ('patient', 'encounter', 'location')
+    readonly_fields = ('reference', 'token')
+
+
+@admin.register(models.CrewShift)
+class CrewShiftAdmin(admin.ModelAdmin):
+    list_display = ('ambulance', 'user', 'role', 'started_at', 'ended_at')
+    list_filter = ('ambulance', 'role')
+
+
+@admin.register(models.ApiDevice)
+class ApiDeviceAdmin(admin.ModelAdmin):
+    list_display = ('name', 'user', 'prefix', 'last_used_at', 'revoked_at')
+    readonly_fields = ('prefix', 'key_hash', 'last_used_at')

@@ -592,6 +592,9 @@ treatments used with how often patients improved, tests ordered and malaria posi
 
 ## Adding new demo content to an existing database
 
+`docker compose exec web python manage.py seed_ambulance` adds the ambulance service demo (stations, fleet, crews,
+live calls and a month of history) to an existing database.
+
 `docker compose exec web python manage.py seed_demo_extras` adds the newer fictional content (brain cases with
 spinal-fluid results, CT, MRI and EEG; imaging for the featured patient; four months of visits for the health
 dashboard; inpatient medication charts) without wiping your database. It only runs in demo mode (DEBUG on) and
@@ -600,6 +603,76 @@ accident, disc herniation, osteoporotic spine fracture, whiplash, a child's elbo
 knee osteoarthritis, gout) and hand and foot cases (rheumatoid arthritis, boxer's fracture, ankle fracture,
 diabetic foot infection) and pregnancy cases (28 weeks, 9 weeks, ectopic) and an enlarged prostate, with synthetic
 X-rays, MRI and ultrasound, results, medicines, admissions and referrals.
+
+## Ambulance service
+
+**Ambulance** in the menu is a full emergency medical service: the service desk that takes calls, the dispatch board,
+a screen for the crew on board, the vehicles, and an API for phone apps. Everything runs through one set of rules in
+`hospital/ambulance.py`, so the desk, the crew screen and the apps can never disagree.
+
+- **Dispatch board** (`/ambulance/`): a live map of every ambulance (coloured by status, pointing the way it drives)
+  and every call (pulsing by priority). Each waiting call carries a response clock that fills toward its target
+  (P1 15 min, P2 25, P3 60, P4 120) and turns red when late. Click a call to see the best ambulances, ranked by time
+  to the patient, crew level, fuel and oxygen, and send one from the map. Patients being brought here appear under
+  *Arriving at this hospital* with their ATMIST summary and a countdown. *Demo motion* drives the fleet 12× faster.
+- **Taking a call** (`/ambulance/calls/new/`): pick what happened (17 complaints including road crashes, labour,
+  snakebite, pesticide poisoning and drowning), ask the yes/no questions and the priority updates as you go, with the
+  reason. The first-aid instructions to read to the caller appear beside it. The caller's number finds patients
+  already known to the hospital (their own phone or as an emergency contact). Place the patient on the map and add a
+  landmark the crew will see.
+- **Call page**: the journey (call → assigned → on the way → with patient → to hospital → at hospital → closed) with
+  times, the route and GPS trail, who to send, where to take the patient (the hospital with the most specific service
+  for the complaint within reach: a cath lab for chest pain, an obstetric theatre for labour), vital signs, treatment,
+  the crew's preparation checklist and the timeline. *Caller's tracking link* copies a link to send by SMS or WhatsApp.
+- **Crew screen** (`/ambulance/crew/`, phone-first, dark for night driving): one big button for the next step, an
+  alert with sound and vibration when a job arrives, turn-by-turn directions from the phone's GPS (road routing through
+  OSRM; a straight-line compass and a Google Maps link when no router is reachable), a preparation checklist for the
+  complaint and for this patient (their allergies, conditions, recent medicines and blood group when known), quick
+  vital signs with red flags, one-tap treatment entries, and the **ATMIST handover** filled in from what was recorded.
+  Handing over at this hospital opens an Emergency visit with the vital signs and a queue ticket at the call's
+  priority; a caller whose name is not on file gets a new record marked "age estimated, confirm identity".
+  *Simulate* drives the route at 8× speed for training.
+- **Pre-alert**: when an ambulance leaves the scene for this hospital, the emergency (or maternity, or paediatric)
+  team is notified with the ETA and what to prepare.
+- **Fleet** (`/ambulance/fleet/`): readiness for each vehicle (daily check, fuel, oxygen, crew on board), stations,
+  status, and phones paired with the crew app. **Insights**: response times against target by priority, calls per
+  day, busiest hours, what people call about, outcomes and jobs per ambulance.
+- **Caller tracking page** (`/e/<token>/`, no sign-in): how far away the ambulance is, which vehicle and plate to look
+  for, the crew's first names, what to do while waiting, and buttons to send an exact location, message the desk or
+  cancel. It never shows other patients, staff surnames or the caller's own number.
+
+**Phone app API** (`/api/ems/v1/`, guide at `/ambulance/api/`, OpenAPI at `/api/ems/v1/openapi.json`):
+
+| Who | How they sign in | What they can do |
+| --- | --- | --- |
+| People asking for an ambulance | `X-App-Key` header (`EMS_APP_KEYS`); then the request's private token | Get the complaint list and questions, ask for an ambulance, follow it live, update location, message the desk, cancel |
+| Crew | `Authorization: Bearer ems_…` from the crew screen's QR pairing or `/auth/token/` | Their job, next step, GPS, vital signs, treatment, checklist, handover, back in service |
+| Dispatch tools | Same Bearer tokens | Board data, create calls, ranked ambulances and hospitals, assign |
+
+Requests from the app arrive at the desk as *waiting for call-back*: the desk calls the person to confirm, or sends an
+ambulance at once for a P1. Each phone may have two open requests, and each address six requests an hour. Device
+tokens are stored only as a hash and can be revoked on the fleet page. All errors are JSON with a plain message.
+
+Settings: `EMS_HOSPITAL_LAT` / `EMS_HOSPITAL_LON` (this hospital on the map), `EMS_HOSPITAL_CAPABILITIES`,
+`EMS_ROUTER_URL` (your own OSRM server is best in production; the public demo server has a fair-use limit; blank turns
+road routing off), `EMS_APP_KEYS`, `EMS_SIMULATION` (on in development), `EMS_MAX_OPEN_PER_PHONE`. Add receiving
+hospitals under Configuration → Network facilities (*receives ambulances* and map position), and stations and
+vehicles under Configuration → Ambulances.
+
+Access: four capabilities on the Access & roles page (see the board, take calls and send, work on an ambulance, manage
+the fleet) and three new staff roles: **dispatcher**, **paramedic** and **driver**. Nurses and doctors can also work on
+board (e.g. a midwife on the mother-and-newborn ambulance).
+
+**Demo** (`seed_ambulance`, run automatically on first start): 9 stations from Banjul to Basse, 12 vehicles named
+after Gambian birds (Hornbill ALS units, Kingfisher, Sunbird for mothers and newborns, Heron 4×4, Swift motorbike
+responder, Pelican river ambulance at Janjanbureh), crews on shift, one live call at every step, and 30 days of
+history. Sign in as `dispatch.sanneh` for the board and `medic.jobe` for the crew screen (on scene at a motorbike crash
+at Brusubi); password `medflow-demo-2026`. Babucarr Sowe's daughter has just called about his chest pain: open that
+call to see his record reach the crew.
+
+**The triage questions, caller instructions, medicine lists and response targets are illustrative.** A medical
+director must review and adapt them before real use, and the service must be tested against your local emergency
+number, radio procedures and data-protection rules.
 
 ## Modules included
 

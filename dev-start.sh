@@ -19,6 +19,9 @@ python manage.py seed_demo --if-empty
 # 90 days of sample pharmacy history (medicines, suppliers, wards, orders, requisitions); skips itself once done
 python manage.py seed_pharmacy
 
+# Ambulance service: stations, fleet, crews, live calls and a month of history; skips itself once done
+python manage.py seed_ambulance
+
 echo "→ Ensuring admin account"
 python manage.py shell -c "
 import os

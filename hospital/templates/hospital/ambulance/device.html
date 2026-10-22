@@ -1,0 +1,18 @@
+{% extends 'hospital/base.html' %}{% load static medflow %}
+{% block head %}{% include 'hospital/ambulance/_head.html' %}{% endblock %}
+{% block title %}Phone paired{% endblock %}
+{% block heading %}Phone paired: {{ dev.name }}{% endblock %}
+{% block subheading %}<p class="sub">Scan this with the crew app, or type the token in. It is shown once only: E-MedFlow keeps just a fingerprint of it.</p>{% endblock %}
+{% block content %}
+<div class="grid g-2">
+  <section class="panel text-center">{% if svg %}<div style="max-width:300px;margin:0 auto">{{ svg|safe }}</div>{% else %}<p class="muted">QR code not available; use the token below.</p>{% endif %}
+    <p class="small muted mt-2 mb-0">For {{ for_user|display_name }}</p></section>
+  <section class="panel">
+    <label class="form-label">Server</label><input class="form-control mb-3" readonly value="{{ server }}">
+    <label class="form-label">Token</label>
+    <div class="d-flex gap-2"><input class="form-control" readonly value="{{ raw }}" id="tok"><button class="btn btn-ghost" type="button" onclick="navigator.clipboard.writeText(document.getElementById('tok').value).then(()=>mfToast('Token copied.'))"><i class="bi bi-clipboard"></i>Copy</button></div>
+    <p class="small muted mt-3">The app sends it as <code>Authorization: Bearer {{ raw|slice:":8" }}…</code>. If the phone is lost, revoke it on the fleet page.</p>
+    <a class="btn btn-primary" href="{% url 'ems_fleet' %}">Done</a> <a class="btn btn-ghost" href="{% url 'ems_api_docs' %}">API guide</a>
+  </section>
+</div>
+{% endblock %}

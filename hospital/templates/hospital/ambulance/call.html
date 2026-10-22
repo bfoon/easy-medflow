@@ -1,0 +1,213 @@
+{% extends 'hospital/base.html' %}{% load static medflow %}
+{% block head %}{% include 'hospital/ambulance/_head.html' %}{% endblock %}
+{% block title %}{{ call.reference }}{% endblock %}
+{% block topbar %}
+<header class="topbar pri-{{ call.priority }}">
+  <div class="callhead">
+    <div class="pbig" aria-label="Priority {{ call.priority }}"><div><b>P{{ call.priority }}</b><small>{{ call.get_priority_display|slice:"5:" }}</small></div></div>
+    <div>
+      <h1><i class="bi {{ c.icon }} me-1"></i>{{ c.label }}{% if call.patients_count > 1 %} · {{ call.patients_count }} patients{% endif %}</h1>
+      <p class="sub mb-1">{{ call.reference }} · {{ call.get_source_display }} · received {{ call.received_at|date:"H:i" }}{% if call.landmark %} · {{ call.landmark }}{% endif %}</p>
+      <span class="tag {% if call.status == 'new' %}indigo{% elif call.status == 'waiting' %}amber{% elif call.status == 'closed' %}teal{% elif call.status == 'cancelled' %}{% else %}plum{% endif %}">{{ call.get_status_display }}</span>
+      {% if call.response_minutes is not None %}<span class="tag {% if call.response_minutes <= target %}teal{% else %}red{% endif %}">Response {{ call.response_minutes }} min (target {{ target }})</span>
+      {% elif call.is_open %}<span class="tag {% if call.waiting_minutes > target %}red{% else %}amber{% endif %}">Waiting {{ call.waiting_minutes }} min · target {{ target }}</span>{% endif %}
+      {% if call.outcome %}<span class="tag">{{ call.get_outcome_display }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn btn-ghost btn-sm" type="button" id="copytrack" data-link="{{ track }}" title="Send this to the caller by SMS or WhatsApp"><i class="bi bi-link-45deg"></i>Caller’s tracking link</button>
+    <a class="btn btn-ghost btn-sm" href="{% url 'ems_board' %}"><i class="bi bi-broadcast"></i>Board</a>
+  </div>
+</header>
+{% endblock %}
+{% block content %}
+<div class="journey pri-{{ call.priority }}" aria-label="Journey">
+  {% for j in journey %}<div class="j {% if j.done %}done{% endif %}{% if j.now %} now{% endif %}{% if j.cancel %} cancel{% endif %}"><b>{{ j.label }}</b>{% if j.at %}{{ j.at|date:"H:i" }}{% else %}–{% endif %}</div>{% endfor %}
+</div>
+
+<div class="grid g-main">
+  <div class="stack">
+    <section class="panel flush"><div class="detailmap" id="callmap"></div></section>
+
+    {% if call.status == 'new' and can_dispatch %}
+    <section class="panel" style="border-color:var(--indigo)">
+      <div class="panel-head"><h2><i class="bi bi-telephone-outbound me-1"></i>Call back to confirm</h2><span class="hint">This came from the phone app. Check it is real and the place is right.</span></div>
+      <div class="d-flex gap-2 flex-wrap align-items-center">
+        {% if call.caller_phone %}<a class="btn btn-ink" href="tel:{{ call.caller_phone }}"><i class="bi bi-telephone"></i>{{ call.caller_phone }}</a>{% endif %}
+        <form method="post" action="{% url 'ems_call_action' call.pk 'verify' %}" class="d-flex gap-2 flex-fill">{% csrf_token %}
+          <input class="form-control" name="note" placeholder="What you confirmed (optional)"><button class="btn btn-primary text-nowrap"><i class="bi bi-check2"></i>Confirmed</button></form>
+      </div>
+      <p class="small muted mb-0 mt-2">For a P1 you can send an ambulance straight away below and call back while it drives.</p>
+    </section>
+    {% endif %}
+
+    {% if call.status == 'new' or call.status == 'waiting' %}{% if can_dispatch %}
+    <section class="panel">
+      <div class="panel-head"><h2>Send an ambulance</h2><span class="hint">Ranked by time to the patient, crew level, fuel and oxygen</span></div>
+      {% if not call.has_position %}<div class="alert alert-warning">Put the patient on the map first (below), so the crew can find them.</div>{% endif %}
+      <label class="form-label" for="dest">Take the patient to</label>
+      <select id="dest" class="form-select mb-3">{% for d in dests %}<option value="{{ d.id|default_if_none:'' }}" {% if forloop.first %}selected{% endif %}>{{ d.name }} · {{ d.km }} km{% if d.match and not d.home %} · has the right service{% endif %}{% if d.home %} (this hospital){% endif %}</option>{% endfor %}</select>
+      {% for r in recs %}
+      <form method="post" action="{% url 'ems_call_action' call.pk 'dispatch' %}" class="rec {% if r.best %}best{% endif %}">{% csrf_token %}
+        <input type="hidden" name="ambulance" value="{{ r.a.pk }}"><input type="hidden" name="destination" class="destin">
+        <div class="eta">{{ r.eta|floatformat:0 }}′<small>{{ r.km }} km</small></div>
+        <div class="flex-fill min-w-0"><b style="color:var(--ink)">{{ r.a.call_sign }}</b> <span class="muted small">{{ r.a.get_level_display }}{% if r.a.station %} · {{ r.a.station.name }}{% endif %}</span>{% if r.best %} <span class="tag teal">Best match</span>{% endif %}
+          <div class="why">{{ r.reasons|join:" · " }}{% if r.warn %}{% if r.reasons %} · {% endif %}<span class="w">{{ r.warn|join:" · " }}</span>{% endif %}</div>
+          <div class="why">{% for s in r.crew %}{{ s.user|display_name }} ({{ s.get_role_display|lower }}){% if not forloop.last %}, {% endif %}{% empty %}No crew signed on{% endfor %}</div></div>
+        <button class="btn {% if r.best %}btn-primary{% else %}btn-ghost{% endif %}" {% if not call.has_position %}disabled{% endif %}><i class="bi bi-send"></i>Send</button>
+      </form>
+      {% empty %}<div class="empty"><i class="bi bi-exclamation-triangle"></i>No ambulance is free. Ask a returning crew, or a partner service, and keep the caller on the line.</div>{% endfor %}
+    </section>
+    {% endif %}{% endif %}
+
+    {% if call.ambulance and call.status in 'dispatched en_route on_scene transporting at_hospital' %}
+    <section class="panel">
+      <div class="panel-head"><h2>{{ call.ambulance.call_sign }} <span class="muted fw-normal small">{{ call.ambulance.get_level_display }}</span></h2>
+        <span class="hint" id="liveeta"></span>{% if can_crew %}<a class="more" href="{% url 'ems_crew' %}?unit={{ call.ambulance.pk }}">Crew screen</a>{% endif %}</div>
+      <div class="d-flex flex-wrap gap-3 small">
+        {% for s in call.ambulance.crew %}<span><i class="bi bi-person-badge"></i> {{ s.user|display_name }} · {{ s.get_role_display }}</span>{% empty %}<span class="muted">No crew signed on</span>{% endfor %}
+      </div>
+      <div class="d-flex gap-2 flex-wrap mt-3 align-items-center">
+        {% if next and can_crew %}<form method="post" action="{% url 'ems_call_action' call.pk 'advance' %}">{% csrf_token %}<input type="hidden" name="to" value="{{ next.0 }}">
+          <button class="btn btn-ink"><i class="bi {{ next.2 }}"></i>{{ next.1 }}</button></form>{% endif %}
+        {% if call.status == 'on_scene' and can_crew %}<form method="post" action="{% url 'ems_call_action' call.pk 'advance' %}" class="d-flex gap-2">{% csrf_token %}<input type="hidden" name="to" value="closed">
+          <select name="outcome" class="form-select form-select-sm" required><option value="">No transport because…</option>{% for k, l in outcomes %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select>
+          <button class="btn btn-ghost btn-sm text-nowrap">Close on scene</button></form>{% endif %}
+        {% if can_dispatch and call.status != 'at_hospital' %}<form method="post" action="{% url 'ems_call_action' call.pk 'destination' %}" class="d-flex gap-2 ms-auto">{% csrf_token %}
+          <select name="destination" class="form-select form-select-sm" aria-label="Destination">{% for d in dests %}<option value="{{ d.id|default_if_none:'' }}" {% if d.name == dest.name %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select>
+          <button class="btn btn-ghost btn-sm text-nowrap">Change destination</button></form>{% endif %}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if call.status in 'on_scene transporting at_hospital closed' %}
+    <section class="panel">
+      <div class="panel-head"><h2>Care on board</h2><span class="hint">Vital signs and treatment recorded by the crew</span></div>
+      {% if obs %}<div class="table-responsive"><table class="obs-t"><tbody>{% for o, flags, line in obs %}<tr><td class="muted text-nowrap">{{ o.taken_at|date:"H:i" }}</td><td>{{ line }}</td><td class="text-end">{% for tone, t in flags %}<span class="flag {{ tone }}">{{ t }}</span>{% endfor %}</td></tr>{% endfor %}</tbody></table></div>
+      {% else %}<p class="muted small">No vital signs yet.</p>{% endif %}
+      {% if can_crew and call.status != 'closed' %}
+      <details class="mt-2"><summary class="fw-semibold">Record vital signs or treatment</summary>
+        <form method="post" action="{% url 'ems_call_action' call.pk 'obs' %}" class="row g-2 mt-1">{% csrf_token %}
+          {% for k, l in obs_fields %}<div class="col-3 col-md-3"><input class="form-control form-control-sm" name="{{ k }}" placeholder="{{ l }}" inputmode="decimal" aria-label="{{ l }}"></div>{% endfor %}
+          <div class="col-6"><select name="avpu" class="form-select form-select-sm" aria-label="AVPU"><option value="">AVPU</option><option>A</option><option>V</option><option>P</option><option>U</option></select></div>
+          <div class="col-6"><button class="btn btn-primary btn-sm w-100">Save vital signs</button></div></form>
+        <form method="post" action="{% url 'ems_call_action' call.pk 'treatment' %}" class="d-flex gap-2 mt-2">{% csrf_token %}
+          <input class="form-control form-control-sm" name="text" placeholder="Treatment given, e.g. Aspirin 300 mg chewed 14:05"><button class="btn btn-ghost btn-sm text-nowrap">Add treatment</button></form>
+      </details>{% endif %}
+    </section>
+    {% endif %}
+
+    {% if call.status == 'at_hospital' and can_crew or call.status == 'closed' and call.handover %}
+    <section class="panel" style="border-color:var(--plum-wash)">
+      <div class="panel-head"><h2>Handover (ATMIST)</h2>{% if call.encounter %}<a class="more" href="{% url 'encounter_detail' call.encounter.pk %}">Emergency visit</a>{% endif %}</div>
+      {% if call.status == 'at_hospital' %}
+      <form method="post" action="{% url 'ems_call_action' call.pk 'handover' %}">{% csrf_token %}
+        <div class="atmist">{% for k, letter, label in atmist_labels %}<b>{{ letter }}</b><div><label class="form-label small mb-1" for="h-{{ k }}">{{ label }}</label><textarea class="form-control form-control-sm" rows="1" name="{{ k }}" id="h-{{ k }}">{{ atmist|get_item:k }}</textarea></div>{% endfor %}</div>
+        <div class="row g-2 mt-2 align-items-center"><div class="col-md-6"><input class="form-control" name="received_by" placeholder="Received by (name and role)"></div>
+          <div class="col-md-6">{% if dest.home %}<label class="form-check"><input class="form-check-input" type="checkbox" name="register" value="1" checked> Register in the emergency queue{% if not call.patient %} (creates the patient record){% endif %}</label>{% endif %}</div></div>
+        <button class="btn btn-primary mt-2"><i class="bi bi-clipboard2-check"></i>Hand over and close</button>
+      </form>
+      {% else %}
+      <div class="atmist">{% for k, letter, label in atmist_labels %}<b>{{ letter }}</b><div><div class="small muted">{{ label }}</div>{{ atmist|get_item:k|default:"–" }}</div>{% endfor %}</div>
+      <p class="small muted mt-2 mb-0">Handed over by {{ call.handover.by }}{% if call.handover.received_by %} to {{ call.handover.received_by }}{% endif %}.</p>
+      {% endif %}
+    </section>
+    {% endif %}
+  </div>
+
+  <aside class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Caller and patient</h2></div>
+      <div class="ruled small">
+        <div><span class="label-sm d-block">Caller</span>{{ call.caller_name|default:"Not given" }}{% if call.caller_relation %} ({{ call.caller_relation }}){% endif %}
+          {% if call.caller_phone %}<br><a href="tel:{{ call.caller_phone }}"><i class="bi bi-telephone"></i> {{ call.caller_phone }}</a>{% endif %}</div>
+        <div><span class="label-sm d-block">Patient</span>{{ call.patient_name|default:"Name not known" }}{% if call.patient_age is not None %} · {{ call.patient_age }} y{% endif %} · {{ call.get_patient_sex_display }}
+          {% if call.patient %}<br><a href="{% url 'patient_chart' call.patient.pk %}">{{ call.patient.mrn }}</a>{% for a in call.patient.allergies.all %}{% if a.status == 'active' %} <span class="tag red">{{ a.substance }}</span>{% endif %}{% endfor %}{% endif %}</div>
+        {% if call.description %}<div><span class="label-sm d-block">In the caller’s words</span>{{ call.description|linebreaksbr }}</div>{% endif %}
+        <div><span class="label-sm d-block">Destination</span>{{ dest.name }}</div>
+        {% if answers %}<div><span class="label-sm d-block">Triage</span>{% for q, a, hit in answers %}<div class="{% if hit %}text-danger fw-semibold{% endif %}">{{ q }} <b>{{ a|capfirst }}</b></div>{% endfor %}
+          {% if call.priority_reason %}<div class="muted mt-1">{{ call.priority_reason }}</div>{% endif %}</div>{% endif %}
+      </div>
+      {% if can_dispatch and call.is_open %}
+      <details class="mt-2"><summary class="small fw-semibold">Change priority or location</summary>
+        <form method="post" action="{% url 'ems_call_action' call.pk 'priority' %}" class="d-flex gap-2 mt-2">{% csrf_token %}
+          <select name="priority" class="form-select form-select-sm" style="width:auto">{% for v, l in call.PRIORITY %}<option value="{{ v }}" {% if v == call.priority %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+          <input class="form-control form-control-sm" name="reason" placeholder="Why"><button class="btn btn-ghost btn-sm">Save</button></form>
+        {% if call.status in 'new waiting dispatched en_route' %}<form method="post" action="{% url 'ems_call_action' call.pk 'locate' %}" class="mt-2" id="locform">{% csrf_token %}
+          <input type="hidden" name="latitude" id="loclat"><input type="hidden" name="longitude" id="loclon">
+          <input class="form-control form-control-sm mb-1" name="landmark" value="{{ call.landmark }}" placeholder="Landmark">
+          <p class="small muted mb-1">Drag the patient pin on the map, then save.</p><button class="btn btn-ghost btn-sm" disabled id="locsave">Save location</button></form>{% endif %}
+      </details>
+      {% endif %}
+    </section>
+
+    {% if prep %}
+    <section class="panel">
+      <div class="panel-head"><h2>Crew preparation</h2><div class="ring-sm ms-auto" style="--v:{{ prep.pct }}" id="prepring"><span>{{ prep.done }}/{{ prep.total }}</span></div></div>
+      <div class="tag plum mb-2" style="white-space:normal">{{ prep.alert }}</div>
+      {% if prep.known %}<div class="known on" style="cursor:default"><i class="bi bi-person-vcard fs-4"></i><div class="small"><b>Known to this hospital</b>
+        {% if prep.known.allergies %}<div class="text-danger">Allergies: {{ prep.known.allergies|join:"; " }}</div>{% else %}<div>No allergies recorded</div>{% endif %}
+        {% if prep.known.conditions %}<div>Conditions: {{ prep.known.conditions|join:", " }}</div>{% endif %}
+        {% if prep.known.medicines %}<div>Medicines (last 90 days): {{ prep.known.medicines|join:", " }}</div>{% endif %}
+        {% if prep.known.blood_group %}<div>Blood group {{ prep.known.blood_group }}</div>{% endif %}{% if prep.known.alerts %}<div>{{ prep.known.alerts }}</div>{% endif %}</div></div>{% endif %}
+      {% for g in prep.groups %}<div class="prep-g"><h3>{{ g.title }}</h3>
+        {% for i in g.items %}<label class="prep-i {% if i.done %}done{% endif %}"><input type="checkbox" class="form-check-input" data-prep="{{ i.key }}" {% if i.done %}checked{% endif %} {% if not can_crew or not call.is_open %}disabled{% endif %}>
+          <span>{{ i.text }}{% if i.done %}<small>{{ i.done.by }}</small>{% endif %}</span></label>{% endfor %}</div>{% endfor %}
+    </section>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-head"><h2>Timeline</h2></div>
+      <ul class="tl">{% for e in events %}<li><time>{{ e.at|date:"H:i" }}</time><span class="k k-{{ e.kind }}"></span><span>{{ e.text }}{% if e.by %} <span class="muted small">· {{ e.by|display_name }}</span>{% endif %}</span></li>{% endfor %}</ul>
+      {% if call.is_open %}<form method="post" action="{% url 'ems_call_action' call.pk 'note' %}" class="d-flex gap-2 mt-2">{% csrf_token %}
+        <input class="form-control form-control-sm" name="text" placeholder="Add a note"><button class="btn btn-ghost btn-sm">Add</button></form>{% endif %}
+      {% if can_dispatch and call.status in 'new waiting dispatched en_route' %}
+      <details class="mt-3"><summary class="small text-danger fw-semibold">Cancel this call</summary>
+        <form method="post" action="{% url 'ems_call_action' call.pk 'cancel' %}" class="d-flex gap-2 mt-2">{% csrf_token %}
+          <input class="form-control form-control-sm" name="reason" required placeholder="Reason, e.g. Patient taken by family car">
+          <button class="btn btn-danger-soft btn-sm text-nowrap">Cancel call</button></form></details>{% endif %}
+    </section>
+  </aside>
+</div>
+{{ geo|json_script:"callgeo" }}{{ tiles|json_script:"ems-tiles" }}
+<script>window.CALLPAGE = {prep: "{% url 'ems_call_action' call.pk 'prep' %}", router: "{{ router|escapejs }}", editLoc: {% if can_dispatch and call.status in 'new waiting dispatched en_route' %}true{% else %}false{% endif %}};</script>
+{% endblock %}
+{% block scripts %}<script src="{% static 'hospital/vendor/leaflet/leaflet.js' %}"></script><script src="{% asset 'hospital/js/ambulance-map.js' %}"></script>
+<script>
+(() => {
+  const E = window.EmsMap, P = window.CALLPAGE, g = JSON.parse(document.getElementById('callgeo').textContent);
+  const map = E.map('callmap', JSON.parse(document.getElementById('ems-tiles').textContent));
+  const c = g.call, pts = [];
+  if (c.lat != null) {
+    const m = L.marker([c.lat, c.lon], {icon: E.callIcon(c), draggable: P.editLoc, zIndexOffset: 900}).addTo(map).bindTooltip('Patient');
+    pts.push([c.lat, c.lon]);
+    if (P.editLoc) m.on('dragend', () => { const ll = m.getLatLng(); document.getElementById('loclat').value = ll.lat.toFixed(6); document.getElementById('loclon').value = ll.lng.toFixed(6);
+      const b = document.getElementById('locsave'); if (b) { b.disabled = false; b.closest('details').open = true; } });
+  }
+  const d = c.destination; L.marker([d.lat, d.lon], {icon: E.hospIcon(d.home)}).addTo(map).bindTooltip(E.esc(d.name)); pts.push([d.lat, d.lon]);
+  if (g.trail.length > 1) L.polyline(g.trail, {color: '#4A5FC1', weight: 3, opacity: .7}).addTo(map);
+  if (g.unit) {
+    const u = g.unit; L.marker([u.lat, u.lon], {icon: E.unitIcon(u), zIndexOffset: 1000}).addTo(map); pts.push([u.lat, u.lon]);
+    if (u.target) E.route(P.router, [u.lat, u.lon], [u.target.lat, u.target.lon]).then(rt => {
+      L.polyline(rt.coords, {color: u.color, weight: 5, opacity: .75, dashArray: rt.road ? null : '8 8'}).addTo(map);
+      const el = document.getElementById('liveeta'); if (el) el.textContent = `${E.fmtKm(rt.km)} to ${u.target.kind === 'scene' ? 'the patient' : u.target.name} · about ${E.fmtMin(rt.min)}${rt.road ? '' : ' (straight-line estimate)'}`;
+    });
+  }
+  if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(.25), {maxZoom: 15});
+  // destination choice copies into each Send form
+  const dest = document.getElementById('dest');
+  const sync = () => document.querySelectorAll('.destin').forEach(i => { i.value = dest.value; });
+  if (dest) { dest.addEventListener('change', sync); sync(); }
+  // preparation ticks save as you tap
+  document.querySelectorAll('[data-prep]').forEach(cb => cb.addEventListener('change', async () => {
+    const csrf = document.querySelector('meta[name="csrf-token"]').content;
+    const r = await fetch(P.prep, {method: 'POST', credentials: 'same-origin', headers: {'X-CSRFToken': csrf, 'X-Requested-With': 'fetch'},
+      body: new URLSearchParams({key: cb.dataset.prep, done: cb.checked ? '1' : ''})}).then(x => x.json()).catch(() => ({ok: false, error: 'Not saved'}));
+    if (!r.ok) { cb.checked = !cb.checked; window.mfToast && mfToast(r.error, 'error'); return; }
+    cb.closest('.prep-i').classList.toggle('done', cb.checked);
+    const ring = document.getElementById('prepring'); if (ring && r.prep) { ring.style.setProperty('--v', r.prep.pct); ring.querySelector('span').textContent = `${r.prep.done}/${r.prep.total}`; }
+  }));
+  const ct = document.getElementById('copytrack');
+  ct.addEventListener('click', async () => { try { await navigator.clipboard.writeText(ct.dataset.link); mfToast('Tracking link copied. Send it to the caller.'); } catch (e) { prompt('Copy this link:', ct.dataset.link); } });
+})();
+</script>{% endblock %}

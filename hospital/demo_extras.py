@@ -210,6 +210,8 @@ def run_all():
     res['theatre and eye & ear demos'] = theatre_demo(doctor, nurse)
     from .demo_programmes import run as programmes_demo
     res['care programme enrolments'] = programmes_demo()
+    from .demo_ambulance import run as ambulance_demo
+    res['ambulance service'] = 'added' if ambulance_demo() else 'already there'
     return res
 
 

@@ -157,3 +157,14 @@ HOSPITAL_ADDRESS = env('HOSPITAL_ADDRESS', default='')
 MEDFLOW_CLINIC_NAME = env('MEDFLOW_CLINIC_NAME', default='')
 PROGRAMME_SMS_URL = env('PROGRAMME_SMS_URL', default='')
 PROGRAMME_SMS_TOKEN = env('PROGRAMME_SMS_TOKEN', default='')
+
+# Ambulance service (hospital/ambulance.py). Where this hospital is on the map, what it can treat, the road router used
+# for turn-by-turn directions in the browser (OSRM; blank = straight-line guidance only), and the keys the public phone
+# app must send in the X-App-Key header (blank list = no key needed, development only).
+EMS_HOSPITAL_LAT = env.float('EMS_HOSPITAL_LAT', default=13.4440)
+EMS_HOSPITAL_LON = env.float('EMS_HOSPITAL_LON', default=-16.6790)
+EMS_HOSPITAL_CAPABILITIES = env('EMS_HOSPITAL_CAPABILITIES', default='Emergency, ICU, Theatre, Maternity, Paediatric, X-ray, CT')
+EMS_ROUTER_URL = env('EMS_ROUTER_URL', default='https://router.project-osrm.org')
+EMS_APP_KEYS = env.list('EMS_APP_KEYS', default=[])
+EMS_SIMULATION = env.bool('EMS_SIMULATION', default=DEBUG)      # "demo motion" on the dispatch board
+EMS_MAX_OPEN_PER_PHONE = env.int('EMS_MAX_OPEN_PER_PHONE', default=2)   # app abuse guard: open requests per phone number
