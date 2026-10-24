@@ -3,6 +3,10 @@
 Steps (all optional, applied in this order): straighten from four corners, rotate/flip, greyscale, remove noise,
 level the exposure, adaptive contrast (CLAHE), gamma, sharpen, invert. The original upload is never changed:
 the result is stored as a new image linked to it, with the steps recorded.
+
+The imaging studio adds edge-preserving smoothing, glare roll-off, anatomical detail, illustrative colour, relief
+lighting and edge outlines (see imaging_studio.py). When any of those is asked for, the tone steps run in floating
+point in the same order as the browser preview, so the saved copy matches what the clinician saw.
 """
 import io
 
@@ -79,10 +83,25 @@ def process(src_file, opts):
         img = ImageOps.mirror(img); applied['flip'] = True
     if max(img.size) > MAX_SIDE:
         img.thumbnail((MAX_SIDE, MAX_SIDE), Image.Resampling.LANCZOS); applied['resized'] = list(img.size)
+    from . import imaging_studio as S
+    st = S.clean_opts(opts)
+    if st['colour']:
+        opts = {**opts, 'grayscale': True}       # colour comes from brightness, so start from grey
     if opts.get('grayscale', True):
         img = img.convert('L'); applied['grayscale'] = True
     if opts.get('denoise'):
         img = img.filter(ImageFilter.MedianFilter(3)); applied['denoise'] = True
+    if S.wants_studio(opts):
+        img = _studio(img, opts, st, applied)
+    else:
+        img = _classic(img, opts, applied)
+    buf = io.BytesIO()
+    img.save(buf, 'PNG', compress_level=6)          # optimize=True costs seconds on big colour images for a few % size
+    return buf.getvalue(), applied
+
+
+def _classic(img, opts, applied):
+    """The original photo-processing path (PIL), unchanged for requests without studio steps."""
     if opts.get('level'):
         img = ImageOps.autocontrast(img, cutoff=1); applied['level'] = True
     strength = float(opts.get('enhance') or 0)
@@ -104,13 +123,59 @@ def process(src_file, opts):
         img = img.filter(ImageFilter.UnsharpMask(radius=2, percent=int(min(sharpen, 3) * 100), threshold=2)); applied['sharpen'] = round(min(sharpen, 3), 2)
     if opts.get('invert'):
         img = ImageOps.invert(img); applied['invert'] = True
-    buf = io.BytesIO()
-    img.save(buf, 'PNG', optimize=True)
-    return buf.getvalue(), applied
+    return img
+
+
+def _num(opts, key, lo, hi, default):
+    try:
+        v = float(opts.get(key, default))
+    except (TypeError, ValueError):
+        return default
+    return min(max(v, lo), hi)
+
+
+def _studio(img, opts, st, applied):
+    """Studio path: float tone curve in the same order as imaging-studio.js, then optional colour, relief and edges.
+    A colour photo kept in colour has the tone steps applied to its brightness only."""
+    from . import imaging_studio as S
+    chroma = None
+    if img.mode == 'L':
+        g = np.asarray(img, dtype=np.float32) / 255
+    else:
+        y, cb, cr = img.convert('YCbCr').split()
+        g, chroma = np.asarray(y, dtype=np.float32) / 255, (cb, cr)
+    g = S.early_steps(g, st, applied)
+    if opts.get('level'):
+        g = S.level(g); applied['level'] = True
+    g = S.late_steps(g, {**st, 'detail': 0}, applied)            # glare before CLAHE so the light box is not equalised
+    strength = _num(opts, 'enhance', 0, 4, 0)
+    if strength > 0:
+        g = clahe((g * 255 + .5).astype(np.uint8), clip=1 + strength).astype(np.float32) / 255; applied['enhance'] = round(strength, 2)
+    gm = _num(opts, 'gamma', .3, 3, 1)
+    if abs(gm - 1) > .02:
+        g = S.gamma(g, gm); applied['gamma'] = round(gm, 2)
+    g = S.late_steps(g, {**st, 'glare': 0}, applied)             # anatomical detail
+    sh = _num(opts, 'sharpen', 0, 3, 0)
+    if sh > 0:
+        g = S.unsharp(g, .0015, sh * .8); applied['sharpen'] = round(sh, 2)
+    if opts.get('invert'):
+        g = 1 - g; applied['invert'] = True
+    rgb = S.colour_steps(g, st, applied)
+    if rgb is not None:
+        return Image.fromarray(np.clip(rgb * 255 + .5, 0, 255).astype(np.uint8), 'RGB')
+    out = Image.fromarray(np.clip(g * 255 + .5, 0, 255).astype(np.uint8), 'L')
+    if chroma:
+        out = Image.merge('YCbCr', (out, *chroma)).convert('RGB')
+    return out
 
 
 def describe(applied):
     """Short human description of the steps, e.g. for the caption."""
-    names = [('corners', 'straightened'), ('rotate', 'rotated'), ('flip', 'flipped'), ('denoise', 'denoised'), ('level', 'levelled'),
-             ('enhance', 'contrast enhanced'), ('gamma', 'gamma'), ('sharpen', 'sharpened'), ('invert', 'inverted')]
-    return ', '.join(n for k, n in names if k in applied) or 'greyscale copy'
+    from .imaging_studio import PALETTES
+    names = [('corners', 'straightened'), ('rotate', 'rotated'), ('flip', 'flipped'), ('denoise', 'denoised'), ('smooth', 'smoothed'),
+             ('level', 'levelled'), ('glare', 'glare removed'), ('enhance', 'contrast enhanced'), ('gamma', 'gamma'), ('detail', 'detail'),
+             ('sharpen', 'sharpened'), ('invert', 'inverted'), ('relief', 'relief'), ('edges', 'edges outlined')]
+    words = [n for k, n in names if k in applied]
+    if applied.get('colour') in PALETTES:
+        words.append(PALETTES[applied['colour']]['label'].lower().replace('(illustrative)', 'colour (illustrative)'))
+    return ', '.join(words) or 'greyscale copy'

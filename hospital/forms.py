@@ -1,7 +1,9 @@
 from django import forms
+from django.db.models import Q
 from django.utils import timezone
 from .models import (NetworkFacility, Specialist, SpecialistSlot, ImagingOrder, PrescriptionItem, Medication, Patient, Encounter, QueueTicket, Referral, LabOrder, Prescription,
                      FormDefinition, WorkflowDefinition, Admission, Allergy, Condition, Bed)
+from .models_ambulance import Ambulance, EmsStation
 
 
 class StyledMixin:
@@ -259,3 +261,68 @@ class ReferralNetworkForm(StyledModelForm):
         if d.get('kind') == 'operation' and not d.get('planned_date'):
             self.add_error('planned_date', 'Give the planned operation date so preparation can be timed.')
         return d
+
+
+class AmbulanceForm(StyledModelForm):
+    """Register a vehicle, or correct its details. Status, position and readiness are kept by the fleet page and the crew app."""
+    START = [('available', 'Available now'), ('off_duty', 'Off duty'), ('maintenance', 'Out of service (still being fitted out)')]
+    start_status = forms.ChoiceField(choices=START, initial='available', label='Starts as',
+                                     help_text='A new vehicle is not offered to dispatchers until it is available and has a crew on board.')
+
+    class Meta:
+        model = Ambulance
+        fields = ['call_sign', 'plate', 'level', 'station', 'odometer_km', 'notes', 'active']
+        labels = {'call_sign': 'Call sign', 'plate': 'Number plate', 'level': 'Type of ambulance', 'station': 'Home station',
+                  'odometer_km': 'Odometer (km)', 'notes': 'Notes', 'active': 'In the fleet'}
+        help_texts = {'call_sign': 'The name used on the radio, e.g. Hornbill 4. Must be unique.',
+                      'station': 'Where it waits between jobs. Until the crew phone sends GPS, the map shows it here.',
+                      'notes': 'Equipment, defects or anything dispatchers should know.',
+                      'active': 'Untick to retire the vehicle (sold, written off). Its past calls are kept.'}
+        widgets = {'notes': forms.TextInput()}
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        current = self.instance.station_id if self.instance.pk else None
+        self.fields['station'].queryset = EmsStation.objects.filter(Q(active=True) | Q(pk=current)).order_by('name')
+        self.fields['station'].empty_label = 'No station'
+        self.fields['call_sign'].widget.attrs.update({'placeholder': 'e.g. Hornbill 4', 'autocomplete': 'off'})
+        self.fields['plate'].widget.attrs.update({'placeholder': 'e.g. BJL 1234 A', 'autocomplete': 'off'})
+        if self.instance.pk:
+            del self.fields['start_status']
+        else:
+            del self.fields['active']
+
+    def clean_call_sign(self):
+        value = ' '.join(self.cleaned_data['call_sign'].split())
+        if not value:
+            raise forms.ValidationError('Give the vehicle a call sign.')
+        clash = Ambulance.objects.filter(call_sign__iexact=value).exclude(pk=self.instance.pk).first()
+        if clash:
+            raise forms.ValidationError(f'{clash.call_sign} is already in the fleet{"" if clash.active else " (retired)"}. Choose another call sign.')
+        return value
+
+    def clean_plate(self):
+        value = ' '.join(self.cleaned_data.get('plate', '').upper().split())
+        if value:
+            clash = Ambulance.objects.filter(plate__iexact=value).exclude(pk=self.instance.pk).first()
+            if clash:
+                raise forms.ValidationError(f'This plate is already registered to {clash.call_sign}.')
+        return value
+
+    def clean(self):
+        d = super().clean()
+        amb = self.instance
+        if amb.pk and amb.active and d.get('active') is False:
+            if amb.is_busy:
+                self.add_error('active', f'{amb.call_sign} is on a call. Retire it once the call is closed.')
+            elif amb.shifts.filter(ended_at__isnull=True).exists():
+                self.add_error('active', 'A crew is still on board. End their shift before retiring the vehicle.')
+        return d
+
+    def save(self, commit=True):
+        amb = super().save(commit=False)
+        if 'start_status' in self.cleaned_data:
+            amb.status = self.cleaned_data['start_status']
+        if commit:
+            amb.save()
+        return amb

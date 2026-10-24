@@ -13,12 +13,16 @@
   <section class="panel viewer-panel">
     {% if viewer.images %}
     <div class="iv" id="iv" data-can-edit="{{ can_image|yesno:'1,0' }}" data-number="{{ o.number }}"
-         data-ann-url="{% url 'imaging_annotations' 0 %}" data-process-url="{% url 'imaging_process' 0 %}">
+         data-ann-url="{% url 'imaging_annotations' 0 %}" data-process-url="{% url 'imaging_process' 0 %}"
+         data-modality="{{ o.modality }}" data-region="{{ o.region }}"
+         {% if nav_role == 'radiology' or nav_role == 'doctor' or nav_role == 'nurse' or nav_role == 'admin' %}data-assist-url="{% url 'imaging_studio_assist' 0 %}"{% endif %}>
       <div class="iv-toolbar" role="toolbar" aria-label="Image tools">
         <div class="iv-group">
           <button type="button" data-tool="pan" title="Pan and select (V)"><i class="bi bi-arrows-move"></i></button>
           <button type="button" data-tool="wl" title="Window / level: drag to adjust (W)"><i class="bi bi-brightness-high"></i></button>
-          <button type="button" data-tool="lens" title="Magnifier (L)"><i class="bi bi-zoom-in"></i></button>
+          <button type="button" data-tool="lens" title="Magnifier (L)"><i class="bi bi-search"></i></button>
+          <button type="button" data-tool="zoombox" title="Box zoom: drag around what you want to see (Z)"><i class="bi bi-zoom-in"></i></button>
+          {% if nav_role == 'radiology' or nav_role == 'doctor' or nav_role == 'nurse' or nav_role == 'admin' %}<button type="button" data-tool="area" title="Ask Dr. Flow about an area: drag a box over it (Q)"><i class="bi bi-bounding-box-circles"></i></button>{% endif %}
         </div>
         {% if can_image %}<div class="iv-group">
           <button type="button" data-tool="ruler" title="Ruler (R)"><i class="bi bi-rulers"></i></button>
@@ -28,6 +32,10 @@
           <button type="button" data-tool="arrow" title="Arrow (O)"><i class="bi bi-arrow-up-right"></i></button>
           <button type="button" data-tool="text" title="Note (T)"><i class="bi bi-chat-left-text"></i></button>
           <button type="button" data-tool="calibrate" title="Calibrate to millimetres (K)"><i class="bi bi-bounding-box"></i></button>
+        </div>
+        <div class="iv-group">
+          <button type="button" data-tool="wand" title="Smart select: hover an organ or abnormal area to see its outline, click to keep it (M)"><i class="bi bi-hand-index-thumb"></i></button>
+          <button type="button" data-tool="outline" title="Draw an outline freehand, snapped to the edges (D)"><i class="bi bi-vector-pen"></i></button>
         </div>{% endif %}
         <div class="iv-group">
           <button type="button" data-act="rotl" title="Rotate left"><i class="bi bi-arrow-counterclockwise"></i></button>
@@ -44,12 +52,16 @@
           <button type="button" data-act="save" class="iv-save" title="Save measurements (Ctrl+S)" disabled><i class="bi bi-floppy"></i>Save</button>
           <span class="iv-status" aria-live="polite"></span>
         </div>{% endif %}
+        <div class="iv-group iv-find"><i class="bi bi-search" aria-hidden="true"></i>
+          <input type="search" data-find list="ivg-find-list" placeholder="Show me… e.g. heart" aria-label="Show a structure on the image" autocomplete="off">
+          <datalist id="ivg-find-list"></datalist></div>
         <div class="iv-group ms-auto">
+          <button type="button" data-act="studio" class="iv-studio-btn" title="Studio: make the picture clearer, photo-real colour, navigator (S)"><i class="bi bi-palette2"></i>Studio</button>
           <button type="button" data-act="export" title="Download with measurements"><i class="bi bi-download"></i></button>
           {% if can_image and o.status != 'cancelled' %}<button type="button" data-act="process" class="iv-process" title="Straighten and enhance a photo of a film"><i class="bi bi-magic"></i>Process photo</button>{% endif %}
         </div>
       </div>
-      <div class="iv-tip"></div>
+      <div class="iv-tip"></div><div class="ivg-find-status" aria-live="polite"></div>
       <div class="iv-panes">
         <div class="iv-pane main" data-mode="pan"><div class="iv-stage"><img alt="{{ o.get_modality_display }} {{ o.region }}" draggable="false"><svg class="iv-ann" xmlns="http://www.w3.org/2000/svg"></svg></div>
           <div class="iv-hud"></div><div class="iv-lens" hidden></div>
@@ -145,8 +157,8 @@
 </dialog>{% endif %}
 {{ o.measurements|json_script:"meas-data" }}
 {% endblock %}
-{% block head %}<link href="{% asset 'hospital/css/imaging.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/imaging-ai.css' %}" rel="stylesheet">{% endblock %}
-{% block scripts %}<script src="{% asset 'hospital/js/imaging-viewer.js' %}"></script><script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/imaging-ai.js' %}"></script><script>
+{% block head %}<link href="{% asset 'hospital/css/imaging.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/robodoc.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/imaging-ai.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/imaging-studio.css' %}" rel="stylesheet"><link href="{% asset 'hospital/css/imaging-segment.css' %}" rel="stylesheet">{% endblock %}
+{% block scripts %}<script src="{% asset 'hospital/js/imaging-viewer.js' %}"></script><script src="{% asset 'hospital/js/imaging-studio.js' %}"></script><script src="{% asset 'hospital/js/imaging-segment.js' %}"></script><script src="{% asset 'hospital/js/robodoc.js' %}"></script><script src="{% asset 'hospital/js/imaging-ai.js' %}"></script><script>
 (() => {
   // ---------- measurements editor
   const box = document.getElementById('meas'); if (!box) return;

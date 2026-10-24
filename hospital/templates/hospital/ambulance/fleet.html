@@ -5,6 +5,7 @@
 {% block subheading %}<p class="sub">Each vehicle’s readiness comes from today’s check, fuel, oxygen and whether a crew is on board.</p>{% endblock %}
 {% block actions %}{% with tab='fleet' %}{% include 'hospital/ambulance/_tabs.html' %}{% endwith %}{% endblock %}
 {% block content %}
+{% if can_fleet %}<div class="d-flex justify-content-end mb-3"><a class="btn btn-primary btn-sm" href="{% url 'ems_fleet_new' %}"><i class="bi bi-plus-lg"></i>Register an ambulance</a></div>{% endif %}
 <div class="fleet">
   {% for v in cards %}{% with a=v.a %}
   <article class="vcard" style="--uc:{{ v.color }}">
@@ -31,10 +32,19 @@
         <select name="status" class="form-select form-select-sm" aria-label="Set status"><option value="available" {% if a.status == 'available' %}selected{% endif %}>Available</option><option value="off_duty" {% if a.status == 'off_duty' %}selected{% endif %}>Off duty</option><option value="maintenance" {% if a.status == 'maintenance' %}selected{% endif %}>Out of service</option></select>
         <button class="btn btn-ghost btn-sm">Set</button></form>{% endif %}
       {% if can_fleet %}<a class="btn btn-ghost btn-sm" href="{% url 'ems_crew' %}?unit={{ a.pk }}" title="Open this vehicle’s crew screen"><i class="bi bi-phone"></i></a>{% endif %}
+      {% if can_fleet %}<a class="btn btn-ghost btn-sm" href="{% url 'ems_fleet_edit' a.pk %}" title="Edit vehicle details" aria-label="Edit {{ a.call_sign }}"><i class="bi bi-pencil"></i></a>{% endif %}
     </div>
   </article>
-  {% endwith %}{% empty %}<div class="panel empty"><i class="bi bi-truck-front"></i>No ambulances yet. Add them under Configuration → Ambulances.</div>{% endfor %}
+  {% endwith %}{% empty %}<div class="panel empty"><i class="bi bi-truck-front"></i>No ambulances yet.{% if can_fleet %} <a href="{% url 'ems_fleet_new' %}">Register the first one</a>.{% else %} Ask a fleet manager to register them.{% endif %}</div>{% endfor %}
 </div>
+
+{% if retired and can_fleet %}
+<details class="panel mt-4"><summary class="d-flex gap-2 align-items-center"><h2 class="m-0 fs-6">Retired vehicles</h2><span class="hint">{{ retired|length }} no longer in service; their past calls are kept</span></summary>
+  <div class="ruled small mt-2">{% for a in retired %}<div class="d-flex gap-2 align-items-center"><i class="bi bi-truck-front muted"></i>
+    <div><b>{{ a.call_sign }}</b><div class="muted">{{ a.get_level_display }}{% if a.plate %} · {{ a.plate }}{% endif %}{% if a.station %} · {{ a.station.name }}{% endif %}</div></div>
+    <a class="btn btn-ghost btn-sm ms-auto" href="{% url 'ems_fleet_edit' a.pk %}">Edit or return to service</a></div>{% endfor %}</div>
+</details>
+{% endif %}
 
 <div class="grid g-2 mt-4">
   <section class="panel">

@@ -307,6 +307,78 @@ class AccessTests(EmsBase):
 
 
 @override_settings(NOTIFY_EMAIL_SYNC=True, EMS_SIMULATION=True)
+class FleetTests(EmsBase):
+    NEW = {'call_sign': '  Pelican   4 ', 'plate': 'bjl 1234 a', 'level': 'neonatal', 'odometer_km': 1200, 'notes': 'Incubator fitted',
+           'start_status': 'available'}
+
+    def test_register_a_new_ambulance(self):
+        c = self.as_('dispatcher')
+        self.assertEqual(c.get('/ambulance/fleet/new/').status_code, 200)
+        r = c.post('/ambulance/fleet/new/', dict(self.NEW, station=self.base.pk))
+        self.assertRedirects(r, '/ambulance/fleet/')
+        a = Ambulance.objects.get(call_sign='Pelican 4')
+        self.assertEqual((a.plate, a.level, a.station, a.status, a.active), ('BJL 1234 A', 'neonatal', self.base, 'available', True))
+        self.assertContains(c.get('/ambulance/fleet/'), 'Pelican 4')
+        self.assertTrue(any(u['call_sign'] == 'Pelican 4' for u in A.board_payload()['units']))
+        self.assertIn('Pelican 4', [x.call_sign for x in Ambulance.objects.filter(active=True)])
+
+    def test_new_vehicle_can_start_out_of_service_and_without_a_station(self):
+        self.as_('dispatcher').post('/ambulance/fleet/new/', dict(self.NEW, start_status='maintenance'))
+        a = Ambulance.objects.get(call_sign='Pelican 4')
+        self.assertEqual((a.status, a.station), ('maintenance', None))
+        self.assertEqual(A.readiness(a)[0], 0)
+
+    def test_call_sign_and_plate_must_be_unique(self):
+        c = self.as_('dispatcher')
+        r = c.post('/ambulance/fleet/new/', dict(self.NEW, call_sign='hornbill 1'))
+        self.assertContains(r, 'already in the fleet')
+        self.als.plate = 'BJL 1234 A'
+        self.als.save()
+        r = c.post('/ambulance/fleet/new/', self.NEW)
+        self.assertContains(r, 'already registered to Hornbill 1')
+        self.assertFalse(Ambulance.objects.filter(call_sign__iexact='pelican 4').exists())
+        self.assertContains(c.post('/ambulance/fleet/new/', dict(self.NEW, call_sign='   ')), 'This field is required')
+
+    def test_only_fleet_managers_register_or_edit(self):
+        for who in ('medic', 'reception', 'lab'):
+            self.assertEqual(self.as_(who).get('/ambulance/fleet/new/').status_code, 403, who)
+            self.assertEqual(self.as_(who).post('/ambulance/fleet/new/', self.NEW).status_code, 403, who)
+            self.assertEqual(self.as_(who).get(f'/ambulance/fleet/{self.als.pk}/edit/').status_code, 403, who)
+        self.assertFalse(Ambulance.objects.filter(call_sign='Pelican 4').exists())
+        self.assertNotContains(self.as_('medic').get('/ambulance/fleet/'), 'Register an ambulance')
+        self.assertContains(self.as_('manager').get('/ambulance/fleet/'), 'Register an ambulance')   # managers run the fleet too
+
+    def test_edit_keeps_live_state(self):
+        self.als.fuel_pct, self.als.status = 40, 'off_duty'
+        self.als.save()
+        c = self.as_('dispatcher')
+        self.assertContains(c.get(f'/ambulance/fleet/{self.als.pk}/edit/'), 'Edit Hornbill 1')
+        r = c.post(f'/ambulance/fleet/{self.als.pk}/edit/', {'call_sign': 'Hornbill 1', 'plate': 'kmc 77', 'level': 'bls', 'station': '',
+                                                              'odometer_km': 5000, 'notes': '', 'active': 'on'})
+        self.assertRedirects(r, '/ambulance/fleet/')
+        self.als.refresh_from_db()
+        self.assertEqual((self.als.plate, self.als.level, self.als.station, self.als.fuel_pct, self.als.status), ('KMC 77', 'bls', None, 40, 'off_duty'))
+
+    def test_retire_is_refused_on_a_call_or_with_crew_then_allowed(self):
+        c = self.as_('dispatcher')
+        edit = lambda: c.post(f'/ambulance/fleet/{self.als.pk}/edit/', {'call_sign': 'Hornbill 1', 'level': 'als', 'station': self.base.pk,
+                                                                         'odometer_km': 0, 'notes': ''})   # 'active' unticked
+        call = A.dispatch(self.call(), self.als, self.u['dispatcher'])
+        self.assertContains(edit(), 'is on a call')
+        A.cancel(call, self.u['dispatcher'], 'test')
+        self.assertContains(edit(), 'crew is still on board')
+        self.als.refresh_from_db()
+        self.assertTrue(self.als.active)
+        CrewShift.objects.filter(ambulance=self.als).update(ended_at=call.closed_at or call.updated_at)
+        self.assertRedirects(edit(), '/ambulance/fleet/')
+        self.als.refresh_from_db()
+        self.assertFalse(self.als.active)
+        page = c.get('/ambulance/fleet/')
+        self.assertContains(page, 'Retired vehicles')
+        self.assertNotIn('Hornbill 1', [u['call_sign'] for u in A.board_payload()['units']])
+        self.assertContains(c.post('/ambulance/fleet/new/', dict(self.NEW, call_sign='HORNBILL 1')), '(retired)')
+
+
 class DemoDataTests(TestCase):
     def test_seed_runs_once_and_every_page_renders(self):
         call_command('bootstrap_hospital', verbosity=0)

@@ -1,0 +1,75 @@
+/* Outlines as vector objects (imaging-viewer.js + imaging-segment.js) */
+.iv-pane[data-mode=wand]{cursor:cell}.iv-pane[data-mode=outline]{cursor:crosshair}
+.iv-pane.over-obj[data-mode=pan]{cursor:pointer}
+
+/* outlines kept on the image */
+.iv-obj .iv-poly{fill:var(--pc);fill-opacity:.13;stroke:var(--pc);stroke-width:2;vector-effect:non-scaling-stroke;stroke-linejoin:round;
+  transition:fill-opacity .15s,stroke-width .15s;filter:drop-shadow(0 0 1.5px rgba(0,0,0,.9))}
+.iv-obj.hover .iv-poly{fill-opacity:.32;stroke-width:3.2;filter:drop-shadow(0 0 6px var(--pc))}
+.iv-obj.sel .iv-poly{stroke-width:3.2;stroke-dasharray:10 5;animation:ivg-ants 1.2s linear infinite;fill-opacity:.24}
+.iv-obj.spot .iv-poly{fill-opacity:.06;stroke-width:3.4}
+
+/* Dr. Flow's outlines */
+.iv-ai .iv-ai-outline{fill-opacity:.1;stroke-width:2;vector-effect:non-scaling-stroke;stroke-dasharray:7 4;stroke-linejoin:round;transition:fill-opacity .15s}
+.iv-ai.c-normal .iv-ai-outline{stroke:#7CE38B;fill:#7CE38B}.iv-ai.c-watch .iv-ai-outline{stroke:#7FDBFF;fill:#7FDBFF}
+.iv-ai.c-abnormal .iv-ai-outline{stroke:#FF9F43;fill:#FF9F43}.iv-ai.c-urgent .iv-ai-outline{stroke:#FF4D5E;fill:#FF4D5E}
+.iv-ai.hover .iv-ai-outline,.iv-ai.on .iv-ai-outline{fill-opacity:.28;stroke-width:3;stroke-dasharray:none;filter:drop-shadow(0 0 6px currentColor)}
+.iv-ai.hover .iv-ai-box{stroke-width:3;fill-opacity:.15}
+
+/* spotlight */
+.iv-spot-dim{fill:#000;fill-opacity:.62;pointer-events:none}
+.iv-spot-edge{fill:none;stroke:#fff;stroke-width:2.4;vector-effect:non-scaling-stroke;filter:drop-shadow(0 0 7px rgba(127,219,255,.95));pointer-events:none}
+
+/* smart select preview, freehand line and the shape being named */
+.iv-wand{pointer-events:none}
+.iv-wand-fill{fill:var(--pc);fill-opacity:.22;stroke:none}
+.iv-wand-ants{fill:none;stroke:#fff;stroke-width:1.8;vector-effect:non-scaling-stroke;stroke-dasharray:6 4;animation:ivg-ants .8s linear infinite}
+.iv-lasso{fill:none;stroke:#FFD600;stroke-width:2.4;vector-effect:non-scaling-stroke;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.iv-ghost{fill:var(--pc);fill-opacity:.25;stroke:var(--pc);stroke-width:2.6;vector-effect:non-scaling-stroke;stroke-dasharray:8 4;animation:ivg-ants 1s linear infinite;pointer-events:none}
+@keyframes ivg-ants{to{stroke-dashoffset:-30}}
+@media (prefers-reduced-motion:reduce){.iv-wand-ants,.iv-ghost,.iv-obj.sel .iv-poly{animation:none}}
+
+/* hover tooltip */
+.iv-objtip{position:absolute;z-index:5;max-width:220px;background:rgba(8,14,20,.92);color:#E7EEF2;border:1px solid #22333E;border-radius:9px;padding:6px 9px;
+  font:500 .74rem var(--body,system-ui);pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.iv-objtip b{font-weight:700}.iv-objtip .h{color:#8CA0AC;font-size:.66rem;margin-top:2px}
+.iv-objtip .k,.ivg-tag{font-size:.62rem;font-weight:700;border-radius:99px;padding:0 6px;text-transform:capitalize}
+.k-organ{background:rgba(79,195,247,.18);color:#4FC3F7}.k-finding{background:rgba(255,107,107,.18);color:#FF6B6B}.k-other{background:rgba(255,209,102,.18);color:#FFD166}
+
+/* tool bar on the image */
+.ivg-bar{position:absolute;left:50%;top:8px;transform:translateX(-50%);z-index:5;display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
+  background:rgba(8,14,20,.88);border:1px solid #22333E;border-radius:12px;padding:5px 10px;color:#DCE6EB;font-size:.74rem;max-width:calc(100% - 16px);backdrop-filter:blur(4px)}
+.ivg-kind{display:flex;gap:3px}
+.ivg-kind button{border:1px solid #22333E;background:#101C24;color:#DCE6EB;border-radius:99px;padding:2px 9px;font:700 .7rem var(--body,system-ui)}
+.ivg-kind button.on.k-organ{background:#4FC3F7;color:#06202B;border-color:#4FC3F7}
+.ivg-kind button.on.k-finding{background:#FF6B6B;color:#2B0606;border-color:#FF6B6B}
+.ivg-kind button.on.k-other{background:#FFD166;color:#2B2206;border-color:#FFD166}
+.ivg-grow{display:flex;align-items:center;gap:5px;margin:0}.ivg-grow input{width:90px;accent-color:#3FE0B0}
+.ivg-snap{display:flex;align-items:center;gap:5px;margin:0}
+.ivg-hint{color:#8CA0AC;font-size:.68rem}
+
+/* naming card and inspector */
+.ivg-card{position:absolute;left:10px;top:52px;z-index:6;width:min(300px,calc(100% - 20px));background:#0B141B;color:#DCE6EB;border:1px solid #22333E;
+  border-radius:12px;padding:10px;box-shadow:0 14px 40px rgba(0,0,0,.5);font-size:.78rem}
+.ivg-card .form-control{background:#101C24;border-color:#22333E;color:#fff;margin-top:6px}
+.ivg-card-h{display:flex;align-items:center;gap:7px;font-size:.86rem}
+.ivg-x{margin-left:auto;border:0;background:transparent;color:#8CA0AC;width:26px;height:26px;border-radius:7px}.ivg-x:hover{background:#1C2A34;color:#fff}
+.ivg-chips{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+.ivg-chips button{border:1px solid #22333E;background:#101C24;color:#C3D0D7;border-radius:99px;padding:1px 8px;font-size:.68rem}
+.ivg-chips button:hover{border-color:#3FE0B0;color:#fff}
+.ivg-card .ivg-kind{margin-top:4px}
+.ivg-card-go{display:flex;gap:6px;margin-top:8px}.ivg-card .btn-ghost{color:#DCE6EB;border-color:#22333E;background:#101C24}
+.ivg-dot{width:12px;height:12px;border-radius:50%;flex:none;box-shadow:0 0 6px currentColor}
+.ivg-meas{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:8px 0 4px}.ivg-meas dt{color:#8CA0AC;font-weight:600}.ivg-meas dd{margin:0;color:#fff;font-variant-numeric:tabular-nums}
+.ivg-small{font-size:.66rem;color:#8CA0AC;margin:0 0 4px}.ivg-note{font-size:.72rem;background:#101C24;border-radius:8px;padding:6px;margin:4px 0}
+.ivg-actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;align-items:center}
+.ivg-actions>button{border:1px solid #22333E;background:#101C24;color:#DCE6EB;border-radius:8px;padding:3px 8px;font:600 .7rem var(--body,system-ui);display:inline-flex;gap:4px;align-items:center}
+.ivg-actions>button:hover{border-color:#3FE0B0}.ivg-actions>button.on{background:#FFD166;color:#2B2206;border-color:#FFD166}
+.ivg-actions>button.danger:hover{border-color:#FF6B6B;color:#FF6B6B}
+.ivg-swatches{display:inline-flex;gap:3px}.ivg-swatches button{width:16px;height:16px;border-radius:50%;border:1px solid rgba(255,255,255,.4);padding:0}
+
+/* find box */
+.iv-find{padding:0 6px;gap:4px}.iv-find i{color:var(--muted,#5A6F7D);font-size:.8rem}
+.iv-find input{border:0;background:transparent;height:30px;width:170px;font:500 .8rem var(--body,system-ui);outline:none;color:var(--ink,#0F2C3F)}
+.ivg-find-status{font-size:.72rem;color:#5B3FB0;min-height:1em;font-weight:600}
+.iva-has-outline{color:#5B3FB0}

@@ -1338,12 +1338,26 @@ def imaging_detail(request, pk):
 
 
 ANNOTATION_TYPES = {'ruler': 2, 'angle': 3, 'cobb': 4, 'ellipse': 2, 'arrow': 2, 'text': 1}
+# outlines of organs, abnormal areas and other structures (drawn freehand, made with smart select, or kept from Dr. Flow)
+POLYGON_KINDS, POLYGON_SOURCES, POLYGON_MAX = ('organ', 'finding', 'other'), ('drawn', 'smart', 'ai'), 400
+
+
+def _clean_polygon(a, pts):
+    if not 3 <= len(pts) <= POLYGON_MAX:
+        return None
+    import re
+    colour = str(a.get('color') or '')
+    return {'type': 'polygon', 'points': [[round(float(x), 2), round(float(y), 2)] for x, y in pts],
+            'text': str(a.get('text') or '')[:300], 'label': str(a.get('label') or '')[:60],
+            'kind': a.get('kind') if a.get('kind') in POLYGON_KINDS else 'other',
+            'source': a.get('source') if a.get('source') in POLYGON_SOURCES else 'drawn',
+            'color': colour if re.fullmatch(r'#[0-9a-fA-F]{6}', colour) else ''}
 
 
 @login_required
 @require_POST
 def imaging_annotations(request, pk):
-    """Save the rulers, angles, regions, arrows and notes drawn on one image, and its calibration."""
+    """Save the rulers, angles, regions, arrows, notes and outlines drawn on one image, and its calibration."""
     authorize(request, 'imaging')
     img = get_object_or_404(ImagingImage.objects.select_related('order'), pk=pk)
     try:
@@ -1351,6 +1365,11 @@ def imaging_annotations(request, pk):
         clean = []
         for a in (data.get('annotations') or [])[:200]:
             kind, pts = a.get('type'), a.get('points') or []
+            if kind == 'polygon':
+                poly = _clean_polygon(a, pts)
+                if poly:
+                    clean.append(poly)
+                continue
             if kind not in ANNOTATION_TYPES or len(pts) != ANNOTATION_TYPES[kind]:
                 continue
             clean.append({'type': kind, 'points': [[round(float(x), 2), round(float(y), 2)] for x, y in pts],

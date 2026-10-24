@@ -5,6 +5,7 @@
 /ambulance/calls/<pk>/          one call: journey, best ambulance to send, destination, care on board, handover, timeline
 /ambulance/crew/                crew screen (phone-first): directions, preparation checklist, vital signs, handover
 /ambulance/fleet/               vehicles, readiness checks, crews on shift, paired phone-app devices
+/ambulance/fleet/new/           register a new ambulance (…/fleet/<pk>/edit/ corrects or retires one)
 /ambulance/insights/            response times, busiest hours, what people call about
 /ambulance/api/                 API guide for the phone apps (+ /api/ems/v1/openapi.json)
 /e/<token>/                     public tracking page for the caller (no sign-in)
@@ -22,8 +23,11 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.db import transaction
+from django.db.models import Prefetch
 
 from . import ambulance as A
+from .forms import AmbulanceForm
 from .maps import tile_layers
 from .models import Location, NetworkFacility
 from .models_ambulance import Ambulance, ApiDevice, CrewShift, EmergencyCall, EmsStation
@@ -263,7 +267,8 @@ def crew_shift(request):
 @login_required
 def fleet(request):
     authorize(request, 'ambulance')
-    units = list(Ambulance.objects.select_related('station', 'checked_by').prefetch_related('shifts__user').order_by('station__name', 'call_sign'))
+    units = list(Ambulance.objects.filter(active=True).select_related('station', 'checked_by').prefetch_related('shifts__user').order_by('station__name', 'call_sign'))
+    retired = Ambulance.objects.filter(active=False).select_related('station').order_by('call_sign')
     cards = []
     for a in units:
         score, why = A.readiness(a)
@@ -273,8 +278,44 @@ def fleet(request):
     U = get_user_model()
     crew_users = U.objects.filter(is_active=True, hospital_staff__active=True, hospital_staff__role__in=['paramedic', 'driver', 'nurse', 'doctor', 'dispatcher']).order_by('first_name')
     return render(request, 'hospital/ambulance/fleet.html', _ctx(
-        request, cards=cards, stations=EmsStation.objects.filter(active=True).prefetch_related('ambulances'), checks=A.READINESS, devices=devices,
+        request, cards=cards, retired=retired, checks=A.READINESS, devices=devices,
+        stations=EmsStation.objects.filter(active=True).prefetch_related(Prefetch('ambulances', queryset=Ambulance.objects.filter(active=True))),
         crew_users=crew_users, on_shift=CrewShift.objects.filter(ended_at__isnull=True).select_related('user', 'ambulance')))
+
+
+def _vehicle_form(request, amb=None):
+    authorize(request, 'ambulance_fleet')
+    name = amb.call_sign if amb else ''    # the form writes typed values onto the instance; keep the real name for the heading
+    if request.method != 'POST':
+        form = AmbulanceForm(instance=amb)
+    else:
+        with transaction.atomic():
+            if amb is not None:     # lock the vehicle so a dispatch or crew change can't slip in while it is checked and saved
+                amb = Ambulance.objects.select_for_update().get(pk=amb.pk)
+            form = AmbulanceForm(request.POST, instance=amb)
+            saved = form.save() if form.is_valid() else None
+        if saved is not None:
+            if amb is None:
+                audit(request, 'ems_fleet_register', f'ambulance:{saved.pk}', {'call_sign': saved.call_sign, 'level': saved.level})
+                messages.success(request, f'{saved.call_sign} is registered. Run the vehicle check and put a crew on board to make it ready for calls.')
+            else:
+                audit(request, 'ems_fleet_edit', f'ambulance:{saved.pk}', {'changed': form.changed_data})
+                messages.success(request, f'{saved.call_sign} saved.' if saved.active else f'{saved.call_sign} has been retired from the fleet.')
+            return redirect('ems_fleet')
+    title = f'Edit {name}' if amb else 'Register an ambulance'
+    subtitle = ('Correct the vehicle’s details. Its status, fuel, oxygen and readiness are updated from the fleet page and the crew app.' if amb else
+                'Add a vehicle to the fleet. Once it is checked and has a crew on board, dispatchers can send it to calls.')
+    return render(request, 'hospital/form.html', _ctx(request, form=form, title=title, subtitle=subtitle))
+
+
+@login_required
+def fleet_new(request):
+    return _vehicle_form(request)
+
+
+@login_required
+def fleet_edit(request, pk):
+    return _vehicle_form(request, get_object_or_404(Ambulance, pk=pk))
 
 
 @login_required

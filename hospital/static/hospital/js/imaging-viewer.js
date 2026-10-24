@@ -3,7 +3,12 @@
    calibration, saved per image, and a photo-processing dialog (straighten from 4 corners, enhance, denoise).
    Display adjustments never change the stored image; processing saves a new copy beside the original.
    Dr. Flow (imaging-ai.js) draws its AI labels on a separate layer through window.ImagingViewer, and the "Cover
-   names" tool paints boxes that are blacked out on the server before an image is sent to the AI. */
+   names" tool paints boxes that are blacked out on the server before an image is sent to the AI.
+   The "Ask about an area" tool selects a box for an area question to Dr. Flow; the studio (imaging-studio.js) lays its
+   enhanced rendering over the image through setOverlay() and drives navigation through view()/centreOn()/zoomBy().
+   Outlines (type "polygon": organs, abnormal areas, other structures) are vector objects: hovering highlights them with
+   their name and size, clicking selects them, "spotlight" dims everything else. They are made by imaging-segment.js
+   (smart select, freehand outline) or kept from Dr. Flow's outlines, through registerTool()/addLayer()/addPolygon(). */
 (() => {
   'use strict';
   const root = document.getElementById('iv');
@@ -41,6 +46,7 @@
       Object.assign(this.stage.style, {width: this.w + 'px', height: this.h + 'px',
         transform: `translate(${r.width / 2 + this.px}px,${r.height / 2 + this.py}px) rotate(${this.rot}deg) scale(${this.flip ? -s : s},${s}) translate(${-this.w / 2}px,${-this.h / 2}px)`});
       this.img.style.filter = `brightness(${this.f.b}%) contrast(${this.f.c}%)${this.f.inv ? ' invert(1)' : ''}${this.f.lut ? ` url(#lut-${this.f.lut})` : ''}`;
+      if (this.overlay) this.overlay.style.filter = `brightness(${this.f.b}%) contrast(${this.f.c}%)${this.f.inv ? ' invert(1)' : ''}`;
       this.onChange('view');
     }
     /* screen point (client coords) -> image pixel coords, undoing pan, rotation, flip and zoom */
@@ -58,7 +64,12 @@
   }
 
   /* ================================================================ state */
-  const main = new Pane($('.iv-pane.main'), what => { if (what === 'load') { loadPixels(); draw(); } else draw(); hud(); syncCompare(); });
+  let viewTick = 0;
+  const main = new Pane($('.iv-pane.main'), what => {
+    if (what === 'load') { loadPixels(); draw(); } else draw();
+    hud(); syncCompare();
+    if (!viewTick) viewTick = requestAnimationFrame(() => { viewTick = 0; emit('iv:view', {}); });
+  });
   const cmp = new Pane($('.iv-pane.compare'));
   let cur = DATA.images.find(i => i.id === DATA.start) || DATA.images[0];
   let anns = [], mm = null, dirty = false, undo = [], selected = -1, tool = 'pan', pending = null, pixels = null;
@@ -66,6 +77,14 @@
   // and the boxes to black out before sending (per image id, fractions 0-1; kept in this page only, never saved)
   const ai = {labels: [], show: true, active: -1};
   const covers = {}; let coverDraft = null;
+  // the area selected for a Dr. Flow area question, an area being dragged (also for box zoom), and the area of the AI
+  // answer on show; all [x, y, w, h] fractions 0-1
+  let area = null, areaDraft = null, focus = null;
+  // vector objects: what the pointer is over, what is in the spotlight ([{type:'ann'|'ai', i}]), plug-in tools and layers
+  let hover = null, spot = [], showNames = true;
+  const tools = {}, layers = [];
+  const KIND_COLOUR = {organ: '#4FC3F7', finding: '#FF6B6B', other: '#FFD166'};
+  const polyColour = a => a.color || KIND_COLOUR[a.kind] || KIND_COLOUR.other;
   const emit = (name, detail) => root.dispatchEvent(new CustomEvent(name, {detail}));
 
   function select(img) {
@@ -75,7 +94,8 @@
     $$('.iv-thumb').forEach(t => t.classList.toggle('on', +t.dataset.id === img.id));
     $('.iv-processed').hidden = !img.processed;
     $('.iv-processed span').textContent = img.processed ? describeSteps(img.steps) : '';
-    ai.labels = []; ai.active = -1; coverDraft = null;
+    ai.labels = []; ai.active = -1; coverDraft = null; area = null; areaDraft = null; focus = null; hover = null; spot = [];
+    setOverlay(null);
     status(); list();
     history.replaceState(null, '', `?img=${img.id}`);
     emit('iv:image', {id: img.id});
@@ -115,8 +135,46 @@
     const mean = sum / n;
     return {mean, sd: Math.sqrt(Math.max(0, sq / n - mean * mean)), min: mn, max: mx};
   }
+  const shoelace = P => Math.abs(P.reduce((s, p, i) => { const q = P[(i + 1) % P.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
+  const perimeter = P => P.reduce((s, p, i) => s + dist(p, P[(i + 1) % P.length]), 0);
+  function inside(P, x, y) {           // even-odd rule
+    let c = false;
+    for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+      const [xi, yi] = P[i], [xj, yj] = P[j];
+      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-9) + xi) c = !c;
+    }
+    return c;
+  }
+  const statCache = new WeakMap();      // outlines are redrawn on every hover; their pixel statistics only change with them
+  function polyStats(P) {
+    if (!pixels) return null;
+    const hit = statCache.get(P); if (hit && hit.px === pixels) return hit.v;
+    const v = polyStatsRaw(P); statCache.set(P, {px: pixels, v}); return v;
+  }
+  function polyStatsRaw(P) {
+    const k = pixels.k, xs = P.map(p => p[0] * k), ys = P.map(p => p[1] * k), Q = P.map(p => [p[0] * k, p[1] * k]);
+    const x0 = Math.max(0, Math.floor(Math.min(...xs))), x1 = Math.min(pixels.w - 1, Math.ceil(Math.max(...xs)));
+    const y0 = Math.max(0, Math.floor(Math.min(...ys))), y1 = Math.min(pixels.h - 1, Math.ceil(Math.max(...ys)));
+    const step = Math.max(1, Math.round(Math.sqrt((x1 - x0) * (y1 - y0)) / 80));
+    let n = 0, sum = 0, sq = 0;
+    for (let y = y0; y <= y1; y += step) for (let x = x0; x <= x1; x += step) {
+      if (!inside(Q, x + .5, y + .5)) continue;
+      const i = (y * pixels.w + x) * 4, v = .299 * pixels.data[i] + .587 * pixels.data[i + 1] + .114 * pixels.data[i + 2];
+      n++; sum += v; sq += v * v;
+    }
+    if (!n) return null;
+    const mean = sum / n;
+    return {mean, sd: Math.sqrt(Math.max(0, sq / n - mean * mean))};
+  }
+  const areaText = px2 => mm ? (px2 * mm * mm >= 100 ? `${(px2 * mm * mm / 100).toFixed(2)} cm²` : `${(px2 * mm * mm).toFixed(1)} mm²`) : `${Math.round(px2)} px²`;
   function measure(a) {
     const p = a.points;
+    if (a.type === 'polygon') {
+      const ar = shoelace(p), st = polyStats(p);
+      return {value: areaText(ar) + (st ? ` · mean ${st.mean.toFixed(0)}` : ''), raw: mm ? ar * mm * mm : ar, unit: mm ? 'mm²' : 'px²',
+              label: a.label || {organ: 'Organ', finding: 'Abnormal area', other: 'Outline'}[a.kind] || 'Outline', stats: st,
+              area: areaText(ar), perimeter: lenText(perimeter(p))};
+    }
     if (a.type === 'ruler') return {value: lenText(dist(p[0], p[1])), raw: dist(p[0], p[1]) * (mm || 1), unit: mm ? 'mm' : 'px', label: a.label || 'Length'};
     if (a.type === 'angle') return {value: `${angleAt(p[0], p[1], p[2]).toFixed(1)}°`, raw: angleAt(p[0], p[1], p[2]), unit: '°', label: a.label || 'Angle'};
     if (a.type === 'cobb') return {value: `${lineAngle(p[0], p[1], p[2], p[3]).toFixed(1)}°`, raw: lineAngle(p[0], p[1], p[2], p[3]), unit: '°', label: a.label || 'Cobb angle'};
@@ -147,6 +205,17 @@
       if (a.type === 'ruler' || a.type === 'calibrate') { if (P[1]) { line(P[0], P[1]); [P[0], P[1]].forEach(p => { const d = [P[1][1] - P[0][1], P[0][0] - P[1][0]], L = Math.hypot(...d) || 1; line([p[0] + d[0] / L * 6 / s, p[1] + d[1] / L * 6 / s], [p[0] - d[0] / L * 6 / s, p[1] - d[1] / L * 6 / s]); }); } }
       if (a.type === 'angle') { if (P[1]) line(P[0], P[1]); if (P[2]) line(P[1], P[2]); }
       if (a.type === 'cobb') { if (P[1]) line(P[0], P[1]); if (P[3]) line(P[2], P[3]); }
+      if (a.type === 'polygon') {
+        const col = polyColour(a), hv = hover && hover.type === 'ann' && hover.i === i, sp = spot.some(t => t.type === 'ann' && t.i === i);
+        g.setAttribute('class', `iv-a iv-obj k-${a.kind || 'other'}${i === selected ? ' sel' : ''}${hv ? ' hover' : ''}${sp ? ' spot' : ''}`);
+        g.style.setProperty('--pc', col);
+        el('path', {d: 'M' + P.map(q => q.join(',')).join('L') + 'Z', class: 'iv-poly'}, g);
+        if (showNames || hv || i === selected || sp) {
+          const top = P.reduce((b, q) => q[1] < b[1] ? q : b, P[0]), cx = P.reduce((s2, q) => s2 + q[0], 0) / P.length;
+          label(cx - 20 / s, top[1] - 4 / s, a.label || (a.kind === 'finding' ? 'Abnormal area' : 'Outline'), g);
+        }
+        return;
+      }
       if (a.type === 'ellipse' && P[1]) el('ellipse', {cx: (P[0][0] + P[1][0]) / 2, cy: (P[0][1] + P[1][1]) / 2, rx: Math.abs(P[1][0] - P[0][0]) / 2, ry: Math.abs(P[1][1] - P[0][1]) / 2}, g);
       if (a.type === 'arrow' && P[1]) {
         line(P[0], P[1]);
@@ -156,10 +225,43 @@
       if (a.type === 'text' || a.type === 'arrow') { if (a.text) label(P[0][0], P[0][1], a.text, g); if (a.type === 'text') el('circle', {cx: P[0][0], cy: P[0][1], r: 3 / s, class: 'iv-head'}, g); }
       if (m) { const at = a.type === 'angle' ? P[1] : a.type === 'ellipse' ? [Math.max(P[0][0], P[1][0]), Math.min(P[0][1], P[1][1])] : P[P.length - 1]; label(at[0], at[1], `${a.label ? a.label + ': ' : ''}${m.value}`, g); }
       if (a.type === 'calibrate' && P[1]) label(P[1][0], P[1][1], lenText(dist(P[0], P[1])), g);
-      if (i === selected && CAN_EDIT) P.forEach((p, k) => el('circle', {cx: p[0], cy: p[1], r: hr, class: 'iv-handle', 'data-h': k}, g));
+      if (i === selected && CAN_EDIT && a.type !== 'polygon') P.forEach((p, k) => el('circle', {cx: p[0], cy: p[1], r: hr, class: 'iv-handle', 'data-h': k}, g));
     });
     drawAi(svg, s, label);
     drawCovers(svg, s);
+    drawAreas(svg, s, label);
+    drawSpot(svg, s);
+    layers.forEach(fn => { try { fn(svg, s, el, label); } catch (e) { /* a plug-in layer must never break the viewer */ } });
+  }
+  /* spotlight: everything outside the chosen outlines (or boxes) is dimmed */
+  function outlineOf(t) {
+    if (t.type === 'ann') { const a = anns[t.i]; return a && a.type === 'polygon' ? a.points : null; }
+    const lb = ai.labels[t.i]; if (!lb) return null;
+    if (lb.outline) return lb.outline.map(([x, y]) => [x * main.w, y * main.h]);
+    if (lb.box) { const [x, y, w, h] = lb.box; return [[x, y], [x + w, y], [x + w, y + h], [x, y + h]].map(([u, v]) => [u * main.w, v * main.h]); }
+    return null;
+  }
+  function drawSpot(svg) {
+    const shapes = spot.map(outlineOf).filter(Boolean);
+    if (!shapes.length) return;
+    const pad = Math.max(main.w, main.h) * 3;
+    const d = `M${-pad},${-pad}H${main.w + pad}V${main.h + pad}H${-pad}Z ` + shapes.map(P => 'M' + P.map(q => q.join(',')).join('L') + 'Z').join(' ');
+    const dim = el('path', {d, class: 'iv-spot-dim', 'fill-rule': 'evenodd'});
+    svg.insertBefore(dim, svg.firstChild);
+    shapes.forEach(P => el('path', {d: 'M' + P.map(q => q.join(',')).join('L') + 'Z', class: 'iv-spot-edge'}, svg));
+  }
+  /* the selected area, the area being dragged, and the area an AI answer is about */
+  function drawAreas(svg, s, label) {
+    const W = main.w, H = main.h, layer = el('g', {class: 'iv-area-layer'}, svg);
+    const box = (b, cls, txt) => {
+      const g = el('g', {class: cls}, layer);
+      el('rect', {x: b[0] * W, y: b[1] * H, width: b[2] * W, height: b[3] * H, rx: 3 / s}, g);
+      [[0, 0], [1, 0], [1, 1], [0, 1]].forEach(([u, v]) => el('path', {d: `M${(b[0] + u * b[2]) * W + (u ? -1 : 1) * 12 / s},${(b[1] + v * b[3]) * H} h${(u ? 1 : -1) * 12 / s} v${(v ? -1 : 1) * 12 / s}`, class: 'iv-area-corner'}, g));
+      if (txt) label(b[0] * W, b[1] * H, txt, g);
+    };
+    if (focus) box(focus, 'iv-area focus', 'Area asked about');
+    if (area) box(area, 'iv-area sel', 'Selected area');
+    if (areaDraft) box(areaDraft, `iv-area draft${tool === 'zoombox' ? ' zoom' : ''}`, '');
   }
 
   /* Dr. Flow's labels: numbered boxes or points, coloured by concern; the active one shows its name */
@@ -169,7 +271,14 @@
     ai.labels.forEach((lb, i) => {
       const on = i === ai.active, g = el('g', {class: `iv-ai c-${lb.concern || 'watch'}${on ? ' on' : ''}`, 'data-ai': i}, layer);
       let bx, by;
-      if (lb.box) {
+      const hv = hover && hover.type === 'ai' && hover.i === i;
+      if (hv) g.classList.add('hover');
+      if (lb.outline) {
+        const P = lb.outline.map(([x, y]) => [x * W, y * H]);
+        el('path', {d: 'M' + P.map(q => q.join(',')).join('L') + 'Z', class: 'iv-ai-outline'}, g);
+        const top = P.reduce((b, q) => q[1] < b[1] ? q : b, P[0]);
+        bx = top[0]; by = top[1];
+      } else if (lb.box) {
         const [x, y, w, h] = lb.box;
         el('rect', {x: x * W, y: y * H, width: w * W, height: h * H, rx: 4 / s, class: 'iv-ai-box'}, g);
         bx = x * W; by = y * H;
@@ -182,7 +291,7 @@
       const t = el('g', {transform: `translate(${bx},${by}) scale(${main.flip ? -1 : 1},1) rotate(${-main.rot})`, class: 'iv-ai-badge'}, g);
       el('circle', {cx: 0, cy: 0, r: 10 / s}, t);
       const n = el('text', {x: 0, y: 0, 'font-size': 11 / s, 'text-anchor': 'middle', 'dominant-baseline': 'central'}, t); n.textContent = lb.n || i + 1;
-      if (on) label(bx + 8 / s, by + 4 / s, lb.name, g);
+      if (on || hv) label(bx + 8 / s, by + 4 / s, lb.name, g);
     });
   }
   /* boxes that will be blacked out before sending to the AI */
@@ -215,7 +324,7 @@
     const box = $('.iv-list');
     const rows = anns.map((a, i) => ({a, i, m: measure(a)})).filter(r => r.m || r.a.type === 'text' || r.a.type === 'arrow');
     box.innerHTML = rows.length ? rows.map(({a, i, m}) => `<div class="iv-row ${i === selected ? 'sel' : ''}" data-i="${i}">
-        <i class="bi ${{ruler: 'bi-rulers', angle: 'bi-triangle', cobb: 'bi-bezier2', ellipse: 'bi-circle', arrow: 'bi-arrow-up-right', text: 'bi-chat-left-text'}[a.type]}"></i>
+        <i class="bi ${{ruler: 'bi-rulers', angle: 'bi-triangle', cobb: 'bi-bezier2', ellipse: 'bi-circle', arrow: 'bi-arrow-up-right', text: 'bi-chat-left-text', polygon: 'bi-vector-pen'}[a.type]}"></i>
         <span class="iv-row-name">${esc(m ? (a.label || m.label) : (a.text || 'Note'))}</span><b>${m ? esc(m.value) : ''}</b>
         ${m && window.addReportMeasurement ? `<button type="button" class="btn btn-sm btn-ghost" data-report="${i}" title="Add to the report"><i class="bi bi-file-earmark-plus"></i></button>` : ''}
         ${CAN_EDIT ? `<button type="button" class="btn btn-sm btn-ghost" data-rename="${i}" title="Name it"><i class="bi bi-pencil"></i></button><button type="button" class="btn btn-sm btn-ghost" data-del="${i}" title="Delete"><i class="bi bi-trash"></i></button>` : ''}</div>`).join('')
@@ -228,9 +337,19 @@
   let drag = null;
   const pane = main.el;
   pane.addEventListener('wheel', e => { e.preventDefault(); main.zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, {passive: false});
-  pane.addEventListener('dblclick', e => { if (tool === 'pan') { main.z > 1.01 ? (main.z = 1, main.px = main.py = 0, main.apply()) : main.zoomAt(e.clientX, e.clientY, 2.5); } });
+  pane.addEventListener('dblclick', e => {
+    if (tool === 'pan' && hover) { const t = hover; spot = spot.some(x => x.type === t.type && x.i === t.i) ? [] : [t]; draw(); emit('iv:spot', {targets: spot}); return; }
+    if (tools[tool] && tools[tool].dblclick) { tools[tool].dblclick(main.toImage(e.clientX, e.clientY), e); return; }
+    if (tool === 'pan') { main.z > 1.01 ? (main.z = 1, main.px = main.py = 0, main.apply()) : main.zoomAt(e.clientX, e.clientY, 2.5); } });
   pane.addEventListener('contextmenu', e => e.preventDefault());
+  let lastDown = {t: 0, x: 0, y: 0};
   pane.addEventListener('pointerdown', e => {
+    // our own double-click: the overlay is redrawn between the clicks, so the browser's dblclick never reaches it
+    const now = performance.now(), dbl = now - lastDown.t < 500 && Math.hypot(e.clientX - lastDown.x, e.clientY - lastDown.y) < 8;
+    lastDown = {t: dbl ? 0 : now, x: e.clientX, y: e.clientY};
+    if (dbl && tool === 'pan' && hover && e.button === 0) {
+      const t = hover; spot = spot.some(x => x.type === t.type && x.i === t.i) ? [] : [t]; draw(); emit('iv:spot', {targets: spot}); return;
+    }
     pane.setPointerCapture(e.pointerId);
     const p = main.toImage(e.clientX, e.clientY), h = e.target.closest('.iv-handle'), a = e.target.closest('.iv-a');
     if (h && selected >= 0) { undo.push(JSON.stringify({anns, mm})); drag = {type: 'handle', k: +h.dataset.h}; return; }
@@ -240,10 +359,14 @@
       if (c && +c.dataset.cover >= 0) { covers[cur.id].splice(+c.dataset.cover, 1); draw(); emit('iv:cover', {count: covers[cur.id].length}); return; }
       drag = {type: 'cover', start: p}; coverDraft = null; return;
     }
+    if (tool === 'area' || tool === 'zoombox') { drag = {type: 'area', start: p}; areaDraft = null; return; }
+    if (tools[tool]) { drag = {type: 'plugin'}; tools[tool].down && tools[tool].down(p, e); return; }
     const aiHit = e.target.closest('.iv-ai');
+    if (tool === 'pan' && !aiHit && !a && hover && hover.type === 'ai') { ai.active = hover.i; draw(); emit('iv:ai-select', {index: ai.active}); drag = {type: 'pan', x: e.clientX - main.px, y: e.clientY - main.py}; return; }
     if (tool === 'pan' && aiHit) { ai.active = +aiHit.dataset.ai; draw(); emit('iv:ai-select', {index: ai.active}); drag = {type: 'pan', x: e.clientX - main.px, y: e.clientY - main.py}; return; }
     if (tool === 'pan') {
-      if (a && +a.dataset.i >= 0) { selected = +a.dataset.i; draw(); list(); drag = {type: 'move', start: p, orig: JSON.parse(JSON.stringify(anns[selected].points)), pushed: false}; return; }
+      if (a && +a.dataset.i >= 0) { selected = +a.dataset.i; draw(); list(); emit('iv:select', {index: selected, type: anns[selected]?.type}); drag = {type: 'move', start: p, orig: JSON.parse(JSON.stringify(anns[selected].points)), pushed: false}; return; }
+      if (selected >= 0) emit('iv:select', {index: -1});
       selected = -1; draw(); list(); drag = {type: 'pan', x: e.clientX - main.px, y: e.clientY - main.py}; return;
     }
     if (!CAN_EDIT && tool !== 'lens') return;
@@ -257,7 +380,8 @@
   });
   pane.addEventListener('pointermove', e => {
     lens(e);
-    if (!drag) return;
+    if (tools[tool] && tools[tool].move) { tools[tool].move(main.toImage(e.clientX, e.clientY), e, !!drag); if (drag && drag.type === 'plugin') return; }
+    if (!drag) { hoverAt(e); return; }
     const p = main.toImage(e.clientX, e.clientY);
     if (drag.type === 'pan') { main.px = e.clientX - drag.x; main.py = e.clientY - drag.y; main.apply(); }
     else if (drag.type === 'wl') { main.f.c = Math.round(Math.min(400, Math.max(20, drag.c + (e.clientX - drag.x) * .6))); main.f.b = Math.round(Math.min(300, Math.max(20, drag.b - (e.clientY - drag.y) * .5))); syncSliders(); main.apply(); }
@@ -269,6 +393,7 @@
     }
     else if (drag.type === 'draw' && pending) { pending.points[pending.points.length - 1] = p; draw(); }
     else if (drag.type === 'cover') { coverDraft = boxFrac(drag.start, p); draw(); }
+    else if (drag.type === 'area') { areaDraft = boxFrac(drag.start, p); draw(); }
   });
   const clamp01 = v => Math.min(1, Math.max(0, v));
   function boxFrac(a, b) {
@@ -277,6 +402,7 @@
     return [x0, y0, x1 - x0, y1 - y0];
   }
   pane.addEventListener('pointerup', e => {
+    if (drag && drag.type === 'plugin') { drag = null; tools[tool] && tools[tool].up && tools[tool].up(main.toImage(e.clientX, e.clientY), e); return; }
     if (drag && drag.type === 'draw' && pending) {
       const pts = pending.points, last = pts[pts.length - 1], prev = pts[pts.length - 2];
       if (prev && dist(last, prev) * main.scale() > 6 && pts.length < NEED[pending.type]) pts.push([...last]);   // a drag sets the next point; keep one following the pointer
@@ -288,9 +414,61 @@
       if (b && b[2] * main.w * main.scale() > 6 && b[3] * main.h * main.scale() > 6) { (covers[cur.id] = covers[cur.id] || []).push(b); emit('iv:cover', {count: covers[cur.id].length}); }
       draw();
     }
+    if (drag && drag.type === 'area') {
+      const b = areaDraft; areaDraft = null;
+      const big = b && b[2] * main.w * main.scale() > 10 && b[3] * main.h * main.scale() > 10;
+      if (tool === 'zoombox') { if (big) zoomToBox(b); setTool('pan'); }
+      else if (big) { area = b; emit('iv:area', {box: b.map(v => +v.toFixed(4))}); }
+      draw();
+    }
     drag = null;
   });
-  pane.addEventListener('pointerleave', () => { $('.iv-lens').hidden = true; });
+  pane.addEventListener('pointerleave', () => { $('.iv-lens').hidden = true; setHover(null); if (tools[tool] && tools[tool].leave) tools[tool].leave(); });
+
+  /* ---------------------------------------------------------------- hovering vector objects */
+  const tipEl = document.createElement('div');
+  tipEl.className = 'iv-objtip'; tipEl.hidden = true; pane.appendChild(tipEl);
+  let hoverTick = 0;
+  function hitTest(x, y) {
+    for (let i = anns.length - 1; i >= 0; i--) if (anns[i].type === 'polygon' && inside(anns[i].points, x, y)) return {type: 'ann', i};
+    if (ai.show) {
+      let best = null, bestArea = Infinity;      // the smallest AI shape under the pointer wins (a nodule inside a lung)
+      ai.labels.forEach((lb, i) => {
+        const P = outlineOf({type: 'ai', i}); if (!P || !lb.outline && !lb.box) return;
+        if (inside(P, x, y)) { const ar = shoelace(P); if (ar < bestArea) { bestArea = ar; best = {type: 'ai', i}; } }
+      });
+      if (best) return best;
+    }
+    return null;
+  }
+  function setHover(t, e) {
+    const same = (hover && t && hover.type === t.type && hover.i === t.i) || (!hover && !t);
+    hover = t;
+    if (t && e) {
+      const r = pane.getBoundingClientRect(), info = describeObject(t);
+      tipEl.innerHTML = `<b>${esc(info.name)}</b>${info.kind ? ` <span class="k k-${esc(info.kindKey)}">${esc(info.kind)}</span>` : ''}${info.size ? `<div>${esc(info.size)}</div>` : ''}<div class="h">${info.hint}</div>`;
+      tipEl.style.left = Math.min(r.width - 230, e.clientX - r.left + 16) + 'px'; tipEl.style.top = Math.max(4, e.clientY - r.top - 10) + 'px';
+      tipEl.hidden = false;
+    } else tipEl.hidden = true;
+    pane.classList.toggle('over-obj', !!t);
+    if (!same) { if (!hoverTick) hoverTick = requestAnimationFrame(() => { hoverTick = 0; draw(); }); emit('iv:hover', {target: t}); }
+  }
+  function hoverAt(e) {
+    if (!main.w || (tool !== 'pan' && !(tools[tool] && tools[tool].hoverObjects))) { if (hover) setHover(null); return; }
+    const [x, y] = main.toImage(e.clientX, e.clientY);
+    setHover(hitTest(x, y), e);
+  }
+  function describeObject(t) {
+    if (!t) return null;
+    if (t.type === 'ann') {
+      const a = anns[t.i], m = measure(a);
+      return {name: a.label || m.label, kindKey: a.kind || 'other', kind: {organ: 'Organ', finding: 'Abnormal', other: 'Other'}[a.kind] || 'Other',
+              size: m ? `${m.area} · ${m.perimeter} around${m.stats ? ` · mean ${m.stats.mean.toFixed(0)}` : ''}` : '', source: a.source, hint: 'Click to select · double-click for spotlight'};
+    }
+    const lb = ai.labels[t.i], P = outlineOf(t);
+    return {name: `${lb.n || t.i + 1}. ${lb.name}`, kindKey: lb.concern === 'normal' ? 'organ' : 'finding', kind: `Dr. Flow · ${lb.concern || 'watch'}`,
+            size: P ? `${areaText(shoelace(P))}${lb.outline ? '' : ' (box)'}` : '', hint: 'Click for Dr. Flow’s note · double-click for spotlight'};
+  }
 
   function finishIfComplete() {
     if (!pending) return;
@@ -321,9 +499,9 @@
     const r = pane.getBoundingClientRect(), p = main.toImage(e.clientX, e.clientY), k = 3, size = 180;
     L.hidden = false;
     Object.assign(L.style, {left: e.clientX - r.left - size / 2 + 'px', top: e.clientY - r.top - size / 2 + 'px', width: size + 'px', height: size + 'px',
-      backgroundImage: `url("${main.img.src}")`, backgroundSize: `${main.w * main.scale() * k}px ${main.h * main.scale() * k}px`,
+      backgroundImage: `url("${overlayUrl || main.img.src}")`, backgroundSize: `${main.w * main.scale() * k}px ${main.h * main.scale() * k}px`,
       backgroundPosition: `${size / 2 - p[0] * main.scale() * k}px ${size / 2 - p[1] * main.scale() * k}px`,
-      filter: main.img.style.filter, transform: `rotate(${main.rot}deg) scaleX(${main.flip ? -1 : 1})`});
+      filter: overlayUrl ? (main.overlay.style.filter || 'none') : main.img.style.filter, transform: `rotate(${main.rot}deg) scaleX(${main.flip ? -1 : 1})`});
   }
 
   /* ================================================================ toolbar */
@@ -335,7 +513,11 @@
       wl: 'Drag left/right for contrast, up/down for brightness', ruler: 'Drag from one end to the other', angle: 'Drag along the first arm to the corner, then click the end of the second arm',
       cobb: 'Drag along the first endplate, then drag along the second', ellipse: 'Drag across the region', arrow: 'Drag from the label position to the point of interest',
       text: 'Click where the note should go', calibrate: 'Drag along something of known length, then enter its size in mm', lens: 'Move over the image to magnify',
-      cover: 'Drag a box over any name, record number or date on the film. It is blacked out before Dr. Flow sees the image. Click a box to remove it.'}[t] || '';
+      cover: 'Drag a box over any name, record number or date on the film. It is blacked out before Dr. Flow sees the image. Click a box to remove it.',
+      area: 'Drag a box around the area you want to ask Dr. Flow about. Then type your question beside the image.',
+      zoombox: 'Drag a box around what you want to look at; the view zooms to it',
+      wand: 'Smart select: move over an organ or an abnormal area to see its outline, click to keep it',
+      outline: 'Draw outline: trace around the structure; with “Snap to edges” the line settles on the border'}[t] || '';
     if (t === 'lens') $('.iv-lens').hidden = false;
     emit('iv:tool', {tool: t});
   }
@@ -371,7 +553,14 @@
     if (e.target.closest('input,textarea,select,dialog')) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); $('[data-act=undo]').click(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && CAN_EDIT) { e.preventDefault(); save(); return; }
-    if (e.key === 'Escape') { pending = null; selected = -1; if (tool === 'cover') setTool('pan'); draw(); list(); return; }
+    if (e.key === 'Escape' && spot.length) { spot = []; draw(); emit('iv:spot', {targets: []}); }
+    if (e.key === 'Escape') { pending = null; selected = -1; if (['cover', 'area', 'zoombox'].includes(tool)) setTool('pan'); draw(); list(); return; }
+    if (e.key === '+' || e.key === '=') { zoomBy(1.25); return; }
+    if (e.key === '-' || e.key === '_') { zoomBy(1 / 1.25); return; }
+    if (e.key.startsWith('Arrow') && main.w) { e.preventDefault(); const st = e.shiftKey ? 160 : 60;
+      main.px += {ArrowLeft: st, ArrowRight: -st}[e.key] || 0; main.py += {ArrowUp: st, ArrowDown: -st}[e.key] || 0; main.apply(); return; }
+    if (e.key === 'q' && $('[data-tool=area]')) { setTool('area'); return; }
+    if (e.key === 'z' && !e.ctrlKey && !e.metaKey) { setTool('zoombox'); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && selected >= 0 && CAN_EDIT) { e.preventDefault(); change(() => { anns.splice(selected, 1); selected = -1; }); return; }
     const keys = {v: 'pan', w: 'wl', r: 'ruler', a: 'angle', c: 'cobb', e: 'ellipse', t: 'text', l: 'lens', k: 'calibrate', o: 'arrow'};
     if (keys[e.key] && (CAN_EDIT || ['pan', 'wl', 'lens'].includes(keys[e.key]))) setTool(keys[e.key]);
@@ -404,6 +593,11 @@
       g.beginPath();
       if (a.type === 'ellipse') g.ellipse((P[0][0] + P[1][0]) / 2, (P[0][1] + P[1][1]) / 2, Math.abs(P[1][0] - P[0][0]) / 2, Math.abs(P[1][1] - P[0][1]) / 2, 0, 0, Math.PI * 2);
       else if (a.type === 'cobb') { g.moveTo(...P[0]); g.lineTo(...P[1]); g.moveTo(...P[2]); g.lineTo(...P[3]); }
+      else if (a.type === 'polygon') { g.moveTo(...P[0]); P.slice(1).forEach(p => g.lineTo(...p)); g.closePath();
+        const col = polyColour(a); g.save(); g.globalAlpha = .18; g.fillStyle = col; g.fill(); g.restore(); g.save(); g.strokeStyle = col; g.stroke(); g.restore();
+        const top = P.reduce((b, q) => q[1] < b[1] ? q : b, P[0]), txt = a.label || 'Outline';
+        g.lineWidth = 4 * s; g.strokeStyle = 'rgba(0,0,0,.75)'; g.strokeText(txt, top[0], top[1] - 8 * s); g.fillText(txt, top[0], top[1] - 8 * s);
+        g.lineWidth = 2 * s; g.strokeStyle = '#FFD54F'; return; }
       else if (a.type !== 'text') { g.moveTo(...P[0]); P.slice(1).forEach(p => g.lineTo(...p)); }
       g.stroke();
       const txt = m ? `${a.label ? a.label + ': ' : ''}${m.value}` : a.text;
@@ -415,7 +609,9 @@
       ai.labels.forEach(lb => {
         g.strokeStyle = g.fillStyle = col[lb.concern] || col.watch; g.lineWidth = 2 * s;
         let x, y;
-        if (lb.box) { x = lb.box[0] * main.w; y = lb.box[1] * main.h; g.strokeRect(x, y, lb.box[2] * main.w, lb.box[3] * main.h); }
+        if (lb.outline) { g.beginPath(); lb.outline.forEach(([u, v], k) => k ? g.lineTo(u * main.w, v * main.h) : g.moveTo(u * main.w, v * main.h)); g.closePath(); g.stroke();
+          x = Math.min(...lb.outline.map(q => q[0])) * main.w; y = Math.min(...lb.outline.map(q => q[1])) * main.h; }
+        else if (lb.box) { x = lb.box[0] * main.w; y = lb.box[1] * main.h; g.strokeRect(x, y, lb.box[2] * main.w, lb.box[3] * main.h); }
         else if (lb.point) { x = lb.point[0] * main.w; y = lb.point[1] * main.h; g.beginPath(); g.arc(x, y, 14 * s, 0, Math.PI * 2); g.stroke(); }
         else return;
         const txt = `AI ${lb.n}: ${lb.name}`; g.lineWidth = 4 * s; g.strokeStyle = 'rgba(0,0,0,.75)'; g.setLineDash([]);
@@ -535,6 +731,25 @@
     const s = main.scale(), vx = (ix - main.w / 2) * (main.flip ? -s : s), vy = (iy - main.h / 2) * s, a = main.rot * Math.PI / 180;
     main.px = -(vx * Math.cos(a) - vy * Math.sin(a)); main.py = -(vx * Math.sin(a) + vy * Math.cos(a)); main.apply();
   }
+  function zoomBy(f) { const r = main.el.getBoundingClientRect(); main.zoomAt(r.left + r.width / 2, r.top + r.height / 2, f); }
+  function zoomToBox(b) {
+    const r = main.el.getBoundingClientRect(), rotated = main.rot % 180 !== 0;
+    const bw = (rotated ? b[3] * main.h : b[2] * main.w) * main.fit, bh = (rotated ? b[2] * main.w : b[3] * main.h) * main.fit;
+    centreOn((b[0] + b[2] / 2) * main.w, (b[1] + b[3] / 2) * main.h, Math.min(r.width / bw, r.height / bh) * .9);
+  }
+  /* the studio's rendering, laid over the image inside the stage so it pans, zooms and rotates with it */
+  let overlayUrl = null;
+  function setOverlay(canvas, url) {
+    const old = main.overlay;
+    if (old && old !== canvas) old.remove();
+    main.overlay = canvas || null; overlayUrl = canvas ? (url || null) : null;
+    if (canvas) {
+      canvas.classList.add('iv-overlay');
+      Object.assign(canvas.style, {width: main.w + 'px', height: main.h + 'px'});
+      if (canvas.parentNode !== main.stage) main.stage.insertBefore(canvas, main.svg);
+    }
+    main.apply();
+  }
   window.ImagingViewer = {
     root,
     get current() { return cur ? {id: cur.id, caption: cur.caption, processed: cur.processed} : null; },
@@ -558,6 +773,11 @@
     keepLabel(i) {
       const lb = ai.labels[i]; if (!lb || !CAN_EDIT || !main.w) return false;
       const name = String(lb.name || 'AI finding').slice(0, 60);
+      if (lb.outline) {
+        change(() => { anns.push({type: 'polygon', points: lb.outline.map(([x, y]) => [x * main.w, y * main.h]), label: name, text: String(lb.explanation || '').slice(0, 300),
+                                  kind: lb.concern === 'normal' ? 'organ' : 'finding', source: 'ai', color: ''}); selected = anns.length - 1; });
+        return true;
+      }
       if (lb.box) {
         const [x, y, w, h] = lb.box;
         change(() => { anns.push({type: 'ellipse', points: [[x * main.w, y * main.h], [(x + w) * main.w, (y + h) * main.h]], text: '', label: name}); selected = anns.length - 1; });
@@ -569,6 +789,56 @@
       return true;
     },
     coverMode(on) { setTool(on ? 'cover' : 'pan'); },
+    /* areas */
+    areaMode(on) { setTool(on ? 'area' : 'pan'); },
+    get area() { return area ? area.map(v => +v.toFixed(4)) : null; },
+    setArea(b) { area = b && b.length === 4 ? b : null; draw(); },
+    setFocus(b) { focus = b && b.length === 4 ? b : null; draw(); },
+    zoomToArea(b) { if (b && main.w) zoomToBox(b); },
+    /* navigation, for the studio's navigator */
+    view() {
+      if (!main.w) return null;
+      const r = main.el.getBoundingClientRect();
+      return {w: main.w, h: main.h, z: main.z, scale: main.scale(), rot: main.rot, flip: main.flip, src: cur?.url,
+              corners: [[r.left, r.top], [r.right, r.top], [r.right, r.bottom], [r.left, r.bottom]].map(([x, y]) => main.toImage(x, y))};
+    },
+    centreOn(ix, iy, z) { if (main.w) centreOn(ix, iy, z ?? main.z); },
+    zoomBy,
+    zoomToBox(b) { if (b && main.w) zoomToBox(b); },
+    zoomTool() { setTool('zoombox'); },
+    fit() { main.reset(); },
+    get tool() { return tool; },
+    /* the studio's rendering */
+    setOverlay,
+    get overlay() { return main.overlay || null; },
+    get labels() { return ai.labels.slice(); },
+    /* vector objects and plug-in tools (imaging-segment.js) */
+    registerTool(name, handlers) { tools[name] = handlers; },
+    addLayer(fn) { layers.push(fn); },
+    redraw() { draw(); },
+    setTool,
+    get pixels() { return pixels; },
+    get size() { return main.w ? {w: main.w, h: main.h, scale: main.scale(), mm} : null; },
+    get annotations() { return anns.map((a, i) => ({...a, index: i})); },
+    get selected() { return selected; },
+    measure(i) { const a = anns[i]; return a ? measure(a) : null; },
+    addPolygon(points, meta = {}) {
+      if (!CAN_EDIT || !points || points.length < 3) return -1;
+      change(() => { anns.push({type: 'polygon', points: points.map(p => [+p[0].toFixed(2), +p[1].toFixed(2)]), text: meta.text || '', label: (meta.label || '').slice(0, 60),
+                                kind: meta.kind || 'other', source: meta.source || 'drawn', color: meta.color || ''}); selected = anns.length - 1; });
+      emit('iv:select', {index: selected, type: 'polygon'});
+      return selected;
+    },
+    updateAnnotation(i, patch) { if (!CAN_EDIT || !anns[i]) return false; change(() => { anns[i] = {...anns[i], ...patch}; }); return true; },
+    removeAnnotation(i) { if (!CAN_EDIT || !anns[i]) return false; change(() => { anns.splice(i, 1); selected = -1; spot = spot.filter(t => !(t.type === 'ann' && t.i === i)); }); emit('iv:select', {index: -1}); return true; },
+    select(i) { selected = anns[i] ? i : -1; draw(); list(); emit('iv:select', {index: selected, type: anns[selected]?.type}); },
+    spotlight(targets) { spot = (targets || []).filter(t => outlineOf(t)); draw(); emit('iv:spot', {targets: spot}); return spot.length; },
+    get spot() { return spot.slice(); },
+    outline(t) { const P = outlineOf(t); return P ? P.map(q => q.slice()) : null; },
+    describe: describeObject,
+    showNames(on) { showNames = !!on; draw(); },
+    get namesShown() { return showNames; },
+    colourFor: polyColour,
     get covering() { return tool === 'cover'; },
     covers(id) { return (covers[id ?? cur?.id] || []).map(b => b.map(v => +v.toFixed(4))); },
     clearCovers() { if (cur) { covers[cur.id] = []; draw(); emit('iv:cover', {count: 0}); } },
